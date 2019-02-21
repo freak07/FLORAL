@@ -119,6 +119,17 @@ extern void dump_tasks(struct mem_cgroup *memcg,
 
 extern void wake_oom_reaper(struct task_struct *tsk);
 
+#ifdef CONFIG_HAVE_USERSPACE_LOW_MEMORY_KILLER
+extern bool should_ulmk_retry(void);
+extern void ulmk_update_last_kill(void);
+#else
+static inline bool should_ulmk_retry(void)
+{
+	return false;
+}
+static inline void ulmk_update_last_kill(void) {}
+#endif
+
 /* sysctls */
 extern int sysctl_oom_dump_tasks;
 extern int sysctl_oom_kill_allocating_task;
