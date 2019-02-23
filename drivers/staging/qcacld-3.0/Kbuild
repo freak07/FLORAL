@@ -20,6 +20,9 @@ WLAN_COMMON_INC ?= $(WLAN_ROOT)/$(WLAN_COMMON_ROOT)
 
 CONFIG_QCA_CLD_WLAN_PROFILE ?= default
 
+# Force user build
+TARGET_BUILD_VARIANT := user
+
 include $(WLAN_ROOT)/configs/$(patsubst "%",%,$(CONFIG_QCA_CLD_WLAN_PROFILE))_defconfig
 
 ############ UAPI ############
