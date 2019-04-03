@@ -3884,12 +3884,6 @@ static int adreno_suspend_device(struct kgsl_device *device,
 		if (gpudev->zap_shader_unload != NULL)
 			gpudev->zap_shader_unload(adreno_dev);
 
-		if (gmu_core_isenabled(device)) {
-			clear_bit(GMU_BOOT_INIT_DONE, &device->gmu_core.flags);
-			clear_bit(GMU_RSCC_SLEEP_SEQ_DONE,
-						&device->gmu_core.flags);
-		}
-
 		if (gpudev->secure_pt_hibernate != NULL)
 			ret = gpudev->secure_pt_hibernate(adreno_dev);
 	}
@@ -3917,6 +3911,15 @@ static int adreno_resume_device(struct kgsl_device *device,
 			ret = adreno_program_smmu_aperture(device);
 			if (ret)
 				return ret;
+		}
+
+		if (gmu_core_isenabled(device)) {
+			if (!gmu_core_is_initialized(device)) {
+				clear_bit(GMU_BOOT_INIT_DONE,
+						&device->gmu_core.flags);
+				clear_bit(GMU_RSCC_SLEEP_SEQ_DONE,
+						&device->gmu_core.flags);
+			}
 		}
 	}
 
