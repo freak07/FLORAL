@@ -2515,6 +2515,9 @@ static int dsi_panel_parse_phy_timing(struct dsi_display_mode *mode,
 	u32 refresh_rate = TICKS_IN_MICRO_SECOND;
 	struct dsi_mode_info *timing = NULL;
 
+	if (!mode || !mode->priv_info)
+		return -EINVAL;
+
 	priv_info = mode->priv_info;
 
 	data = utils->get_property(utils->data,
@@ -2534,10 +2537,6 @@ static int dsi_panel_parse_phy_timing(struct dsi_display_mode *mode,
 	};
 
 	timing = &mode->timing;
-	if (!timing) {
-		pr_err("timing is null\n");
-		return -EINVAL;
-	}
 
 	if (panel_mode == DSI_OP_CMD_MODE) {
 		h_period = DSI_H_ACTIVE_DSC(timing);
