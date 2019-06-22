@@ -155,7 +155,7 @@ static void agilesdtcp_state(struct sock *sk, u8 new_state)
 
 /* This function is called when there is an acknowledgment that acknowledges some new packets.
  * num_acked is the number of packets that are acknowledged by this acknowledgments. */
-static void agilesdtcp_acked(struct sock *sk, u32 num_acked, s32 rtt_us)
+static void agilesdtcp_acked(struct sock *sk, const struct ack_sample *sample)
 {
 
 }
