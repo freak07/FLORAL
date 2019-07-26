@@ -412,7 +412,6 @@ struct dma_buf {
 	unsigned vmapping_counter;
 	void *vmap_ptr;
 	const char *exp_name;
-	struct timespec ctime;
 	const char *name;
 	struct module *owner;
 	struct list_head list_node;
