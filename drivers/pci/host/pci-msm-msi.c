@@ -180,6 +180,7 @@ static void msm_msi_mask_irq(struct irq_data *data)
 	struct irq_data *parent_data;
 	struct msm_msi_irq *msi_irq;
 	struct msm_msi *msi;
+	unsigned long flags;
 
 	parent_data = data->parent_data;
 	if (!parent_data)
@@ -188,7 +189,11 @@ static void msm_msi_mask_irq(struct irq_data *data)
 	msi_irq = irq_data_get_irq_chip_data(parent_data);
 	msi = msi_irq->client->msi;
 
-	pci_msi_mask_irq(data);
+	spin_lock_irqsave(&msi->cfg_lock, flags);
+	if (msi->cfg_access)
+		pci_msi_mask_irq(data);
+	spin_unlock_irqrestore(&msi->cfg_lock, flags);
+
 	msi->mask_irq(parent_data);
 }
 
@@ -224,6 +229,7 @@ static void msm_msi_unmask_irq(struct irq_data *data)
 	struct irq_data *parent_data;
 	struct msm_msi_irq *msi_irq;
 	struct msm_msi *msi;
+	unsigned long flags;
 
 	parent_data = data->parent_data;
 	if (!parent_data)
@@ -233,7 +239,11 @@ static void msm_msi_unmask_irq(struct irq_data *data)
 	msi = msi_irq->client->msi;
 
 	msi->unmask_irq(parent_data);
-	pci_msi_unmask_irq(data);
+
+	spin_lock_irqsave(&msi->cfg_lock, flags);
+	if (msi->cfg_access)
+		pci_msi_unmask_irq(data);
+	spin_unlock_irqrestore(&msi->cfg_lock, flags);
 }
 
 static struct irq_chip msm_msi_irq_chip = {
