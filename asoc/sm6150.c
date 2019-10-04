@@ -644,6 +644,19 @@ static struct snd_soc_aux_dev *msm_aux_dev;
 static struct snd_soc_codec_conf *msm_codec_conf;
 static struct msm_asoc_wcd93xx_codec msm_codec_fn;
 
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+static struct snd_soc_dai_link_component cs35l41_codec[] = {
+	{
+		.name = "cs35l41.2-0040",
+		.dai_name = "cs35l41-pcm",
+	},
+	{
+		.name = "cs35l41.2-0041",
+		.dai_name = "cs35l41-pcm",
+	},
+};
+#endif
+
 static int dmic_0_1_gpio_cnt;
 static int dmic_2_3_gpio_cnt;
 
@@ -5415,7 +5428,6 @@ err:
 	return ret;
 }
 
-
 static int msm_snd_cdc_dma_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_pcm_hw_params *params)
 {
@@ -5760,6 +5772,11 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 #endif
 
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+	int i = 0;
+	struct snd_soc_dai **codec_dais = rtd->codec_dais;
+#endif
+
 	pr_debug("%s: dai id = 0x%x\n", __func__, cpu_dai->id);
 
 	/* currently only supporting TDM_RX_0 and TDM_TX_0 */
@@ -5904,6 +5921,38 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 			pr_err("%s: failed to set codec clk, err:%d\n",
 				__func__, ret);
 		}
+	}
+#endif
+
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+	for (i = 0; i < rtd->num_codecs; i++) {
+		if (codec_dais[i] == NULL ||
+			cpu_dai->id != AFE_PORT_ID_SECONDARY_TDM_RX)
+			continue;
+
+		ret = snd_soc_dai_set_fmt(codec_dais[i],
+				SND_SOC_DAIFMT_DSP_A |
+				SND_SOC_DAIFMT_CBS_CFS |
+				SND_SOC_DAIFMT_NB_NF);
+
+		if (ret != 0)
+			dev_err(codec_dai->dev,
+				"Failed to set dai format for %s, ret = %d\n",
+				codec_dai->name, ret);
+
+		ret = snd_soc_dai_set_sysclk(codec_dais[i], 0, clk_freq,
+				SND_SOC_CLOCK_IN);
+		if (ret != 0)
+			dev_err(codec_dai->dev,
+				"Failed to set dai clock %u, ret = %d\n",
+				clk_freq, ret);
+
+		ret = snd_soc_component_set_sysclk(codec_dais[i]->component,
+					0, 0, clk_freq, SND_SOC_CLOCK_IN);
+		if (ret != 0)
+			dev_err(codec_dai->dev,
+				"Failed to set codec clock %u, ret = %d\n",
+				clk_freq, ret);
 	}
 #endif
 
@@ -7176,8 +7225,13 @@ static struct snd_soc_dai_link msm_common_be_dai_links[] = {
 		.stream_name = "Secondary TDM0 Playback",
 		.cpu_dai_name = "msm-dai-q6-tdm.36880",
 		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+		.codecs = cs35l41_codec,
+		.num_codecs = ARRAY_SIZE(cs35l41_codec),
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
+#endif
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.id = MSM_BACKEND_DAI_SEC_TDM_RX_0,
@@ -7191,14 +7245,22 @@ static struct snd_soc_dai_link msm_common_be_dai_links[] = {
 		.stream_name = "Secondary TDM0 Capture",
 		.cpu_dai_name = "msm-dai-q6-tdm.36881",
 		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+		.codecs = cs35l41_codec,
+		.num_codecs = ARRAY_SIZE(cs35l41_codec),
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-tx",
+#endif
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.id = MSM_BACKEND_DAI_SEC_TDM_TX_0,
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ops = &sm6150_tdm_be_ops,
 		.ignore_suspend = 1,
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+#endif
 	},
 	{
 		.name = LPASS_BE_TERT_TDM_RX_0,
