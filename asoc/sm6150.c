@@ -223,6 +223,10 @@ struct msm_asoc_mach_data {
 	struct device_node *hph_en0_gpio_p; /* used by pinctrl API */
 	bool is_afe_config_done;
 	struct device_node *fsa_handle;
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+	struct gpio_desc *ldo1_gpio;
+	struct gpio_desc *ldo2_gpio;
+#endif
 };
 
 struct msm_asoc_wcd93xx_codec {
@@ -409,6 +413,11 @@ static struct dev_config proxy_rx_cfg = {
 	.bit_format = SNDRV_PCM_FORMAT_S16_LE,
 	.channels = 2,
 };
+
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+static unsigned int ter_tdm_slot_offset[8] = {
+	0, 4, 8, 12, 16, 20, 24, 28};
+#endif
 
 /* Default configuration of MI2S channels */
 static struct dev_config mi2s_rx_cfg[] = {
@@ -3868,6 +3877,35 @@ static const struct snd_kcontrol_new msm_common_snd_controls[] = {
 			msm_vi_feed_tx_ch_get, msm_vi_feed_tx_ch_put),
 };
 
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+static int msm_ter_tdm_ch_put(struct snd_kcontrol *kcontrol,
+				      struct snd_ctl_elem_value *ucontrol)
+{
+	int i = 0;
+
+	for (i = 0; i < 8; i++)
+		ter_tdm_slot_offset[i] = ucontrol->value.integer.value[i];
+	return 0;
+}
+
+static int msm_ter_tdm_ch_get(struct snd_kcontrol *kcontrol,
+				      struct snd_ctl_elem_value *ucontrol)
+{
+	int i = 0;
+
+	for (i = 0; i < 8; i++)
+		ucontrol->value.integer.value[i] = ter_tdm_slot_offset[i];
+	return 0;
+}
+
+
+static const struct snd_kcontrol_new msm_ter_tdm_ch_controls[] = {
+	SOC_SINGLE_MULTI_EXT("TERT TDM TX Channel Offset",
+			SND_SOC_NOPM, 0, 28, 0, 8,
+			msm_ter_tdm_ch_get, msm_ter_tdm_ch_put),
+};
+#endif
+
 static int msm_snd_enable_codec_ext_clk(struct snd_soc_codec *codec,
 					int enable, bool dapm)
 {
@@ -4082,6 +4120,64 @@ static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+static int msm_mic_event(struct snd_soc_dapm_widget *w,
+				struct snd_kcontrol *kcontrol, int event)
+{
+	struct msm_asoc_mach_data *pdata = NULL;
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	int val;
+	u32 dmic_idx;
+	char  *wname;
+	struct gpio_desc *gpiod;
+	int ret;
+
+	wname = strpbrk(w->name, "12");
+	if (!wname) {
+		dev_err(component->dev, "%s: widget not found\n", __func__);
+	}
+
+	ret = kstrtouint(wname, 10, &dmic_idx);
+	if (ret < 0) {
+		dev_err(component->dev, "%s: Invalid DMIC line on the codec\n",
+			__func__);
+		return -EINVAL;
+	}
+
+	pdata = snd_soc_card_get_drvdata(component->card);
+
+	switch (dmic_idx) {
+	case 1:
+		gpiod = pdata->ldo1_gpio;
+		break;
+	case 2:
+		gpiod = pdata->ldo2_gpio;
+		break;
+	default:
+		dev_err(component->dev, "%s: Invalid DMIC Selection\n",
+			__func__);
+		return -EINVAL;
+	}
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		val = 1;
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		val = 0;
+		break;
+	default:
+		dev_info(component->dev, "%s: Unexpected event %s\n", __func__);
+		return -EINVAL;
+	}
+
+	gpiod_set_value_cansleep(gpiod, val);
+	dev_info(component->dev, "%s: %s set value %d\n", __func__, w->name, val);
+
+	return 0;
+}
+#endif
+
 static const struct snd_soc_dapm_widget msm_int_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Analog Mic1", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic2", NULL),
@@ -4091,7 +4187,33 @@ static const struct snd_soc_dapm_widget msm_int_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Digital Mic1", msm_dmic_event),
 	SND_SOC_DAPM_MIC("Digital Mic2", msm_dmic_event),
 	SND_SOC_DAPM_MIC("Digital Mic3", msm_dmic_event),
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+	SND_SOC_DAPM_SUPPLY("Audio LDO Mic1", SND_SOC_NOPM, 0, 0,
+		msm_mic_event, SND_SOC_DAPM_PRE_PMU|SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_SUPPLY("Audio LDO Mic2", SND_SOC_NOPM, 0, 0,
+		msm_mic_event, SND_SOC_DAPM_PRE_PMU|SND_SOC_DAPM_POST_PMD),
+#endif
 };
+
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+static int msm_tdm_ch_init(struct snd_soc_pcm_runtime *rtd)
+{
+	int ret = -EINVAL;
+	struct snd_soc_codec *codec = rtd->codec;
+
+	ret = snd_soc_add_codec_controls(codec, msm_ter_tdm_ch_controls,
+					 ARRAY_SIZE(msm_ter_tdm_ch_controls));
+
+	if (ret < 0) {
+		dev_err(codec->dev,
+			"%s: add_codec_controls failed, err = %d\n",
+			__func__, ret);
+		return ret;
+	}
+
+	return 0;
+}
+#endif
 
 static inline int param_is_mask(int p)
 {
@@ -5634,6 +5756,10 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 	unsigned int slot_mask, rate, clk_freq;
 	unsigned int slot_offset[8] = {0, 4, 8, 12, 16, 20, 24, 28};
 
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+	struct snd_soc_dai *codec_dai = rtd->codec_dai;
+#endif
+
 	pr_debug("%s: dai id = 0x%x\n", __func__, cpu_dai->id);
 
 	/* currently only supporting TDM_RX_0 and TDM_TX_0 */
@@ -5661,6 +5787,10 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 		break;
 	case AFE_PORT_ID_TERTIARY_TDM_TX:
 		slots = tdm_tx_cfg[TDM_TERT][TDM_0].channels;
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+		memcpy(slot_offset, ter_tdm_slot_offset,
+			sizeof(ter_tdm_slot_offset));
+#endif
 		break;
 	case AFE_PORT_ID_QUATERNARY_TDM_TX:
 		slots = tdm_tx_cfg[TDM_QUAT][TDM_0].channels;
@@ -5702,7 +5832,14 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 		/*2 slot config - bits 0 and 1 set for the first two slots */
 		slot_mask = 0x0000FFFF >> (16-slots);
 		channels = slots;
-
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+		if (cpu_dai->id == AFE_PORT_ID_TERTIARY_TDM_TX) {
+		/* Force slot 8 to align codec clk requirement */
+			slots = 8;
+			slot_mask = 0x0000FFFF >> (16 - slots);
+			channels = tdm_tx_cfg[TDM_PRI][TDM_0].channels;
+		}
+#endif
 		pr_debug("%s: tdm tx slot_width %d slots %d\n",
 			__func__, slot_width, slots);
 
@@ -5734,6 +5871,41 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 	if (ret < 0)
 		pr_err("%s: failed to set tdm clk, err:%d\n",
 			__func__, ret);
+
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+	if (cpu_dai->id == AFE_PORT_ID_TERTIARY_TDM_TX) {
+		ret = snd_soc_dai_set_tdm_slot(codec_dai, 1, 0, 8, 32);
+		if (ret < 0) {
+			pr_err("%s: failed to set tdm codec slot, err:%d\n",
+				__func__, ret);
+		}
+
+		ret = snd_soc_dai_set_fmt(codec_dai,
+			SND_SOC_DAIFMT_DSP_B|SND_SOC_DAIFMT_IB_IF);
+		if (ret < 0) {
+			pr_err("%s: failed to set tdm codec fmt, err:%d\n",
+				__func__, ret);
+		}
+
+		ret = snd_soc_dai_set_pll(codec_dai, 0, 1,
+			Q6AFE_LPASS_IBIT_CLK_12_P288_MHZ,
+			Q6AFE_LPASS_IBIT_CLK_12_P288_MHZ);
+
+		if (ret < 0) {
+			pr_err("%s: failed to set codec pll, err:%d\n",
+				__func__, ret);
+		}
+
+		ret = snd_soc_dai_set_sysclk(codec_dai, 1,
+			Q6AFE_LPASS_IBIT_CLK_12_P288_MHZ,
+			SND_SOC_CLOCK_IN);
+
+		if (ret < 0) {
+			pr_err("%s: failed to set codec clk, err:%d\n",
+				__func__, ret);
+		}
+	}
+#endif
 
 end:
 	return ret;
@@ -7048,8 +7220,14 @@ static struct snd_soc_dai_link msm_common_be_dai_links[] = {
 		.stream_name = "Tertiary TDM0 Capture",
 		.cpu_dai_name = "msm-dai-q6-tdm.36897",
 		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+		.init = &msm_tdm_ch_init,
+		.codec_name = "rt5514.0-0057",
+		.codec_dai_name = "rt5514-aif1",
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-tx",
+#endif
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.id = MSM_BACKEND_DAI_TERT_TDM_TX_0,
@@ -8431,7 +8609,6 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 			}
 		}
 
-
 		rc = of_property_read_u32(dev->of_node, "qcom,wcn-btfm",
 					  &wcn_btfm_intf);
 		if (rc) {
@@ -9237,6 +9414,18 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 						      "qcom,cdc-dmic23-gpios",
 						       0);
 	}
+
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+	pdata->ldo1_gpio = devm_gpiod_get_optional(&pdev->dev, "audio_ldo1",
+							GPIOD_OUT_LOW);
+	if (IS_ERR_OR_NULL(pdata->ldo1_gpio))
+		dev_warn(&pdev->dev, "Request mic1 GPIO failed\n");
+
+	pdata->ldo2_gpio = devm_gpiod_get_optional(&pdev->dev, "audio_ldo2",
+							GPIOD_OUT_LOW);
+	if (IS_ERR_OR_NULL(pdata->ldo2_gpio))
+		dev_warn(&pdev->dev, "Request mic2 GPIO failed\n");
+#endif
 
 	ret = msm_audio_ssr_register(&pdev->dev);
 	if (ret)
