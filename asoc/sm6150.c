@@ -8225,6 +8225,83 @@ static struct snd_soc_dai_link msm_rx_tx_cdc_dma_be_dai_links[] = {
 	},
 };
 
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514_SPI)
+static struct snd_soc_dai_link msm_spi_dai_links[] = {
+	{
+	 .name = "SoundTrigger_1",
+	 .stream_name = "SoundTrigger Capture",
+	 .cpu_dai_name = "rt5514-dsp-fe-dai1",
+	 .platform_name = "spi0.0",
+	 .codec_name = "msm-stub-codec.1",
+	 .codec_dai_name = "msm-stub-tx",
+	 .ignore_suspend = 1,
+	 .dynamic = 1,
+	 .dpcm_capture = 1,
+	 .trigger = {SND_SOC_DPCM_TRIGGER_POST,
+		     SND_SOC_DPCM_TRIGGER_POST},
+	},
+	{
+	 .name = "SoundTrigger 2",
+	 .stream_name = "SoundTrigger Capture 2",
+	 .cpu_dai_name = "rt5514-dsp-fe-dai2",
+	 .platform_name = "spi0.0",
+	 .codec_name = "msm-stub-codec.1",
+	 .codec_dai_name = "msm-stub-tx",
+	 .ignore_suspend = 1,
+	 .dynamic = 1,
+	 .dpcm_capture = 1,
+	 .trigger = {SND_SOC_DPCM_TRIGGER_POST,
+		     SND_SOC_DPCM_TRIGGER_POST},
+	},
+	{
+	 .name = "ADC Capture",
+	 .stream_name = "ADC Capture",
+	 .cpu_dai_name = "rt5514-dsp-fe-dai3",
+	 .platform_name = "spi0.0",
+	 .codec_name = "msm-stub-codec.1",
+	 .codec_dai_name = "msm-stub-tx",
+	 .ignore_suspend = 1,
+	 .dynamic = 1,
+	 .dpcm_capture = 1,
+	 .trigger = {SND_SOC_DPCM_TRIGGER_POST,
+		     SND_SOC_DPCM_TRIGGER_POST},
+	},
+	{
+	 .name = "SPI PCM 1",
+	 .stream_name = "SPI Capture",
+	 .cpu_dai_name = "rt5514-dsp-be-dai1",
+	 .platform_name = "spi0.0",
+	 .codec_name = "msm-stub-codec.1",
+	 .codec_dai_name = "msm-stub-tx",
+	 .ignore_suspend = 1,
+	 .dpcm_capture = 1,
+	 .no_pcm = 1,
+	},
+	{
+	 .name = "SPI PCM 2",
+	 .stream_name = "SPI Capture 2",
+	 .cpu_dai_name = "rt5514-dsp-be-dai2",
+	 .platform_name = "spi0.0",
+	 .codec_name = "msm-stub-codec.1",
+	 .codec_dai_name = "msm-stub-tx",
+	 .ignore_suspend = 1,
+	 .dpcm_capture = 1,
+	 .no_pcm = 1,
+	},
+	{
+	 .name = "SPI PCM 3",
+	 .stream_name = "SPI Capture 3",
+	 .cpu_dai_name = "rt5514-dsp-be-dai3",
+	 .platform_name = "spi0.0",
+	 .codec_name = "msm-stub-codec.1",
+	 .codec_dai_name = "msm-stub-tx",
+	 .ignore_suspend = 1,
+	 .dpcm_capture = 1,
+	 .no_pcm = 1,
+	},
+};
+#endif
+
 static struct snd_soc_dai_link msm_sm6150_dai_links[
 			 ARRAY_SIZE(msm_common_dai_links) +
 			 ARRAY_SIZE(msm_tavil_fe_dai_links) +
@@ -8243,6 +8320,9 @@ static struct snd_soc_dai_link msm_sm6150_dai_links[
 			 ARRAY_SIZE(msm_auxpcm_be_dai_links) +
 #if IS_ENABLED(CONFIG_SND_SOC_WSA)
 			 ARRAY_SIZE(msm_wsa_cdc_dma_be_dai_links) +
+#endif
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514_SPI)
+			 ARRAY_SIZE(msm_spi_dai_links) +
 #endif
 			 ARRAY_SIZE(msm_rx_tx_cdc_dma_be_dai_links)];
 
@@ -8339,6 +8419,9 @@ static int msm_populate_dai_link_component_of_node(
 
 		/* populate platform_of_node for snd card dai links */
 		if (dai_link[i].platform_name &&
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514_SPI)
+		    strcmp(dai_link[i].platform_name, "spi0.0") &&
+#endif
 		    !dai_link[i].platform_of_node) {
 			index = of_property_match_string(cdev->of_node,
 						"asoc-platform-names",
@@ -8701,6 +8784,13 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 					ARRAY_SIZE(msm_auxpcm_be_dai_links);
 			}
 		}
+
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514_SPI)
+		memcpy(msm_sm6150_dai_links + total_links,
+		       msm_spi_dai_links,
+		       sizeof(msm_spi_dai_links));
+		total_links += ARRAY_SIZE(msm_spi_dai_links);
+#endif
 
 		dailink = msm_sm6150_dai_links;
 	} else if (!strcmp(match->data, "stub_codec")) {
