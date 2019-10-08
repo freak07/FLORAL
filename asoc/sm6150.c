@@ -8302,6 +8302,39 @@ static struct snd_soc_dai_link msm_spi_dai_links[] = {
 };
 #endif
 
+static struct snd_soc_dai_link msm_tdm_fe_dai_link[] = {
+	{
+		.name = "Tertiary TDM TX 0 Hostless",
+		.stream_name = "Tertiary TDM TX 0 Hostless",
+		.cpu_dai_name = "TERT_TDM_TX_0_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+	{
+		.name = "Secondary TDM RX 0 Hostless",
+		.stream_name = "Secondary TDM RX 0 Hostless",
+		.cpu_dai_name = "SEC_TDM_RX_0_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+};
+
 static struct snd_soc_dai_link msm_sm6150_dai_links[
 			 ARRAY_SIZE(msm_common_dai_links) +
 			 ARRAY_SIZE(msm_tavil_fe_dai_links) +
@@ -8324,6 +8357,7 @@ static struct snd_soc_dai_link msm_sm6150_dai_links[
 #if IS_ENABLED(CONFIG_SND_SOC_RT5514_SPI)
 			 ARRAY_SIZE(msm_spi_dai_links) +
 #endif
+			 ARRAY_SIZE(msm_tdm_fe_dai_link) +
 			 ARRAY_SIZE(msm_rx_tx_cdc_dma_be_dai_links)];
 
 static int msm_snd_card_tavil_late_probe(struct snd_soc_card *card)
@@ -8791,6 +8825,11 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 		       sizeof(msm_spi_dai_links));
 		total_links += ARRAY_SIZE(msm_spi_dai_links);
 #endif
+
+		memcpy(msm_sm6150_dai_links + total_links,
+			msm_tdm_fe_dai_link,
+			sizeof(msm_tdm_fe_dai_link));
+		total_links += ARRAY_SIZE(msm_tdm_fe_dai_link);
 
 		dailink = msm_sm6150_dai_links;
 	} else if (!strcmp(match->data, "stub_codec")) {
