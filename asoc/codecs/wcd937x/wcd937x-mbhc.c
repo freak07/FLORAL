@@ -577,7 +577,7 @@ left_ch_impedance:
 		*zl = z1L/1000;
 		wcd937x_wcd_mbhc_qfuse_cal(codec, zl, 0);
 	}
-	dev_dbg(codec->dev, "%s: impedance on HPH_L = %d(ohms)\n",
+	dev_info(codec->dev, "%s: impedance on HPH_L = %d(ohms)\n",
 		__func__, *zl);
 
 	/* Start of right impedance ramp and calculation */
@@ -609,7 +609,7 @@ right_ch_impedance:
 		*zr = z1R/1000;
 		wcd937x_wcd_mbhc_qfuse_cal(codec, zr, 1);
 	}
-	dev_dbg(codec->dev, "%s: impedance on HPH_R = %d(ohms)\n",
+	dev_info(codec->dev, "%s: impedance on HPH_R = %d(ohms)\n",
 		__func__, *zr);
 
 	/* Mono/stereo detection */
