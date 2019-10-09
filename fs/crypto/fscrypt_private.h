@@ -166,12 +166,6 @@ struct fscrypt_info {
 	struct crypto_skcipher *ci_ctfm;
 
 	/*
-	 * Cipher for ESSIV IV generation.  Only set for CBC contents
-	 * encryption, otherwise is NULL.
-	 */
-	struct crypto_cipher *ci_essiv_tfm;
-
-	/*
 	 * Encryption mode used for this inode.  It corresponds to either the
 	 * contents or filenames encryption mode, depending on the inode type.
 	 */
@@ -453,7 +447,6 @@ struct fscrypt_mode {
 	int keysize;
 	int ivsize;
 	bool logged_impl_name;
-	bool needs_essiv;
 };
 
 static inline bool is_private_mode(const struct fscrypt_mode *mode)
