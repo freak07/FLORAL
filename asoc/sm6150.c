@@ -5854,7 +5854,7 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 		/* Force slot 8 to align codec clk requirement */
 			slots = 8;
 			slot_mask = 0x0000FFFF >> (16 - slots);
-			channels = tdm_tx_cfg[TDM_PRI][TDM_0].channels;
+			channels = tdm_tx_cfg[TDM_TERT][TDM_0].channels;
 		}
 #endif
 		pr_debug("%s: tdm tx slot_width %d slots %d\n",
