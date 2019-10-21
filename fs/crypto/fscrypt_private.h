@@ -444,7 +444,7 @@ struct fscrypt_mode {
 	const char *cipher_str;
 	int keysize;
 	int ivsize;
-	bool logged_impl_name;
+	int logged_impl_name;
 };
 
 static inline bool is_private_mode(const struct fscrypt_mode *mode)
