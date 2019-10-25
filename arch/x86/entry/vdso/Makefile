@@ -184,7 +184,6 @@ quiet_cmd_vdso = VDSO    $@
 VDSO_LDFLAGS = -shared $(call ld-option, --hash-style=both) \
 	$(call ld-option, --build-id) $(call ld-option, --eh-frame-hdr) \
 	-Bsymbolic
-	$(filter --target=% --gcc-toolchain=%,$(KBUILD_CFLAGS))
 GCOV_PROFILE := n
 
 #
