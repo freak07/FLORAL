@@ -23,7 +23,7 @@ export LD_LIBRARY_PATH=/media/miles/Storage/CLANG_TC/tc-build/install/lib:$LD_LI
 echo
 echo "Set DEFCONFIG"
 echo 
-make CC=clang AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip O=out floral_defconfig
+make CC=clang AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip O=out kirisakura_defconfig
 
 echo
 echo "Build The Good Stuff"
