@@ -1,3 +1,0 @@
-source "techpack/data/rmnet/perf/Kconfig"
-
-source "techpack/data/rmnet/shs/Kconfig"
