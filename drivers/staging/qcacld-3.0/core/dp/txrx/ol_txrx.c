@@ -3966,7 +3966,7 @@ void peer_unmap_timer_work_function(void *param)
  */
 void peer_unmap_timer_handler(void *data)
 {
-	ol_txrx_peer_handle __maybe_unused peer = (ol_txrx_peer_handle)data;
+	ol_txrx_peer_handle peer = (ol_txrx_peer_handle)data;
 	ol_txrx_pdev_handle txrx_pdev = cds_get_context(QDF_MODULE_ID_TXRX);
 
 	ol_txrx_err("all unmap events not received for peer %pK, ref_cnt %d",
