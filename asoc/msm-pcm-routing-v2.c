@@ -46,7 +46,9 @@
 #include "msm-dolby-dap-config.h"
 #include "msm-ds2-dap-config.h"
 
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 #include <dsp/msm-cirrus-playback.h>
+#endif
 
 #ifndef CONFIG_DOLBY_DAP
 #undef DOLBY_ADM_COPP_TOPOLOGY_ID
@@ -24054,7 +24056,9 @@ static int msm_routing_probe(struct snd_soc_platform *platform)
 		msm_routing_be_dai_name_table_mixer_controls,
 		ARRAY_SIZE(msm_routing_be_dai_name_table_mixer_controls));
 
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 	msm_crus_pb_add_controls(platform);
+#endif
 
 	snd_soc_add_platform_controls(platform, msm_source_tracking_controls,
 				ARRAY_SIZE(msm_source_tracking_controls));
@@ -24094,6 +24098,7 @@ static struct snd_soc_platform_driver msm_soc_routing_platform = {
 
 static int msm_routing_pcm_probe(struct platform_device *pdev)
 {
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 	struct msm_pcm_drv_data *pdata;
 	int rc;
 
@@ -24115,6 +24120,11 @@ static int msm_routing_pcm_probe(struct platform_device *pdev)
 
 out:
 	return rc;
+#else
+	dev_dbg(&pdev->dev, "dev name %s\n", dev_name(&pdev->dev));
+	return snd_soc_register_platform(&pdev->dev,
+				&msm_soc_routing_platform);
+#endif
 }
 
 static int msm_routing_pcm_remove(struct platform_device *pdev)
