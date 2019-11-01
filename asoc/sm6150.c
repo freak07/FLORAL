@@ -7252,14 +7252,12 @@ static struct snd_soc_dai_link msm_common_be_dai_links[] = {
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-tx",
 #endif
+		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.id = MSM_BACKEND_DAI_SEC_TDM_TX_0,
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ops = &sm6150_tdm_be_ops,
 		.ignore_suspend = 1,
-#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
-		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
-#endif
 	},
 	{
 		.name = LPASS_BE_TERT_TDM_RX_0,
@@ -8332,6 +8330,23 @@ static struct snd_soc_dai_link msm_tdm_fe_dai_link[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 	},
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+	{
+		.name = "Secondary TDM TX 0 Hostless",
+		.stream_name = "Secondary TDM TX 0 Hostless",
+		.cpu_dai_name = "SEC_TDM_TX_0_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+#endif
 };
 
 static struct snd_soc_dai_link msm_sm6150_dai_links[
