@@ -120,6 +120,8 @@ struct cs40l2x_private {
 #endif /* CONFIG_ANDROID_TIMED_OUTPUT */
 };
 
+static struct cs40l2x_private *cs40l2x_g;
+
 static const char * const cs40l2x_supplies[] = {
 	"VA",
 	"VP",
@@ -5169,6 +5171,13 @@ static void cs40l2x_vibe_brightness_set(struct led_classdev *led_cdev,
 	}
 }
 
+void set_vibrate()
+{
+	queue_work(cs40l2x_g->vibe_workqueue, &cs40l2x_g->vibe_start_work);
+	msleep(200);
+	queue_work(cs40l2x_g->vibe_workqueue, &cs40l2x_g->vibe_stop_work);
+}
+
 static int cs40l2x_create_led(struct cs40l2x_private *cs40l2x)
 {
 	int ret;
@@ -8284,6 +8293,7 @@ static int cs40l2x_i2c_probe(struct i2c_client *i2c_client,
 			cs40l2x_firmware_load);
 
 	cs40l2x->cp_dig_scale_override = 100;
+	cs40l2x_g = cs40l2x;
 
 	return 0;
 err:
