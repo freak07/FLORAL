@@ -110,6 +110,7 @@ struct cs40l2x_private {
 	bool amp_gnd_stby;
 	struct cs40l2x_wseq_pair dsp_cache[CS40L2X_DSP_CACHE_MAX];
 	unsigned int dsp_cache_depth;
+	int cp_dig_scale_override;
 #ifdef CONFIG_ANDROID_TIMED_OUTPUT
 	struct timed_output_dev timed_dev;
 	struct hrtimer vibe_timer;
@@ -2990,6 +2991,9 @@ static int cs40l2x_cp_dig_scale_set(struct cs40l2x_private *cs40l2x,
 	if (ret)
 		return ret;
 
+	if (cs40l2x->cp_dig_scale_override < 100)
+		dig_scale += (100 - cs40l2x->cp_dig_scale_override) * 2;
+
 	val &= ~CS40L2X_GAIN_CTRL_TRIG_MASK;
 	val |= CS40L2X_GAIN_CTRL_TRIG_MASK &
 			(dig_scale << CS40L2X_GAIN_CTRL_TRIG_SHIFT);
@@ -3038,6 +3042,54 @@ static ssize_t cs40l2x_cp_dig_scale_store(struct device *dev,
 		return -EINVAL;
 
 	mutex_lock(&cs40l2x->lock);
+
+	ret = cs40l2x_cp_dig_scale_set(cs40l2x, dig_scale);
+	if (ret)
+		goto err_mutex;
+
+	ret = count;
+
+err_mutex:
+	mutex_unlock(&cs40l2x->lock);
+
+	return ret;
+}
+
+static ssize_t cs40l2x_cp_dig_scale_override_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct cs40l2x_private *cs40l2x = cs40l2x_get_private(dev);
+	int ret;
+
+	ret = snprintf(buf, PAGE_SIZE, "%d\n", cs40l2x->cp_dig_scale_override);
+
+	return ret;
+}
+
+static ssize_t cs40l2x_cp_dig_scale_override_store(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf, size_t count)
+{
+	struct cs40l2x_private *cs40l2x = cs40l2x_get_private(dev);
+	int ret;
+	unsigned int level, dig_scale;
+
+	ret = kstrtou32(buf, 10, &level);
+	if (ret)
+		return -EINVAL;
+
+	if (level > 100)
+		level = 100;
+	else if (level < 0)
+		level = 0;
+
+	mutex_lock(&cs40l2x->lock);
+
+	cs40l2x->cp_dig_scale_override = level;
+
+	ret = cs40l2x_cp_dig_scale_get(cs40l2x, &dig_scale);
+	if (ret)
+		goto err_mutex;
 
 	ret = cs40l2x_cp_dig_scale_set(cs40l2x, dig_scale);
 	if (ret)
@@ -4003,6 +4055,8 @@ static DEVICE_ATTR(gpio4_fall_dig_scale, 0660,
 		cs40l2x_gpio4_fall_dig_scale_store);
 static DEVICE_ATTR(cp_dig_scale, 0660, cs40l2x_cp_dig_scale_show,
 		cs40l2x_cp_dig_scale_store);
+static DEVICE_ATTR(cp_dig_scale_override, 0660, cs40l2x_cp_dig_scale_override_show,
+		cs40l2x_cp_dig_scale_override_store);
 static DEVICE_ATTR(heartbeat, 0660, cs40l2x_heartbeat_show, NULL);
 static DEVICE_ATTR(num_waves, 0660, cs40l2x_num_waves_show, NULL);
 static DEVICE_ATTR(fw_rev, 0660, cs40l2x_fw_rev_show, NULL);
@@ -4068,6 +4122,7 @@ static struct attribute *cs40l2x_dev_attrs[] = {
 	&dev_attr_gpio4_rise_dig_scale.attr,
 	&dev_attr_gpio4_fall_dig_scale.attr,
 	&dev_attr_cp_dig_scale.attr,
+	&dev_attr_cp_dig_scale_override.attr,
 	&dev_attr_heartbeat.attr,
 	&dev_attr_num_waves.attr,
 	&dev_attr_fw_rev.attr,
@@ -8227,6 +8282,8 @@ static int cs40l2x_i2c_probe(struct i2c_client *i2c_client,
 	request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
 			cs40l2x->fw_desc->fw_file, dev, GFP_KERNEL, cs40l2x,
 			cs40l2x_firmware_load);
+
+	cs40l2x->cp_dig_scale_override = 100;
 
 	return 0;
 err:
