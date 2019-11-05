@@ -458,6 +458,7 @@ struct dsi_split_link_config {
  *                       true.
  * @ext_bridge_mode:     External bridge is connected.
  * @force_hs_clk_lane:   Send continuous clock to the panel.
+ * @phy_type:            DPHY/CPHY is enabled for this panel.
  * @dsi_split_link_config:  Split Link Configuration.
  */
 struct dsi_host_common_cfg {
@@ -479,6 +480,7 @@ struct dsi_host_common_cfg {
 	bool append_tx_eot;
 	bool ext_bridge_mode;
 	bool force_hs_clk_lane;
+	enum dsi_phy_type phy_type;
 	struct dsi_split_link_config split_link;
 };
 
