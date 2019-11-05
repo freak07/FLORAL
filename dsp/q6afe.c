@@ -29,6 +29,7 @@
 #include <ipc/apr_tal.h>
 #include "adsp_err.h"
 #include "q6afecal-hwdep.h"
+#include <dsp/msm-cirrus-playback.h>
 
 #define WAKELOCK_TIMEOUT	5000
 enum {
@@ -243,6 +244,7 @@ int afe_get_topology(int port_id)
 done:
 	return topology;
 }
+EXPORT_SYMBOL(afe_get_topology);
 
 /**
  * afe_set_aanc_info -
@@ -590,6 +592,14 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			av_dev_drift_afe_cb_handler(data->opcode, data->payload,
 						    data->payload_size);
 		} else {
+			if (!crus_afe_callback(data->payload,
+					       data->payload_size))
+				return 0;
+
+			if (rtac_make_afe_callback(data->payload,
+						   data->payload_size))
+				return 0;
+
 			if (sp_make_afe_callback(data->opcode, data->payload,
 						 data->payload_size))
 				return -EINVAL;
@@ -1006,6 +1016,24 @@ static int afe_apr_send_pkt(void *data, wait_queue_head_t *wait)
 	pr_debug("%s: leave %d\n", __func__, ret);
 	return ret;
 }
+
+int afe_apr_send_pkt_crus(void *data, int index, int set)
+{
+	int ret = 0;
+
+	ret = afe_q6_interface_prepare();
+	if (ret != 0) {
+		pr_err("%s: Q6 interface prepare failed ret: %d\n",
+				__func__, ret);
+		return -EINVAL;
+	}
+
+	if (set)
+		return afe_apr_send_pkt(data, &this_afe.wait[index]);
+	else /* get */
+		return afe_apr_send_pkt(data, 0);
+}
+EXPORT_SYMBOL(afe_apr_send_pkt_crus);
 
 /* This function shouldn't be called directly. Instead call q6afe_set_params. */
 static int q6afe_set_params_v2(u16 port_id, int index,
@@ -2888,6 +2916,8 @@ EXPORT_SYMBOL(afe_set_config);
 void afe_clear_config(enum afe_config_type config)
 {
 	clear_bit(config, &afe_configured_cmd);
+	if (config == AFE_CIRRUS_PORT_CONFIG)
+		msm_crus_check_set_setting(AFE_SSR);
 }
 EXPORT_SYMBOL(afe_clear_config);
 
@@ -3303,6 +3333,8 @@ int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 	uint16_t port_index = 0;
 	enum afe_mad_type mad_type = MAD_HW_NONE;
 	int ret = 0;
+	struct cal_block_data *cal_block = NULL;
+	struct audio_cal_info_afe_top *afe_top;
 
 	if (!tdm_port) {
 		pr_err("%s: Error, no configuration data\n", __func__);
@@ -3351,6 +3383,18 @@ int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 			}
 		}
 	}
+
+	/* Obtain the calibration block for debug log
+	 * Note that afe_find_cal_topo_id_by_port needs to be called before
+	 * afe_send_cal because afe_find_cal_topo_id_by_port only finds blocks
+	 * that have not been used and afe_send_cal marks the cal_block as used
+	 * after executed.
+	 *
+	 * References:
+	 *   afe_send_cal --> send_afe_cal_type --> cal_utils_mark_cal_used
+	 */
+	cal_block = afe_find_cal_topo_id_by_port(
+		this_afe.cal_data[AFE_TOPOLOGY_CAL], port_id);
 
 	/* Also send the topology id here: */
 	if (!(this_afe.afe_cal_mode[port_index] == AFE_CAL_MODE_NONE)) {
@@ -3419,6 +3463,14 @@ int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 			pr_err("%s: afe send failed %d\n", __func__, ret);
 			goto fail_cmd;
 		}
+	}
+
+	if (cal_block != NULL) {
+		afe_top = (struct audio_cal_info_afe_top *)cal_block->cal_info;
+		pr_info("%s: top_id:%x acdb_id:%d port_id:0x%x\n",
+			__func__, afe_top->topology, afe_top->acdb_id, port_id);
+	} else {
+		pr_info("%s: port_id:0x%x\n", __func__, port_id);
 	}
 
 	ret = afe_send_cmd_port_start(port_id);
@@ -4089,6 +4141,8 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 	int index = 0;
 	enum afe_mad_type mad_type;
 	uint16_t port_index;
+	struct cal_block_data *cal_block = NULL;
+	struct audio_cal_info_afe_top *afe_top;
 
 	memset(&param_hdr, 0, sizeof(param_hdr));
 	memset(&port_cfg, 0, sizeof(port_cfg));
@@ -4167,6 +4221,10 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 			}
 		}
 	}
+
+	/* Obtain the calibration block for debug log */
+	cal_block = afe_find_cal_topo_id_by_port(
+		this_afe.cal_data[AFE_TOPOLOGY_CAL], port_id);
 
 	/* Also send the topology id here: */
 	if (!(this_afe.afe_cal_mode[port_index] == AFE_CAL_MODE_NONE)) {
@@ -4428,6 +4486,15 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
+
+	if (cal_block != NULL) {
+		afe_top = (struct audio_cal_info_afe_top *)cal_block->cal_info;
+		pr_info("%s: top_id:%x acdb_id:%d port_id:0x%x\n",
+			__func__, afe_top->topology, afe_top->acdb_id, port_id);
+	} else {
+		pr_info("%s: port_id:0x%x\n", __func__, port_id);
+	}
+
 	ret = afe_send_cmd_port_start(port_id);
 
 fail_cmd:
@@ -4823,6 +4890,7 @@ int afe_get_port_index(u16 port_id)
 		return -EINVAL;
 	}
 }
+EXPORT_SYMBOL(afe_get_port_index);
 
 /**
  * afe_open -
@@ -7061,7 +7129,7 @@ int afe_close(int port_id)
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
-	pr_debug("%s: port_id = 0x%x\n", __func__, port_id);
+	pr_info("%s: port_id = 0x%x\n", __func__, port_id);
 	if ((port_id == RT_PROXY_DAI_001_RX) ||
 			(port_id == RT_PROXY_DAI_002_TX)) {
 		pr_debug("%s: before decrementing pcm_afe_instance %d\n",
