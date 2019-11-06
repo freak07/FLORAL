@@ -840,10 +840,11 @@ ucfg_update_channel_list(struct scan_start_request *req,
 	if (req->scan_req.p2p_scan_type == SCAN_P2P_SEARCH)
 		p2p_search = true;
 	/*
-	 * No need to update channels if req is single channel* ie ROC,
-	 * Preauth or a single channel scan etc.
+	 * No need to update channels if req is passive scan and single channel
+	 * ie ROC, Preauth etc
 	 */
-	if (req->scan_req.chan_list.num_chan == 1)
+	if (req->scan_req.scan_f_passive &&
+	    req->scan_req.chan_list.num_chan == 1)
 		return;
 
 	/* do this only for STA and P2P-CLI mode */
@@ -1141,8 +1142,6 @@ ucfg_scan_set_wide_band_scan(struct wlan_objmgr_pdev *pdev, bool enable)
 	}
 	pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
 	scan_obj = wlan_pdev_get_scan_obj(pdev);
-	if (!scan_obj)
-		return QDF_STATUS_E_FAILURE;
 
 	scm_debug("set wide_band_scan to %d", enable);
 	scan_obj->pdev_info[pdev_id].wide_band_scan = enable;
@@ -1161,8 +1160,6 @@ bool ucfg_scan_get_wide_band_scan(struct wlan_objmgr_pdev *pdev)
 	}
 	pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
 	scan_obj = wlan_pdev_get_scan_obj(pdev);
-	if (!scan_obj)
-		return QDF_STATUS_E_FAILURE;
 
 	return scan_obj->pdev_info[pdev_id].wide_band_scan;
 }

@@ -459,7 +459,7 @@ int wlan_cfg80211_mgmt_tx(struct wlan_objmgr_vdev *vdev,
 	mgmt_tx.len = len;
 	mgmt_tx.no_cck = (uint32_t)no_cck;
 	mgmt_tx.dont_wait_for_ack = (uint32_t)dont_wait_for_ack;
-	mgmt_tx.off_chan = (uint32_t)offchan;
+	mgmt_tx.off_chan = channel;
 	mgmt_tx.buf = buf;
 
 	return qdf_status_to_os_return(

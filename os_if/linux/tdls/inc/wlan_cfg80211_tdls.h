@@ -87,24 +87,24 @@ enum qca_wlan_vendor_tdls_trigger_mode_vdev_map {
 };
 
 /**
- * wlan_cfg80211_tdls_osif_priv_init() - API to initialize tdls os private
- * @vdev: vdev object
+ * wlan_cfg80211_tdls_priv_init() - API to initialize tdls os private
+ * @osif_priv: vdev os private
  *
  * API to initialize tdls os private
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS wlan_cfg80211_tdls_osif_priv_init(struct wlan_objmgr_vdev *vdev);
+QDF_STATUS wlan_cfg80211_tdls_priv_init(struct vdev_osif_priv *osif_priv);
 
 /**
- * wlan_cfg80211_tdls_osif_priv_deinit() - API to deinitialize tdls os private
- * @vdev: vdev object
+ * wlan_cfg80211_tdls_priv_deinit() - API to deinitialize tdls os private
+ * @osif_priv: vdev os private
  *
  * API to deinitialize tdls os private
  *
  * Return: None
  */
-void wlan_cfg80211_tdls_osif_priv_deinit(struct wlan_objmgr_vdev *vdev);
+void wlan_cfg80211_tdls_priv_deinit(struct vdev_osif_priv *osif_priv);
 
 /**
  * wlan_cfg80211_tdls_add_peer() - process cfg80211 add TDLS peer request
@@ -267,14 +267,14 @@ void hdd_notify_sta_disconnect(uint8_t session_id,
 
 /**
  * hdd_notify_teardown_tdls_links() - notify TDLS to teardown links
- * @psoc: psoc object
+ * @vdev: vdev object manager
  *
  * Notify tdls to teardown all the links, due to certain events
  * in the system
  *
  * Return: None
  */
-void hdd_notify_teardown_tdls_links(struct wlan_objmgr_psoc *psoc);
+void hdd_notify_teardown_tdls_links(struct wlan_objmgr_vdev *vdev);
 
 #else
 static inline void
@@ -307,7 +307,7 @@ int wlan_cfg80211_tdls_configure_mode(struct wlan_objmgr_vdev *vdev,
 }
 
 static inline
-void hdd_notify_teardown_tdls_links(struct wlan_objmgr_psoc *psoc)
+void hdd_notify_teardown_tdls_links(struct wlan_objmgr_vdev *vdev)
 {
 
 }

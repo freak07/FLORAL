@@ -56,13 +56,13 @@ struct radar_found_info {
 /**
  * struct dfs_acs_info - acs info, ch range
  * @acs_mode: to enable/disable acs 1/0.
- * @channel_list: channel list in acs config
- * @num_of_channel: number of channel in ACS channel list
+ * @start_ch: start channel number, ignore all channels before.
+ * @end_ch: end channel number, ignore all channels after.
  */
 struct dfs_acs_info {
 	uint8_t acs_mode;
-	uint8_t *channel_list;
-	uint8_t num_of_channel;
+	uint8_t start_ch;
+	uint8_t end_ch;
 };
 
 /**

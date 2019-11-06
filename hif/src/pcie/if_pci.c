@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1127,7 +1127,7 @@ static void hif_runtime_exit(struct device *dev)
 	pm_runtime_set_active(dev);
 }
 
-static void hif_pm_runtime_lock_timeout_fn(void *data);
+static void hif_pm_runtime_lock_timeout_fn(unsigned long data);
 
 /**
  * hif_pm_runtime_start(): start the runtime pm
@@ -1151,9 +1151,8 @@ static void hif_pm_runtime_start(struct hif_pci_softc *sc)
 		return;
 	}
 
-	qdf_timer_init(NULL, &sc->runtime_timer,
-		       hif_pm_runtime_lock_timeout_fn,
-		       sc, QDF_TIMER_TYPE_WAKE_APPS);
+	setup_timer(&sc->runtime_timer, hif_pm_runtime_lock_timeout_fn,
+			(unsigned long)sc);
 
 	HIF_INFO("%s: Enabling RUNTIME PM, Delay: %d ms", __func__,
 			ol_sc->hif_config.runtime_pm_delay);
@@ -1187,7 +1186,7 @@ static void hif_pm_runtime_stop(struct hif_pci_softc *sc)
 	qdf_atomic_set(&sc->pm_state, HIF_PM_RUNTIME_STATE_NONE);
 
 	hif_runtime_pm_debugfs_remove(sc);
-	qdf_timer_free(&sc->runtime_timer);
+	del_timer_sync(&sc->runtime_timer);
 	/* doesn't wait for penting trafic unlike cld-2.0 */
 }
 
@@ -4195,9 +4194,9 @@ static int __hif_pm_runtime_allow_suspend(struct hif_pci_softc *hif_sc,
  *
  * dummy implementation until lock acquisition is implemented.
  */
-static void hif_pm_runtime_lock_timeout_fn(void *data)
+static void hif_pm_runtime_lock_timeout_fn(unsigned long data)
 {
-	struct hif_pci_softc *hif_sc = data;
+	struct hif_pci_softc *hif_sc = (struct hif_pci_softc *)data;
 	unsigned long timer_expires;
 	struct hif_pm_runtime_lock *context, *temp;
 
@@ -4284,7 +4283,7 @@ int hif_pm_runtime_allow_suspend(struct hif_opaque_softc *ol_sc,
 	 */
 	if (hif_sc->prevent_suspend_cnt == 0 &&
 			hif_sc->runtime_timer_expires > 0) {
-		qdf_timer_free(&hif_sc->runtime_timer);
+		del_timer(&hif_sc->runtime_timer);
 		hif_sc->runtime_timer_expires = 0;
 	}
 
@@ -4362,7 +4361,7 @@ int hif_pm_runtime_prevent_suspend_timeout(struct hif_opaque_softc *ol_sc,
 	 * timeout
 	 */
 	if (time_after(expires, hif_sc->runtime_timer_expires)) {
-		qdf_timer_mod(&hif_sc->runtime_timer, delay);
+		mod_timer(&hif_sc->runtime_timer, expires);
 		hif_sc->runtime_timer_expires = expires;
 	}
 

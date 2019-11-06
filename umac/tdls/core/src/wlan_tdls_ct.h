@@ -161,11 +161,11 @@ bool tdls_is_vdev_authenticated(struct wlan_objmgr_vdev *vdev);
 
 /**
  * tdls_teardown_connections() -teardown and delete all the tdls peers
- * @psoc: psoc oobject
+ * @vdev: vdev oobject
  *
  * Return: true or false
  */
-void tdls_teardown_connections(struct wlan_objmgr_psoc *psoc);
+void tdls_teardown_connections(struct wlan_objmgr_vdev *vdev);
 
 /**
  * tdls_disable_offchan_and_teardown_links - Disable offchannel

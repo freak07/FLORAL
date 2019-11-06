@@ -154,7 +154,7 @@ static void nan_req_activated(void *in_req, uint32_t cmdtype)
 }
 
 static QDF_STATUS nan_serialized_cb(struct wlan_serialization_command *ser_cmd,
-				    enum wlan_serialization_cb_reason reason)
+				enum wlan_serialization_cb_reason reason)
 {
 	void *req;
 
