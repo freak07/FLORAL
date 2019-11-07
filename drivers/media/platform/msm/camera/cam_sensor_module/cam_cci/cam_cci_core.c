@@ -1692,10 +1692,8 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 	struct cam_cci_ctrl *cci_ctrl)
 {
 	int32_t rc = 0;
-	struct cci_device *cci_dev = v4l2_get_subdevdata(sd);
 
 	CAM_DBG(CAM_CCI, "cmd %d", cci_ctrl->cmd);
-	mutex_lock(&cci_dev->mutex);
 	switch (cci_ctrl->cmd) {
 	case MSM_CCI_INIT:
 		rc = cam_cci_init(sd, cci_ctrl);
@@ -1723,7 +1721,6 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 	default:
 		rc = -ENOIOCTLCMD;
 	}
-	mutex_unlock(&cci_dev->mutex);
 
 	cci_ctrl->status = rc;
 
