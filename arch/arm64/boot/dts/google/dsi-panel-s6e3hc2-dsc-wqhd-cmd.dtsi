@@ -49,7 +49,7 @@
 		qcom,bl-update-flag = "delay_until_first_frame";
 
 		qcom,mdss-dsi-reset-sequence = <1 10>, <0 1>, <1 5>;
-		qcom,mdss-dsi-lp11-init;
+		qcom,ulps-enabled;
 		qcom,mdss-dsi-init-delay-us = <1000>;
 
 		qcom,mdss-pan-physical-width-dimension  = <68>;
@@ -152,6 +152,7 @@
 
 				qcom,panel-roi-alignment = <720 40 720 40 720 40>;
 				qcom,partial-update-enabled = "single_roi";
+				qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
 			};
 			timing@1 {
 				qcom,mdss-dsi-panel-framerate = <90>;
@@ -249,6 +250,7 @@
 
 				qcom,panel-roi-alignment = <720 40 720 40 720 40>;
 				qcom,partial-update-enabled = "single_roi";
+				qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
 			};
 		};
 
