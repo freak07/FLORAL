@@ -2811,9 +2811,11 @@ static int __init msm_geni_serial_init(void)
 	}
 #endif
 
+#ifdef SERIAL_CONSOLE
 	ret = console_register(&msm_geni_console_driver);
 	if (ret)
 		return ret;
+#endif
 
 	ret = uart_register_driver(&msm_geni_serial_hs_driver);
 	if (ret) {
