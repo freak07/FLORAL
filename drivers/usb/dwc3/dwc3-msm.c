@@ -3628,13 +3628,12 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	}
 
 	/*
-	 * Create an ordered freezable workqueue for sm_work so that it gets
-	 * scheduled only after pm_resume has happened completely. This helps
-	 * in avoiding race conditions between xhci_plat_resume and
-	 * xhci_runtime_resume and also between hcd disconnect and xhci_resume.
+	 * Create freezable workqueue for sm_work so that it gets scheduled only
+	 * after pm_resume has happened completely. This helps in avoiding race
+	 * conditions between xhci_plat_resume and xhci_runtime_resume; and also
+	 * between hcd disconnect and xhci_resume.
 	 */
-	mdwc->sm_usb_wq = alloc_ordered_workqueue("k_sm_usb",
-						WQ_FREEZABLE | WQ_MEM_RECLAIM);
+	mdwc->sm_usb_wq = create_freezable_workqueue("k_sm_usb");
 	if (!mdwc->sm_usb_wq) {
 		destroy_workqueue(mdwc->dwc3_wq);
 		return -ENOMEM;
