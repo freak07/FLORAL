@@ -40,7 +40,6 @@
 #include <asm/suspend.h>
 #include <asm/sysreg.h>
 #include <asm/virt.h>
-#include <soc/qcom/boot_stats.h>
 
 /*
  * Hibernate core relies on this value being 0 on resume, and marks it
@@ -339,7 +338,6 @@ int swsusp_arch_suspend(void)
 	}
 
 	local_dbg_restore(flags);
-	place_marker("PM: Kernel restore start!");
 
 	return ret;
 }

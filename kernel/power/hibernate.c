@@ -33,7 +33,6 @@
 #include <linux/genhd.h>
 #include <linux/ktime.h>
 #include <trace/events/power.h>
-#include <soc/qcom/boot_stats.h>
 
 #include "power.h"
 
@@ -750,7 +749,6 @@ int hibernate(void)
 		in_suspend = 0;
 		pm_restore_gfp_mask();
 	} else {
-		place_marker("PM: Image restored!");
 		pm_pr_dbg("Image restored successfully.\n");
 	}
 
@@ -774,7 +772,6 @@ int hibernate(void)
 	atomic_inc(&snapshot_device_available);
  Unlock:
 	unlock_system_sleep();
-	place_marker("PM: Hibernation Exit!");
 	pr_info("hibernation exit\n");
 
 	return error;
@@ -897,7 +894,6 @@ static int software_resume(void)
 		goto Close_Finish;
 	error = load_image_and_restore();
 	thaw_processes();
-	place_marker("PM: Thaw completed!");
  Finish:
 	__pm_notifier_call_chain(PM_POST_RESTORE, nr_calls, NULL);
 	pm_restore_console();
