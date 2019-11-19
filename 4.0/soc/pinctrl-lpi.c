@@ -23,6 +23,7 @@
 #include "pinctrl-utils.h"
 
 #define LPI_AUTO_SUSPEND_DELAY           100 /* delay in msec */
+#define LPI_AUTO_SUSPEND_DELAY_ERROR     1   /* delay in msec */
 
 #define LPI_ADDRESS_SIZE                 0x20000
 #define LPI_SLEW_ADDRESS_SIZE            0x1000
@@ -85,6 +86,7 @@ enum lpi_gpio_func_index {
  * @base: stores one of gpio_base or slew_base at a given time.
  * @gpio_base: Address base of LPI GPIO PAD.
  * @slew_base: Address base of LPI SLEW PAD.
+ * @lpi_slew_reg: Address for lpi slew reg.
  * @pullup: Constant current which flow through GPIO output buffer.
  * @strength: No, Low, Medium, High
  * @function: See lpi_gpio_functions[]
@@ -98,6 +100,7 @@ struct lpi_gpio_pad {
 	char __iomem    *base;
 	char __iomem    *gpio_base;
 	char __iomem    *slew_base;
+	char __iomem    *lpi_slew_reg;
 	unsigned int    pullup;
 	unsigned int    strength;
 	unsigned int    function;
@@ -109,6 +112,7 @@ struct lpi_gpio_state {
 	struct gpio_chip     chip;
 	char __iomem        *base;
 	struct clk          *lpass_core_hw_vote;
+	struct clk          *lpass_audio_hw_vote;
 	struct mutex         slew_access_lock;
 	bool core_hw_vote_status;
 	struct mutex        core_hw_vote_lock;
@@ -125,6 +129,7 @@ static const char *const lpi_gpio_groups[] = {
 #define LPI_TLMM_MAX_PINS 100
 static u32 lpi_offset[LPI_TLMM_MAX_PINS];
 static u32 lpi_slew_offset[LPI_TLMM_MAX_PINS];
+static u32 lpi_slew_base[LPI_TLMM_MAX_PINS];
 
 static const char *const lpi_gpio_functions[] = {
 	[LPI_GPIO_FUNC_INDEX_GPIO]	= LPI_GPIO_FUNC_GPIO,
@@ -148,6 +153,7 @@ static int lpi_gpio_read(struct lpi_gpio_pad *pad, unsigned int addr)
 		return 0;
 	}
 	pm_runtime_get_sync(lpi_dev);
+	mutex_lock(&state->core_hw_vote_lock);
 	if (!state->core_hw_vote_status) {
 		pr_err_ratelimited("%s: core hw vote clk is not enabled\n",
 				__func__);
@@ -160,6 +166,7 @@ static int lpi_gpio_read(struct lpi_gpio_pad *pad, unsigned int addr)
 		pr_err("%s: read 0x%x failed\n", __func__, addr);
 
 err:
+	mutex_unlock(&state->core_hw_vote_lock);
 	pm_runtime_mark_last_busy(lpi_dev);
 	pm_runtime_put_autosuspend(lpi_dev);
 	return ret;
@@ -177,6 +184,7 @@ static int lpi_gpio_write(struct lpi_gpio_pad *pad, unsigned int addr,
 		return 0;
 	}
 	pm_runtime_get_sync(lpi_dev);
+	mutex_lock(&state->core_hw_vote_lock);
 	if (!state->core_hw_vote_status) {
 		pr_err_ratelimited("%s: core hw vote clk is not enabled\n",
 				__func__);
@@ -186,6 +194,7 @@ static int lpi_gpio_write(struct lpi_gpio_pad *pad, unsigned int addr,
 
 	iowrite32(val, pad->base + pad->offset + addr);
 err:
+	mutex_unlock(&state->core_hw_vote_lock);
 	pm_runtime_mark_last_busy(lpi_dev);
 	pm_runtime_put_autosuspend(lpi_dev);
 	return ret;
@@ -361,6 +370,12 @@ static int lpi_config_set(struct pinctrl_dev *pctldev, unsigned int pin,
 			pad->base = pad->slew_base;
 			pad->offset = 0;
 			mutex_lock(&state->slew_access_lock);
+			if (pad->lpi_slew_reg != NULL) {
+				pad->base = pad->lpi_slew_reg;
+				lpi_gpio_write(pad, LPI_SLEW_REG_VAL_CTL, arg);
+				pad->base = pad->slew_base;
+				goto slew_exit;
+			}
 			val = lpi_gpio_read(pad, LPI_SLEW_REG_VAL_CTL);
 			pad->offset = pad->slew_offset;
 			for (i = 0; i < LPI_SLEW_BITS_SIZE; i++) {
@@ -373,6 +388,7 @@ static int lpi_config_set(struct pinctrl_dev *pctldev, unsigned int pin,
 			}
 			pad->offset = 0;
 			lpi_gpio_write(pad, LPI_SLEW_REG_VAL_CTL, val);
+slew_exit:
 			mutex_unlock(&state->slew_access_lock);
 			break;
 		default:
@@ -477,6 +493,39 @@ static int lpi_notifier_service_cb(struct notifier_block *this,
 	return NOTIFY_OK;
 }
 
+int lpi_pinctrl_suspend(struct device *dev)
+{
+	int ret = 0;
+
+	dev_dbg(dev, "%s: system suspend\n", __func__);
+
+	if ((!pm_runtime_enabled(dev) || !pm_runtime_suspended(dev))) {
+		ret = lpi_pinctrl_runtime_suspend(dev);
+		if (!ret) {
+			/*
+			 * Synchronize runtime-pm and system-pm states:
+			 * At this point, we are already suspended. If
+			 * runtime-pm still thinks its active, then
+			 * make sure its status is in sync with HW
+			 * status. The three below calls let the
+			 * runtime-pm know that we are suspended
+			 * already without re-invoking the suspend
+			 * callback
+			 */
+			pm_runtime_disable(dev);
+			pm_runtime_set_suspended(dev);
+			pm_runtime_enable(dev);
+		}
+	}
+
+	return ret;
+}
+
+int lpi_pinctrl_resume(struct device *dev)
+{
+	return 0;
+}
+
 static struct notifier_block service_nb = {
 	.notifier_call  = lpi_notifier_service_cb,
 	.priority = -INT_MAX,
@@ -484,11 +533,8 @@ static struct notifier_block service_nb = {
 
 static void lpi_pinctrl_ssr_disable(struct device *dev, void *data)
 {
-	struct lpi_gpio_state *state = dev_get_drvdata(dev);
-
 	lpi_dev_up = false;
-	if (state->core_hw_vote_status)
-		lpi_pinctrl_runtime_suspend(dev);
+	lpi_pinctrl_suspend(dev);
 }
 
 static const struct snd_event_ops lpi_pinctrl_ssr_ops = {
@@ -581,6 +627,7 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 	char __iomem *slew_base;
 	u32 reg, slew_reg;
 	struct clk *lpass_core_hw_vote = NULL;
+	struct clk *lpass_audio_hw_vote = NULL;
 
 	ret = of_property_read_u32(dev->of_node, "reg", &reg);
 	if (ret < 0) {
@@ -608,6 +655,16 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 		for (i = 0; i < npins; i++)
 			lpi_slew_offset[i] = LPI_SLEW_OFFSET_INVALID;
 		dev_dbg(dev, "%s: error in reading lpi slew offset table: %d\n",
+			__func__, ret);
+	}
+
+	ret = of_property_read_u32_array(dev->of_node,
+					 "qcom,lpi-slew-base-tbl",
+					 lpi_slew_base, npins);
+	if (ret < 0) {
+		for (i = 0; i < npins; i++)
+			lpi_slew_base[i] = LPI_SLEW_OFFSET_INVALID;
+		dev_dbg(dev, "%s: error in reading lpi slew table: %d\n",
 			__func__, ret);
 	}
 
@@ -677,6 +734,11 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 		pad->gpio_offset = lpi_offset[i];
 		pad->slew_offset = lpi_slew_offset[i];
 		pad->offset = pad->gpio_offset;
+		pad->lpi_slew_reg = NULL;
+		if ((lpi_slew_base[i] != LPI_SLEW_OFFSET_INVALID) &&
+		     lpi_slew_base[i])
+			pad->lpi_slew_reg = devm_ioremap(dev,
+                                                lpi_slew_base[i], 0x4);
 	}
 
 	state->chip = lpi_gpio_template;
@@ -736,6 +798,17 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 	}
 	state->lpass_core_hw_vote = lpass_core_hw_vote;
 
+	/* Register LPASS audio hw vote */
+	lpass_audio_hw_vote = devm_clk_get(&pdev->dev, "lpass_audio_hw_vote");
+	if (IS_ERR(lpass_audio_hw_vote)) {
+		ret = PTR_ERR(lpass_audio_hw_vote);
+		dev_dbg(&pdev->dev, "%s: clk get %s failed %d\n",
+			__func__, "lpass_audio_hw_vote", ret);
+		lpass_audio_hw_vote = NULL;
+		ret = 0;
+	}
+	state->lpass_audio_hw_vote = lpass_audio_hw_vote;
+
 	state->core_hw_vote_status = false;
 	pm_runtime_set_autosuspend_delay(&pdev->dev, LPI_AUTO_SUSPEND_DELAY);
 	pm_runtime_use_autosuspend(&pdev->dev);
@@ -782,21 +855,32 @@ int lpi_pinctrl_runtime_resume(struct device *dev)
 {
 	struct lpi_gpio_state *state = dev_get_drvdata(dev);
 	int ret = 0;
+	struct clk *hw_vote = state->lpass_core_hw_vote;
 
 	if (state->lpass_core_hw_vote == NULL) {
 		dev_dbg(dev, "%s: Invalid core hw node\n", __func__);
-		return 0;
+		if (state->lpass_audio_hw_vote == NULL) {
+			dev_dbg(dev, "%s: Invalid audio hw node\n", __func__);
+			return 0;
+		}
+		hw_vote = state->lpass_audio_hw_vote;
 	}
 
 	mutex_lock(&state->core_hw_vote_lock);
-	ret = clk_prepare_enable(state->lpass_core_hw_vote);
-	if (ret < 0)
+	ret = clk_prepare_enable(hw_vote);
+	if (ret < 0) {
+		pm_runtime_set_autosuspend_delay(dev,
+						 LPI_AUTO_SUSPEND_DELAY_ERROR);
 		dev_err(dev, "%s:lpass core hw island enable failed\n",
 			__func__);
-	else
+		goto exit;
+	} else {
 		state->core_hw_vote_status = true;
+	}
 
 	pm_runtime_set_autosuspend_delay(dev, LPI_AUTO_SUSPEND_DELAY);
+
+exit:
 	mutex_unlock(&state->core_hw_vote_lock);
 	return 0;
 }
@@ -804,51 +888,23 @@ int lpi_pinctrl_runtime_resume(struct device *dev)
 int lpi_pinctrl_runtime_suspend(struct device *dev)
 {
 	struct lpi_gpio_state *state = dev_get_drvdata(dev);
+	struct clk *hw_vote = state->lpass_core_hw_vote;
 
 	if (state->lpass_core_hw_vote == NULL) {
 		dev_dbg(dev, "%s: Invalid core hw node\n", __func__);
-		return 0;
+		if (state->lpass_audio_hw_vote == NULL) {
+			dev_dbg(dev, "%s: Invalid audio hw node\n", __func__);
+			return 0;
+		}
+		hw_vote = state->lpass_audio_hw_vote;
 	}
 
 	mutex_lock(&state->core_hw_vote_lock);
 	if (state->core_hw_vote_status) {
-		clk_disable_unprepare(state->lpass_core_hw_vote);
+		clk_disable_unprepare(hw_vote);
 		state->core_hw_vote_status = false;
 	}
 	mutex_unlock(&state->core_hw_vote_lock);
-	return 0;
-}
-
-int lpi_pinctrl_suspend(struct device *dev)
-{
-	int ret = 0;
-
-	dev_dbg(dev, "%s: system suspend\n", __func__);
-
-	if ((!pm_runtime_enabled(dev) || !pm_runtime_suspended(dev))) {
-		ret = lpi_pinctrl_runtime_suspend(dev);
-		if (!ret) {
-			/*
-			 * Synchronize runtime-pm and system-pm states:
-			 * At this point, we are already suspended. If
-			 * runtime-pm still thinks its active, then
-			 * make sure its status is in sync with HW
-			 * status. The three below calls let the
-			 * runtime-pm know that we are suspended
-			 * already without re-invoking the suspend
-			 * callback
-			 */
-			pm_runtime_disable(dev);
-			pm_runtime_set_suspended(dev);
-			pm_runtime_enable(dev);
-		}
-	}
-
-	return ret;
-}
-
-int lpi_pinctrl_resume(struct device *dev)
-{
 	return 0;
 }
 

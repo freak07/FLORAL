@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -52,7 +52,7 @@
 	mutex_unlock(lock);			\
 }
 
-#define WCD_CPE_STATE_MAX_LEN 11
+#define WCD_CPE_STATE_MAX_LEN 32
 #define CPE_OFFLINE_WAIT_TIMEOUT (2 * HZ)
 #define CPE_READY_WAIT_TIMEOUT (3 * HZ)
 #define WCD_CPE_SYSFS_DIR_MAX_LENGTH 32
@@ -2896,6 +2896,7 @@ static int wcd_cpe_send_param_snd_model(struct wcd_cpe_core *core,
 	struct cmi_obm_msg obm_msg;
 	struct cpe_param_data *param_d;
 
+	memset(&obm_msg, 0, sizeof(obm_msg));
 
 	ret = fill_cmi_header(&obm_msg.hdr, session->id,
 			CMI_CPE_LSM_SERVICE_ID, 0, 20,

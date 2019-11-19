@@ -798,6 +798,15 @@ static void wcd937x_mbhc_moisture_polling_ctrl(struct wcd_mbhc *mbhc,
 			0x04, (enable << 2));
 }
 
+static void wcd937x_mbhc_bcs_enable(struct wcd_mbhc *mbhc,
+						  bool bcs_enable)
+{
+	if (bcs_enable)
+		wcd937x_disable_bcs_before_slow_insert(mbhc->codec, false);
+	else
+		wcd937x_disable_bcs_before_slow_insert(mbhc->codec, true);
+}
+
 static const struct wcd_mbhc_cb mbhc_cb = {
 	.request_irq = wcd937x_mbhc_request_irq,
 	.irq_control = wcd937x_mbhc_irq_control,
@@ -822,6 +831,7 @@ static const struct wcd_mbhc_cb mbhc_cb = {
 	.mbhc_get_moisture_status = wcd937x_mbhc_get_moisture_status,
 	.mbhc_moisture_polling_ctrl = wcd937x_mbhc_moisture_polling_ctrl,
 	.mbhc_moisture_detect_en = wcd937x_mbhc_moisture_detect_en,
+	.bcs_enable = wcd937x_mbhc_bcs_enable,
 };
 
 static int wcd937x_get_hph_type(struct snd_kcontrol *kcontrol,
@@ -1041,6 +1051,7 @@ int wcd937x_mbhc_init(struct wcd937x_mbhc **mbhc, struct snd_soc_codec *codec,
 {
 	struct wcd937x_mbhc *wcd937x_mbhc = NULL;
 	struct wcd_mbhc *wcd_mbhc = NULL;
+	struct wcd937x_pdata *pdata;
 	int ret = 0;
 
 	if (!codec) {
@@ -1065,6 +1076,15 @@ int wcd937x_mbhc_init(struct wcd937x_mbhc **mbhc, struct snd_soc_codec *codec,
 
 	/* Setting default mbhc detection logic to ADC */
 	wcd_mbhc->mbhc_detection_logic = WCD_DETECTION_ADC;
+
+	pdata = dev_get_platdata(codec->dev);
+	if (!pdata) {
+		dev_err(codec->dev, "%s: pdata pointer is NULL\n",
+			__func__);
+		ret = -EINVAL;
+		goto err;
+	}
+	wcd_mbhc->micb_mv = pdata->micbias.micb2_mv;
 
 	ret = wcd_mbhc_init(wcd_mbhc, codec, &mbhc_cb,
 				&intr_ids, wcd_mbhc_registers,

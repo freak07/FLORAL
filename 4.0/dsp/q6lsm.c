@@ -104,8 +104,7 @@ static int q6lsm_get_session_id_from_lsm_client(struct lsm_client *client)
 		if (lsm_session[n] == client)
 			return n;
 	}
-	pr_err("%s: cannot find matching lsm client. client = %pa\n",
-		__func__, client);
+	pr_err("%s: cannot find matching lsm client.\n", __func__);
 	return LSM_INVALID_SESSION_ID;
 }
 
@@ -285,12 +284,15 @@ static void *q6lsm_mmap_apr_reg(void)
 
 static int q6lsm_mmap_apr_dereg(void)
 {
-	if (atomic_read(&lsm_common.apr_users) <= 0) {
-		WARN("%s: APR common port already closed\n", __func__);
-	} else {
-		if (atomic_dec_return(&lsm_common.apr_users) == 0) {
-			apr_deregister(lsm_common.apr);
-			pr_debug("%s: APR De-Register common port\n", __func__);
+	if (lsm_common.apr) {
+		if (atomic_read(&lsm_common.apr_users) <= 0) {
+			WARN("%s: APR common port already closed\n", __func__);
+		} else {
+			if (atomic_dec_return(&lsm_common.apr_users) == 0) {
+				apr_deregister(lsm_common.apr);
+				pr_debug("%s: APR De-Register common port\n",
+					__func__);
+			}
 		}
 	}
 	return 0;
@@ -372,11 +374,11 @@ void q6lsm_client_free(struct lsm_client *client)
 		pr_err("%s: Invalid Session %d\n", __func__, client->session);
 		return;
 	}
-	mutex_lock(&session_lock);
 	apr_deregister(client->apr);
-	client->mmap_apr = NULL;
-	q6lsm_session_free(client);
 	q6lsm_mmap_apr_dereg();
+	client->mmap_apr = NULL;
+	mutex_lock(&session_lock);
+	q6lsm_session_free(client);
 	mutex_destroy(&client->cmd_lock);
 	kfree(client);
 	client = NULL;
@@ -446,6 +448,8 @@ static int q6lsm_apr_send_pkt(struct lsm_client *client, void *handle,
 	if (wait)
 		mutex_unlock(&lsm_common.apr_lock);
 
+	if (mmap_p && *mmap_p == 0)
+		ret = -ENOMEM;
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;
 }

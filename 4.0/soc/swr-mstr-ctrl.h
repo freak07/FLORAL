@@ -11,6 +11,18 @@
 #include <soc/qcom/pm.h>
 #include <soc/swr-common.h>
 
+#ifdef CONFIG_DEBUG_FS
+#include <linux/debugfs.h>
+#include <linux/uaccess.h>
+
+#define SWR_MSTR_MAX_REG_ADDR	0x1740
+#define SWR_MSTR_START_REG_ADDR	0x00
+#define SWR_MSTR_MAX_BUF_LEN     32
+#define BYTES_PER_LINE          12
+#define SWR_MSTR_RD_BUF_LEN      8
+#define SWR_MSTR_WR_BUF_LEN      32
+#endif
+
 #define SWR_ROW_48		0
 #define SWR_ROW_50		1
 #define SWR_ROW_64		2
@@ -26,6 +38,7 @@
 #define SWRM_VERSION_1_3 0x01040000
 #define SWRM_VERSION_1_5 0x01050000
 #define SWRM_VERSION_1_5_1 0x01050001
+#define SWRM_VERSION_1_6   0x01060000
 
 #define SWR_MAX_CH_PER_PORT 8
 
@@ -91,6 +104,7 @@ struct swr_ctrl_platform_data {
 	int (*write)(void *handle, int reg, int val);
 	int (*bulk_write)(void *handle, u32 *reg, u32 *val, size_t len);
 	int (*clk)(void *handle, bool enable);
+	int (*core_vote)(void *handle, bool enable);
 	int (*reg_irq)(void *handle, irqreturn_t(*irq_handler)(int irq,
 			void *data), void *swr_handle, int type);
 };
@@ -112,6 +126,7 @@ struct swr_mstr_ctrl {
 	struct mutex pm_lock;
 	u32 swrm_base_reg;
 	char __iomem *swrm_dig_base;
+	char __iomem *swrm_hctl_reg;
 	u8 rcmd_id;
 	u8 wcmd_id;
 	u32 master_id;
@@ -120,12 +135,14 @@ struct swr_mstr_ctrl {
 	int (*write)(void *handle, int reg, int val);
 	int (*bulk_write)(void *handle, u32 *reg, u32 *val, size_t len);
 	int (*clk)(void *handle, bool enable);
+	int (*core_vote)(void *handle, bool enable);
 	int (*reg_irq)(void *handle, irqreturn_t(*irq_handler)(int irq,
 			void *data), void *swr_handle, int type);
 	int irq;
 	int wake_irq;
 	int version;
 	int mclk_freq;
+	int bus_clk;
 	u32 num_dev;
 	int slave_status;
 	struct swrm_mports mport_cfg[SWR_MAX_MSTR_PORT_NUM];
@@ -160,6 +177,13 @@ struct swr_mstr_ctrl {
 	u32 swr_irq_wakeup_capable;
 	int hw_core_clk_en;
 	int aud_core_clk_en;
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *debugfs_swrm_dent;
+	struct dentry *debugfs_peek;
+	struct dentry *debugfs_poke;
+	struct dentry *debugfs_reg_dump;
+	unsigned int read_data;
+#endif
 };
 
 #endif /* _SWR_WCD_CTRL_H */
