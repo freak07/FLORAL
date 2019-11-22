@@ -16,8 +16,7 @@ struct mm_event_task;
 	{ MM_MAJ_FAULT, "maj_flt" },                                    \
 	{ MM_COMPACTION, "compaction" },                                \
 	{ MM_RECLAIM, "reclaim" },					\
-	{ MM_SWP_FAULT, "swp_flt" },					\
-	{ MM_KERN_ALLOC, "kern_alloc" })
+	{ MM_SWP_FAULT, "swp_flt" })
 
 TRACE_EVENT(mm_event_record,
 
