@@ -8,12 +8,10 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/mm_event.h>
 /* msec */
-static unsigned long period_ms __read_mostly = 500;
-static unsigned long vmstat_period_ms __read_mostly = 1000;
-static unsigned long vmstat_next_period;
-
+static unsigned long period_ms = 500;
+static unsigned long vmstat_period_ms = 1000;
 static DEFINE_SPINLOCK(vmstat_lock);
-static DEFINE_RWLOCK(period_lock);
+static unsigned long vmstat_next_period;
 
 void mm_event_task_init(struct task_struct *tsk)
 {
@@ -26,12 +24,12 @@ static void record_vmstat(void)
 	int cpu;
 	struct mm_event_vmstat vmstat;
 
-	if (time_is_after_jiffies(vmstat_next_period))
+	if (!time_is_before_eq_jiffies(vmstat_next_period))
 		return;
 
 	/* Need double check under the lock */
 	spin_lock(&vmstat_lock);
-	if (time_is_after_jiffies(vmstat_next_period)) {
+	if (!time_is_before_eq_jiffies(vmstat_next_period)) {
 		spin_unlock(&vmstat_lock);
 		return;
 	}
@@ -77,28 +75,23 @@ static void record_vmstat(void)
 
 static void record_stat(void)
 {
-	int i;
-	bool need_vmstat = false;
+	if (time_is_before_eq_jiffies(current->next_period)) {
+		int i;
+		bool need_vmstat = false;
 
-	if (time_is_after_jiffies(current->next_period))
-		return;
-
-	read_lock(&period_lock);
-	current->next_period = jiffies + msecs_to_jiffies(period_ms);
-	read_unlock(&period_lock);
-
-	for (i = 0; i < MM_TYPE_NUM; i++) {
-		if (current->mm_event[i].count == 0)
-			continue;
-		if (i == MM_COMPACTION || i == MM_RECLAIM)
-			need_vmstat = true;
-		trace_mm_event_record(i, &current->mm_event[i]);
-		memset(&current->mm_event[i], 0,
-				sizeof(struct mm_event_task));
+		for (i = 0; i < MM_TYPE_NUM; i++) {
+			if (current->mm_event[i].count == 0)
+				continue;
+			if (i == MM_COMPACTION || i == MM_RECLAIM)
+				need_vmstat = true;
+			trace_mm_event_record(i, &current->mm_event[i]);
+			memset(&current->mm_event[i], 0,
+					sizeof(struct mm_event_task));
+		}
+		current->next_period = jiffies + msecs_to_jiffies(period_ms);
+		if (need_vmstat)
+			record_vmstat();
 	}
-
-	if (need_vmstat)
-		record_vmstat();
 }
 
 void mm_event_start(ktime_t *time)
@@ -130,18 +123,13 @@ static int period_ms_set(void *data, u64 val)
 	if (val < 1 || val > ULONG_MAX)
 		return -EINVAL;
 
-	write_lock(&period_lock);
 	period_ms = (unsigned long)val;
-	write_unlock(&period_lock);
 	return 0;
 }
 
 static int period_ms_get(void *data, u64 *val)
 {
-	read_lock(&period_lock);
 	*val = period_ms;
-	read_unlock(&period_lock);
-
 	return 0;
 }
 
@@ -150,17 +138,13 @@ static int vmstat_period_ms_set(void *data, u64 val)
 	if (val < 1 || val > ULONG_MAX)
 		return -EINVAL;
 
-	spin_lock(&vmstat_lock);
 	vmstat_period_ms = (unsigned long)val;
-	spin_unlock(&vmstat_lock);
 	return 0;
 }
 
 static int vmstat_period_ms_get(void *data, u64 *val)
 {
-	spin_lock(&vmstat_lock);
 	*val = vmstat_period_ms;
-	spin_unlock(&vmstat_lock);
 	return 0;
 }
 
