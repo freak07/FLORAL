@@ -421,10 +421,6 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 	int fault, sig, code, major = 0;
 	unsigned long vm_flags = VM_READ | VM_WRITE;
 	unsigned int mm_flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
-	bool was_major = false;
-	ktime_t event_ts;
-
-	mm_event_start(&event_ts);
 
 	if (notify_page_fault(regs, esr))
 		return 0;
@@ -525,7 +521,6 @@ retry:
 		 * that point.
 		 */
 		if (major) {
-			was_major = true;
 			tsk->maj_flt++;
 			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1, regs,
 				      addr);
@@ -534,11 +529,6 @@ retry:
 			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN, 1, regs,
 				      addr);
 		}
-
-		if (was_major)
-			mm_event_end(MM_MAJ_FAULT, event_ts);
-		else
-			mm_event_end(MM_MIN_FAULT, event_ts);
 
 		return 0;
 	}
