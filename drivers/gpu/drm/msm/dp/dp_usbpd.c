@@ -244,8 +244,7 @@ static void dp_usbpd_send_event(struct dp_usbpd_private *pd,
 	}
 }
 
-static void dp_usbpd_connect_cb(struct usbpd_svid_handler *hdlr,
-		bool peer_usb_comm)
+static void dp_usbpd_connect_cb(struct usbpd_svid_handler *hdlr)
 {
 	struct dp_usbpd_private *pd;
 
@@ -255,8 +254,7 @@ static void dp_usbpd_connect_cb(struct usbpd_svid_handler *hdlr,
 		return;
 	}
 
-	pr_debug("peer_usb_comm: %d\n", peer_usb_comm);
-	pd->dp_usbpd.base.peer_usb_comm = peer_usb_comm;
+	pr_debug("\n");
 	dp_usbpd_send_event(pd, DP_USBPD_EVT_DISCOVER);
 }
 
