@@ -19,7 +19,6 @@
 #include <linux/input.h>
 #include <linux/io.h>
 #include <soc/qcom/scm.h>
-#include <soc/qcom/boot_stats.h>
 
 #include <linux/msm-bus-board.h>
 #include <linux/msm-bus.h>
@@ -1332,8 +1331,6 @@ static int adreno_probe(struct platform_device *pdev)
 	struct adreno_device *adreno_dev;
 	int status;
 
-	place_marker("M - DRIVER GPU Init");
-
 	adreno_dev = adreno_get_dev(pdev);
 
 	if (adreno_dev == NULL) {
@@ -1478,8 +1475,6 @@ static int adreno_probe(struct platform_device *pdev)
 		}
 	}
 #endif
-
-	place_marker("M - DRIVER GPU Ready");
 out:
 	if (status) {
 		adreno_ringbuffer_close(adreno_dev);
@@ -1693,8 +1688,6 @@ static int adreno_init(struct kgsl_device *device)
 	if (test_bit(ADRENO_DEVICE_INITIALIZED, &adreno_dev->priv))
 		return 0;
 
-	place_marker("M - DRIVER ADRENO Init");
-
 	/*
 	 * Either the microcode read failed because the usermodehelper isn't
 	 * available or the microcode was corrupted. Fail the init and force
@@ -1767,8 +1760,6 @@ static int adreno_init(struct kgsl_device *device)
 		}
 
 	}
-
-	place_marker("M - DRIVER ADRENO Ready");
 
 	return 0;
 }
