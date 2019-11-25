@@ -397,7 +397,7 @@ static void sde_hw_intf_bind_pingpong_blk(
 	if (enable)
 		mux_cfg |= (pp - PINGPONG_0) & 0x7;
 	else
-		mux_cfg = 0xf000f;
+		mux_cfg |= 0xf;
 
 	if (intf->cfg.split_link_en)
 		mux_cfg = 0x60000;
