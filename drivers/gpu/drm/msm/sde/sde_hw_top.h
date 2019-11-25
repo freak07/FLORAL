@@ -46,7 +46,6 @@ struct traffic_shaper_cfg {
  * @split_flush_en: Allows both the paths to be flushed when master path is
  *              flushed
  * @split_link_en:  Check if split link is enabled
- * @pp_slave_intf: Check if this is pp slave interface
  */
 struct split_pipe_cfg {
 	bool en;
@@ -56,7 +55,6 @@ struct split_pipe_cfg {
 	u32 pp_split_index;
 	bool split_flush_en;
 	bool split_link_en;
-	bool pp_slave_intf;
 };
 
 /**
