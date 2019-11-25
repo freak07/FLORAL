@@ -970,6 +970,7 @@ struct dwc3_scratchpad_array {
  * 	1	- -3.5dB de-emphasis
  * 	2	- No de-emphasis
  * 	3	- Reserved
+ * @dis_metastability_quirk: set to disable metastability quirk.
  * @err_evt_seen: previous event in queue was erratic error
  * @usb3_u1u2_disable: if true, disable U1U2 low power modes in Superspeed mode
  * @in_lpm: indicates if controller is in low power mode (no clocks)
@@ -1158,6 +1159,10 @@ struct dwc3 {
 	unsigned		tx_de_emphasis_quirk:1;
 	unsigned		ssp_u3_u0_quirk:1;
 	unsigned		tx_de_emphasis:2;
+
+
+	unsigned		dis_metastability_quirk:1;
+
 	unsigned		err_evt_seen:1;
 	unsigned		disable_clk_gating:1;
 	unsigned		enable_bus_suspend:1;
