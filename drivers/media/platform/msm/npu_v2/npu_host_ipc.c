@@ -10,9 +10,8 @@
  * GNU General Public License for more details.
  */
 
-/* -------------------------------------------------------------------------
+/*
  * Includes
- * -------------------------------------------------------------------------
  */
 #include "npu_hw_access.h"
 #include "npu_mgr.h"
@@ -20,9 +19,8 @@
 #include "npu_hw.h"
 #include "npu_host_ipc.h"
 
-/* -------------------------------------------------------------------------
+/*
  * Defines
- * -------------------------------------------------------------------------
  */
 /* HFI IPC interface */
 #define TX_HDR_TYPE 0x01000000
@@ -31,9 +29,8 @@
 
 #define QUEUE_TBL_VERSION 0x87654321
 
-/* -------------------------------------------------------------------------
+/*
  * Data Structures
- * -------------------------------------------------------------------------
  */
 struct npu_queue_tuple {
 	uint32_t size;
@@ -45,13 +42,12 @@ static const struct npu_queue_tuple npu_q_setup[6] = {
 	{ 4096, IPC_QUEUE_APPS_EXEC         | TX_HDR_TYPE | RX_HDR_TYPE },
 	{ 4096, IPC_QUEUE_DSP_EXEC          | TX_HDR_TYPE | RX_HDR_TYPE },
 	{ 4096, IPC_QUEUE_APPS_RSP          | TX_HDR_TYPE | RX_HDR_TYPE },
-	{ 1024, IPC_QUEUE_DSP_RSP           | TX_HDR_TYPE | RX_HDR_TYPE },
+	{ 4096, IPC_QUEUE_DSP_RSP           | TX_HDR_TYPE | RX_HDR_TYPE },
 	{ 1024, IPC_QUEUE_LOG               | TX_HDR_TYPE | RX_HDR_TYPE },
 };
 
-/* -------------------------------------------------------------------------
+/*
  * File Scope Function Prototypes
- * -------------------------------------------------------------------------
  */
 static int npu_host_ipc_init_hfi(struct npu_device *npu_dev);
 static int npu_host_ipc_send_cmd_hfi(struct npu_device *npu_dev,
@@ -63,9 +59,8 @@ static int ipc_queue_read(struct npu_device *npu_dev, uint32_t target_que,
 static int ipc_queue_write(struct npu_device *npu_dev, uint32_t target_que,
 				uint8_t *packet, uint8_t *is_rx_req_set);
 
-/* -------------------------------------------------------------------------
+/*
  * Function Definitions
- * -------------------------------------------------------------------------
  */
 static int npu_host_ipc_init_hfi(struct npu_device *npu_dev)
 {
@@ -393,9 +388,8 @@ exit:
 	return status;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * IPC Interface functions
- * -------------------------------------------------------------------------
  */
 int npu_host_ipc_send_cmd(struct npu_device *npu_dev, uint32_t q_idx,
 		void *cmd_ptr)

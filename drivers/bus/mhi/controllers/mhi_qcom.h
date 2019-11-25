@@ -34,6 +34,8 @@
 #define REMOTE_TIME_REMAINDER_US(x) (REMOTE_TICKS_TO_US((x)) % \
 					(REMOTE_TICKS_TO_SEC((x)) * 1000000ULL))
 
+#define MHI_MAX_SFR_LEN (256)
+
 extern const char * const mhi_ee_str[MHI_EE_MAX];
 #define TO_MHI_EXEC_STR(ee) (ee >= MHI_EE_MAX ? "INVALID_EE" : mhi_ee_str[ee])
 
@@ -53,6 +55,7 @@ struct mhi_dev {
 	int resn;
 	void *arch_info;
 	bool powered_on;
+	bool allow_m1;
 	dma_addr_t iova_start;
 	dma_addr_t iova_stop;
 	enum mhi_suspend_mode suspend_mode;

@@ -10,9 +10,8 @@
  * GNU General Public License for more details.
  */
 
-/* -------------------------------------------------------------------------
+/*
  * Includes
- * -------------------------------------------------------------------------
  */
 #include <linux/msm_dma_iommu_mapping.h>
 #include <soc/qcom/subsystem_restart.h>
@@ -23,9 +22,8 @@
 #include "npu_common.h"
 #include "npu_hw.h"
 
-/* -------------------------------------------------------------------------
+/*
  * Functions - Register
- * -------------------------------------------------------------------------
  */
 static uint32_t npu_reg_read(void __iomem *base, size_t size, uint32_t off)
 {
@@ -116,9 +114,8 @@ uint32_t npu_qfprom_reg_read(struct npu_device *npu_dev, uint32_t off)
 		npu_dev->qfprom_io.size, off);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Functions - Memory
- * -------------------------------------------------------------------------
  */
 void npu_mem_write(struct npu_device *npu_dev, void *dst, void *src,
 	uint32_t size)
@@ -191,9 +188,8 @@ void *npu_ipc_addr(void)
 	return (void *)(IPC_MEM_OFFSET_FROM_SSTCM);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Functions - Interrupt
- * -------------------------------------------------------------------------
  */
 void npu_interrupt_ack(struct npu_device *npu_dev, uint32_t intr_num)
 {
@@ -201,7 +197,7 @@ void npu_interrupt_ack(struct npu_device *npu_dev, uint32_t intr_num)
 
 int32_t npu_interrupt_raise_m0(struct npu_device *npu_dev)
 {
-	npu_apss_shared_reg_write(npu_dev, APSS_SHARED_IPC_INTERRUPT_1, 0x40);
+	npu_apss_shared_reg_write(npu_dev, APSS_SHARED_IPC_INTERRUPT_1, 0x20);
 
 	return 0;
 }
@@ -211,9 +207,8 @@ int32_t npu_interrupt_raise_dsp(struct npu_device *npu_dev)
 	return 0;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Functions - ION Memory
- * -------------------------------------------------------------------------
  */
 static struct npu_ion_buf *npu_alloc_npu_ion_buffer(struct npu_client
 	*client, int buf_hdl, uint32_t size)
@@ -408,9 +403,8 @@ void npu_mem_unmap(struct npu_client *client, int buf_hdl,  uint64_t addr)
 	npu_free_npu_ion_buffer(client, buf_hdl);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Functions - Features
- * -------------------------------------------------------------------------
  */
 uint8_t npu_hw_clk_gating_enabled(void)
 {
@@ -422,9 +416,8 @@ uint8_t npu_hw_log_enabled(void)
 	return 1;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Functions - Subsystem/PIL
- * -------------------------------------------------------------------------
  */
 void *subsystem_get_local(char *sub_system)
 {
@@ -436,9 +429,8 @@ void subsystem_put_local(void *sub_system_handle)
 	return subsystem_put(sub_system_handle);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Functions - Log
- * -------------------------------------------------------------------------
  */
 void npu_process_log_message(struct npu_device *npu_dev, uint32_t *message,
 	uint32_t size)

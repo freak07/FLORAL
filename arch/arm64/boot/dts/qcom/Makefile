@@ -27,7 +27,9 @@ dtb-$(CONFIG_ARCH_QCS405) += qcs405-iot-sku1.dtb \
 		qcs407-iot-sku6.dtb \
 		qcs407-iot-sku9.dtb \
 		qcs405-iot-sku12.dtb \
-		qcs407-iot-sku12.dtb
+		qcs407-iot-sku12.dtb \
+		qcs405-iot-sku13.dtb \
+		qcs407-iot-sku13.dtb
 
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 	dtbo-$(CONFIG_ARCH_SM8150) += \
@@ -288,7 +290,10 @@ dtb-$(CONFIG_ARCH_SDXPRAIRIE) += sdxprairie-rumi.dtb \
 	sdxprairie-v2-pcie-ep-mtp.dtb \
 	sdxprairie-mtp-cpe.dtb \
 	sdxprairie-cdp-cpe.dtb \
+	sdxprairie-mtp-v1.1-cpe.dtb \
+	sdxprairie-cdp-v1.1-cpe.dtb \
 	sdxprairie-mtp-le-cpe.dtb \
+	sdxprairie-v2-mtp-le-cpe.dtb \
 	sdxprairie-cdp-256.dtb \
 	sdxprairie-mtp-256.dtb \
 	sdxprairie-mtp-aqc.dtb \

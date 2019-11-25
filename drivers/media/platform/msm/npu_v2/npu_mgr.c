@@ -10,9 +10,8 @@
  * GNU General Public License for more details.
  */
 
-/* -------------------------------------------------------------------------
+/*
  * Includes
- * -------------------------------------------------------------------------
  */
 #include "npu_hw_access.h"
 #include "npu_mgr.h"
@@ -23,9 +22,8 @@
 #include <soc/qcom/subsystem_notif.h>
 #include <soc/qcom/subsystem_restart.h>
 
-/* -------------------------------------------------------------------------
+/*
  * Defines
- * -------------------------------------------------------------------------
  */
 #define LOG_MSG_HEADER_SIZE      20
 #define LOG_MSG_START_MSG_INDEX  5
@@ -35,9 +33,8 @@
 #define NPU_FW_TIMEOUT_POLL_INTERVAL_MS  10
 #define NPU_FW_TIMEOUT_MS                5000
 
-/* -------------------------------------------------------------------------
+/*
  * File Scope Function Prototypes
- * -------------------------------------------------------------------------
  */
 static void npu_ipc_irq_work(struct work_struct *work);
 static void npu_wdg_err_irq_work(struct work_struct *work);
@@ -75,9 +72,8 @@ static int load_fw_nolock(struct npu_device *npu_dev, bool enable);
 static void disable_fw_nolock(struct npu_device *npu_dev);
 static int update_dcvs_activity(struct npu_device *npu_dev, uint32_t activity);
 
-/* -------------------------------------------------------------------------
+/*
  * Function Definitions - Init / Deinit
- * -------------------------------------------------------------------------
  */
 
 static int wait_npu_cpc_power_off(struct npu_device *npu_dev)
@@ -319,7 +315,7 @@ static int enable_fw_nolock(struct npu_device *npu_dev)
 		goto notify_fw_pwr_fail;
 	}
 
-	ret = wait_for_completion_interruptible_timeout(
+	ret = wait_for_completion_timeout(
 		&host_ctx->fw_bringup_done, NW_CMD_TIMEOUT);
 	if (!ret) {
 		NPU_ERR("Wait for fw bringup timedout\n");
@@ -395,7 +391,7 @@ static void disable_fw_nolock(struct npu_device *npu_dev)
 	}
 
 	if (!host_ctx->auto_pil_disable) {
-		ret = wait_for_completion_interruptible_timeout(
+		ret = wait_for_completion_timeout(
 			&host_ctx->fw_shutdown_done, NW_CMD_TIMEOUT);
 		if (!ret)
 			NPU_ERR("Wait for fw shutdown timedout\n");
@@ -664,7 +660,7 @@ int npu_host_init(struct npu_device *npu_dev)
 		goto fail;
 	}
 
-	host_ctx->auto_pil_disable = true;
+	host_ctx->auto_pil_disable = false;
 
 	return sts;
 fail:
@@ -692,9 +688,8 @@ void npu_host_deinit(struct npu_device *npu_dev)
 	mutex_destroy(&host_ctx->lock);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Function Definitions - Interrupt Handler
- * -------------------------------------------------------------------------
  */
 irqreturn_t npu_ipc_intr_hdlr(int irq, void *ptr)
 {
@@ -774,9 +769,8 @@ irqreturn_t npu_wdg_intr_hdlr(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Function Definitions - Control
- * -------------------------------------------------------------------------
  */
 static int host_error_hdlr(struct npu_device *npu_dev, bool force)
 {
@@ -816,10 +810,6 @@ static int host_error_hdlr(struct npu_device *npu_dev, bool force)
 	}
 
 	NPU_INFO("npu subsystem is restarting\n");
-
-	/* clear FW_CTRL_STATUS register before restart */
-	REGW(npu_dev, REG_NPU_FW_CTRL_STATUS, 0x0);
-
 	reinit_completion(&host_ctx->npu_power_up_done);
 	ret = subsystem_restart_dev(host_ctx->subsystem_handle);
 	if (ret) {
@@ -1092,9 +1082,8 @@ static int npu_notify_aop(struct npu_device *npu_dev, bool on)
 	return rc;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Function Definitions - Network Management
- * -------------------------------------------------------------------------
  */
 static int network_put(struct npu_network *network)
 {
@@ -1222,9 +1211,8 @@ static void free_network(struct npu_host_ctx *ctx, struct npu_client *client,
 	}
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Function Definitions - IPC
- * -------------------------------------------------------------------------
  */
 static int npu_queue_event(struct npu_client *client, struct npu_kevent *evt)
 {
@@ -1513,12 +1501,7 @@ static void app_msg_proc(struct npu_host_ctx *host_ctx, uint32_t *msg)
 
 static void host_session_msg_hdlr(struct npu_device *npu_dev)
 {
-	uint32_t *msg;
 	struct npu_host_ctx *host_ctx = &npu_dev->host_ctx;
-
-	msg = kzalloc(sizeof(uint32_t) * NPU_IPC_BUF_LENGTH, GFP_KERNEL);
-	if (!msg)
-		return;
 
 	mutex_lock(&host_ctx->lock);
 	if (host_ctx->fw_state != FW_ENABLED) {
@@ -1526,14 +1509,14 @@ static void host_session_msg_hdlr(struct npu_device *npu_dev)
 		goto skip_read_msg;
 	}
 
-	while (npu_host_ipc_read_msg(npu_dev, IPC_QUEUE_APPS_RSP, msg) == 0) {
+	while (npu_host_ipc_read_msg(npu_dev, IPC_QUEUE_APPS_RSP,
+		host_ctx->ipc_msg_buf) == 0) {
 		NPU_DBG("received from msg queue\n");
-		app_msg_proc(host_ctx, msg);
+		app_msg_proc(host_ctx, host_ctx->ipc_msg_buf);
 	}
 
 skip_read_msg:
 	mutex_unlock(&host_ctx->lock);
-	kfree(msg);
 }
 
 static void log_msg_proc(struct npu_device *npu_dev, uint32_t *msg)
@@ -1559,13 +1542,7 @@ static void log_msg_proc(struct npu_device *npu_dev, uint32_t *msg)
 
 static void host_session_log_hdlr(struct npu_device *npu_dev)
 {
-	uint32_t *msg;
 	struct npu_host_ctx *host_ctx = &npu_dev->host_ctx;
-
-	msg = kzalloc(sizeof(uint32_t) * NPU_IPC_BUF_LENGTH, GFP_KERNEL);
-
-	if (!msg)
-		return;
 
 	mutex_lock(&host_ctx->lock);
 	if (host_ctx->fw_state != FW_ENABLED) {
@@ -1573,19 +1550,18 @@ static void host_session_log_hdlr(struct npu_device *npu_dev)
 		goto skip_read_msg;
 	}
 
-	while (npu_host_ipc_read_msg(npu_dev, IPC_QUEUE_LOG, msg) == 0) {
+	while (npu_host_ipc_read_msg(npu_dev, IPC_QUEUE_LOG,
+		host_ctx->ipc_msg_buf) == 0) {
 		NPU_DBG("received from log queue\n");
-		log_msg_proc(npu_dev, msg);
+		log_msg_proc(npu_dev, host_ctx->ipc_msg_buf);
 	}
 
 skip_read_msg:
 	mutex_unlock(&host_ctx->lock);
-	kfree(msg);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Function Definitions - Functionality
- * -------------------------------------------------------------------------
  */
 int32_t npu_host_get_info(struct npu_device *npu_dev,
 			struct msm_npu_get_info_ioctl *get_info_ioctl)
@@ -1621,7 +1597,7 @@ int32_t npu_host_unmap_buf(struct npu_client *client,
 	 * fw is disabled
 	 */
 	if (host_ctx->fw_error && (host_ctx->fw_state == FW_ENABLED) &&
-		!wait_for_completion_interruptible_timeout(
+		!wait_for_completion_timeout(
 		&host_ctx->fw_deinit_done, NW_CMD_TIMEOUT))
 		NPU_WARN("npu: wait for fw_deinit_done time out\n");
 
@@ -2390,7 +2366,7 @@ void npu_host_cleanup_networks(struct npu_client *client)
 	while (!list_empty(&client->mapped_buffer_list)) {
 		ion_buf = list_first_entry(&client->mapped_buffer_list,
 			struct npu_ion_buf, list);
-		NPU_WARN("unmap buffer %x:%llx\n", ion_buf->fd, ion_buf->iova);
+		NPU_DBG("unmap buffer %x:%llx\n", ion_buf->fd, ion_buf->iova);
 		unmap_req.buf_ion_hdl = ion_buf->fd;
 		unmap_req.npu_phys_addr = ion_buf->iova;
 		npu_host_unmap_buf(client, &unmap_req);

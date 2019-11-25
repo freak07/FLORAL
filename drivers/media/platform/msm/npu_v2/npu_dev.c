@@ -10,9 +10,8 @@
  * GNU General Public License for more details.
  */
 
-/* -------------------------------------------------------------------------
+/*
  * Includes
- * -------------------------------------------------------------------------
  */
 #include <linux/clk.h>
 #include <linux/interrupt.h>
@@ -28,9 +27,8 @@
 #include "npu_common.h"
 #include "npu_hw.h"
 
-/* -------------------------------------------------------------------------
+/*
  * Defines
- * -------------------------------------------------------------------------
  */
 #define CLASS_NAME              "npu"
 #define DRIVER_NAME             "msm_npu"
@@ -39,9 +37,8 @@
 
 #define MBOX_OP_TIMEOUTMS 1000
 
-/* -------------------------------------------------------------------------
+/*
  * File Scope Prototypes
- * -------------------------------------------------------------------------
  */
 static int npu_enable_regulators(struct npu_device *npu_dev);
 static void npu_disable_regulators(struct npu_device *npu_dev);
@@ -118,9 +115,8 @@ static int npu_resume(struct platform_device *dev);
 static int __init npu_init(void);
 static void __exit npu_exit(void);
 
-/* -------------------------------------------------------------------------
+/*
  * File Scope Variables
- * -------------------------------------------------------------------------
  */
 static const char * const npu_post_clocks[] = {
 };
@@ -163,9 +159,8 @@ static const struct npu_irq npu_irq_info[] = {
 
 static struct npu_device *g_npu_dev;
 
-/* -------------------------------------------------------------------------
+/*
  * Entry Points for Probe
- * -------------------------------------------------------------------------
  */
 /* Sys FS */
 static DEVICE_ATTR_RO(caps);
@@ -223,9 +218,8 @@ static const struct thermal_cooling_device_ops npu_cooling_ops = {
 	.set_cur_state = npu_set_cur_state,
 };
 
-/* -------------------------------------------------------------------------
+/*
  * SysFS - Capabilities
- * -------------------------------------------------------------------------
  */
 static ssize_t caps_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -244,9 +238,8 @@ static ssize_t caps_show(struct device *dev,
 	return ret;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * SysFS - Power State
- * -------------------------------------------------------------------------
  */
 static ssize_t pwr_show(struct device *dev,
 					 struct device_attribute *attr,
@@ -279,9 +272,8 @@ static ssize_t pwr_store(struct device *dev,
 	return count;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * SysFS - Power State
- * -------------------------------------------------------------------------
  */
 static ssize_t perf_mode_override_show(struct device *dev,
 					 struct device_attribute *attr,
@@ -359,9 +351,9 @@ static ssize_t dcvs_mode_store(struct device *dev,
 
 	return count;
 }
-/* -------------------------------------------------------------------------
+
+/*
  * SysFS - npu_boot
- * -------------------------------------------------------------------------
  */
 static ssize_t boot_store(struct device *dev,
 					  struct device_attribute *attr,
@@ -389,9 +381,8 @@ static ssize_t boot_store(struct device *dev,
 	return count;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Power Related
- * -------------------------------------------------------------------------
  */
 int npu_enable_core_power(struct npu_device *npu_dev)
 {
@@ -401,20 +392,20 @@ int npu_enable_core_power(struct npu_device *npu_dev)
 	mutex_lock(&npu_dev->dev_lock);
 	NPU_DBG("Enable core power %d\n", pwr->pwr_vote_num);
 	if (!pwr->pwr_vote_num) {
-		ret = npu_enable_regulators(npu_dev);
+		ret = npu_set_bw(npu_dev, 100, 100);
 		if (ret)
 			goto fail;
 
-		ret = npu_set_bw(npu_dev, 100, 100);
+		ret = npu_enable_regulators(npu_dev);
 		if (ret) {
-			npu_disable_regulators(npu_dev);
+			npu_set_bw(npu_dev, 0, 0);
 			goto fail;
 		}
 
 		ret = npu_enable_core_clocks(npu_dev);
 		if (ret) {
-			npu_set_bw(npu_dev, 0, 0);
 			npu_disable_regulators(npu_dev);
+			npu_set_bw(npu_dev, 0, 0);
 			goto fail;
 		}
 		npu_resume_devbw(npu_dev);
@@ -441,8 +432,8 @@ void npu_disable_core_power(struct npu_device *npu_dev)
 	if (!pwr->pwr_vote_num) {
 		npu_suspend_devbw(npu_dev);
 		npu_disable_core_clocks(npu_dev);
-		npu_set_bw(npu_dev, 0, 0);
 		npu_disable_regulators(npu_dev);
+		npu_set_bw(npu_dev, 0, 0);
 		pwr->active_pwrlevel = pwr->default_pwrlevel;
 		pwr->uc_pwrlevel = pwr->max_pwrlevel;
 		pwr->cdsprm_pwrlevel = pwr->max_pwrlevel;
@@ -622,9 +613,8 @@ int npu_set_uc_power_level(struct npu_device *npu_dev,
 	return npu_set_power_level(npu_dev, true);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Bandwidth Monitor Related
- * -------------------------------------------------------------------------
  */
 static void npu_suspend_devbw(struct npu_device *npu_dev)
 {
@@ -658,9 +648,8 @@ static void npu_resume_devbw(struct npu_device *npu_dev)
 	}
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Clocks Related
- * -------------------------------------------------------------------------
  */
 static bool npu_is_post_clock(const char *clk_name)
 {
@@ -810,9 +799,8 @@ static void npu_disable_clocks(struct npu_device *npu_dev, bool post_pil)
 	}
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Thermal Functions
- * -------------------------------------------------------------------------
  */
 static int npu_get_max_state(struct thermal_cooling_device *cdev,
 				 unsigned long *state)
@@ -856,9 +844,8 @@ npu_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 	return npu_host_update_power(npu_dev);
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Regulator Related
- * -------------------------------------------------------------------------
  */
 static int npu_enable_regulators(struct npu_device *npu_dev)
 {
@@ -901,9 +888,8 @@ static void npu_disable_regulators(struct npu_device *npu_dev)
 	}
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Interrupt Related
- * -------------------------------------------------------------------------
  */
 int npu_enable_irq(struct npu_device *npu_dev)
 {
@@ -968,9 +954,8 @@ void npu_disable_irq(struct npu_device *npu_dev)
 	NPU_DBG("irq disabled\n");
 }
 
-/* -------------------------------------------------------------------------
+/*
  * System Cache
- * -------------------------------------------------------------------------
  */
 int npu_enable_sys_cache(struct npu_device *npu_dev)
 {
@@ -1041,9 +1026,8 @@ void npu_disable_sys_cache(struct npu_device *npu_dev)
 	}
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Open/Close
- * -------------------------------------------------------------------------
  */
 static int npu_open(struct inode *inode, struct file *file)
 {
@@ -1084,9 +1068,8 @@ static int npu_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * IOCTL Implementations
- * -------------------------------------------------------------------------
  */
 static int npu_get_info(struct npu_client *client, unsigned long arg)
 {
@@ -1563,9 +1546,8 @@ static unsigned int npu_poll(struct file *filp, struct poll_table_struct *p)
 	return rc;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Device Tree Parsing
- * -------------------------------------------------------------------------
  */
 static int npu_parse_dt_clock(struct npu_device *npu_dev)
 {
@@ -1965,9 +1947,8 @@ static int npu_irq_init(struct npu_device *npu_dev)
 	return ret;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Mailbox
- * -------------------------------------------------------------------------
  */
 static int npu_ipcc_bridge_mbox_send_data(struct mbox_chan *chan, void *data)
 {
@@ -1976,8 +1957,8 @@ static int npu_ipcc_bridge_mbox_send_data(struct mbox_chan *chan, void *data)
 	struct npu_host_ctx *host_ctx = &npu_dev->host_ctx;
 	unsigned long flags;
 
-	NPU_DBG("Generating IRQ for client_id: %u; signal_id: %u\n",
-		ipcc_mbox_chan->client_id, ipcc_mbox_chan->signal_id);
+	NPU_DBG("Generating IRQ for signal_id: %u\n",
+		ipcc_mbox_chan->signal_id);
 
 	spin_lock_irqsave(&host_ctx->bridge_mbox_lock, flags);
 	ipcc_mbox_chan->npu_mbox->send_data_pending = true;
@@ -2009,7 +1990,7 @@ static struct mbox_chan *npu_ipcc_bridge_mbox_xlate(
 
 	npu_dev = bridge_data->priv_data;
 
-	if (ph->args_count != 2)
+	if (ph->args_count != 1)
 		return ERR_PTR(-EINVAL);
 
 	for (chan_id = 0; chan_id < mbox->num_chans; chan_id++) {
@@ -2017,8 +1998,7 @@ static struct mbox_chan *npu_ipcc_bridge_mbox_xlate(
 
 		if (!ipcc_mbox_chan)
 			break;
-		else if (ipcc_mbox_chan->client_id == ph->args[0] &&
-				ipcc_mbox_chan->signal_id == ph->args[1])
+		else if (ipcc_mbox_chan->signal_id == ph->args[0])
 			return ERR_PTR(-EBUSY);
 	}
 
@@ -2028,16 +2008,15 @@ static struct mbox_chan *npu_ipcc_bridge_mbox_xlate(
 	/* search for target mailbox */
 	for (i = 0; i < NPU_MAX_MBOX_NUM; i++) {
 		if (npu_dev->mbox[i].chan &&
-			(npu_dev->mbox[i].client_id == ph->args[0]) &&
-			(npu_dev->mbox[i].signal_id == ph->args[1])) {
+			(npu_dev->mbox[i].signal_id == ph->args[0])) {
 			NPU_DBG("Find matched target mailbox %d\n", i);
 			break;
 		}
 	}
 
 	if (i == NPU_MAX_MBOX_NUM) {
-		NPU_ERR("Can't find matched target mailbox %d:%d\n",
-			ph->args[0], ph->args[1]);
+		NPU_ERR("Can't find matched target mailbox %d\n",
+			ph->args[0]);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -2045,16 +2024,14 @@ static struct mbox_chan *npu_ipcc_bridge_mbox_xlate(
 	if (!ipcc_mbox_chan)
 		return ERR_PTR(-ENOMEM);
 
-	ipcc_mbox_chan->client_id = ph->args[0];
-	ipcc_mbox_chan->signal_id = ph->args[1];
+	ipcc_mbox_chan->signal_id = ph->args[0];
 	ipcc_mbox_chan->chan = &bridge_data->chans[chan_id];
 	ipcc_mbox_chan->npu_dev = npu_dev;
 	ipcc_mbox_chan->chan->con_priv = ipcc_mbox_chan;
 	ipcc_mbox_chan->npu_mbox = &npu_dev->mbox[i];
 
-	NPU_DBG("New mailbox channel: %u for client_id: %u; signal_id: %u\n",
-		chan_id, ipcc_mbox_chan->client_id,
-		ipcc_mbox_chan->signal_id);
+	NPU_DBG("New mailbox channel: %u for signal_id: %u\n",
+		chan_id, ipcc_mbox_chan->signal_id);
 
 	return ipcc_mbox_chan->chan;
 }
@@ -2159,11 +2136,9 @@ static int npu_mbox_init(struct npu_device *npu_dev)
 				NPU_WARN("can't get mailbox %s args\n",
 					mbox_name);
 			} else {
-				mbox->client_id = curr_ph.args[0];
-				mbox->signal_id = curr_ph.args[1];
-				NPU_DBG("argument for mailbox %x is %x %x\n",
-					mbox_name, curr_ph.args[0],
-					curr_ph.args[1]);
+				mbox->signal_id = curr_ph.args[0];
+				NPU_DBG("argument for mailbox %x is %x\n",
+					mbox_name, curr_ph.args[0]);
 			}
 		}
 		index++;
@@ -2204,9 +2179,8 @@ static int npu_hw_info_init(struct npu_device *npu_dev)
 	return rc;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Probe/Remove
- * -------------------------------------------------------------------------
  */
 static int npu_probe(struct platform_device *pdev)
 {
@@ -2476,9 +2450,8 @@ static int npu_remove(struct platform_device *pdev)
 	return 0;
 }
 
-/* -------------------------------------------------------------------------
+/*
  * Suspend/Resume
- * -------------------------------------------------------------------------
  */
 #if defined(CONFIG_PM)
 static int npu_suspend(struct platform_device *dev, pm_message_t state)
@@ -2492,9 +2465,8 @@ static int npu_resume(struct platform_device *dev)
 }
 #endif
 
-/* -------------------------------------------------------------------------
+/*
  * Module Entry Points
- * -------------------------------------------------------------------------
  */
 static int __init npu_init(void)
 {

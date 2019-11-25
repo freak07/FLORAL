@@ -702,6 +702,7 @@ static struct mhi_controller *mhi_register_controller(struct pci_dev *pci_dev)
 		goto error_register;
 
 	use_bb = of_property_read_bool(of_node, "mhi,use-bb");
+	mhi_dev->allow_m1 = of_property_read_bool(of_node, "mhi,allow-m1");
 
 	/*
 	 * if s1 translation enabled or using bounce buffer pull iova addr
@@ -752,6 +753,9 @@ static struct mhi_controller *mhi_register_controller(struct pci_dev *pci_dev)
 	mhi_cntrl->time_get = mhi_time_get;
 	mhi_cntrl->remote_timer_freq = 19200000;
 	mhi_cntrl->local_timer_freq = 19200000;
+
+	/* setup host support for SFR retreival */
+	mhi_cntrl->sfr_len = MHI_MAX_SFR_LEN;
 
 	ret = of_register_mhi_controller(mhi_cntrl);
 	if (ret)
