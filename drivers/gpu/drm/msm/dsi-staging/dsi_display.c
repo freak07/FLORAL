@@ -3603,11 +3603,13 @@ static int dsi_display_parse_dt(struct dsi_display *display)
 	/* Parse TE data */
 	dsi_display_parse_te_data(display);
 
-	/* Parse all external bridges config, endpoint0 */
-	for (i = 0; i < MAX_EXT_BRIDGE_PORT_CONFIG; i++) {
+	/* Parse all external bridges from port 0 */
+	display_for_each_ctrl(i, display) {
 		display->ext_bridge[i].node_of =
 			of_graph_get_remote_node(of_node, 0, i);
-		if (!display->ext_bridge[i].node_of)
+		if (display->ext_bridge[i].node_of)
+			display->ext_bridge_cnt++;
+		else
 			break;
 	}
 
@@ -4891,7 +4893,7 @@ static int dsi_display_bind(struct device *dev,
 	char *client1 = "dsi_clk_client";
 	char *client2 = "mdp_event_client";
 	char dsi_client_name[DSI_CLIENT_NAME_SIZE];
-	int i, j, rc = 0;
+	int i, rc = 0;
 
 	if (!dev || !pdev || !master) {
 		pr_err("invalid param(s), dev %pK, pdev %pK, master %pK\n",
@@ -4912,17 +4914,14 @@ static int dsi_display_bind(struct device *dev,
 		return 0;
 
 	/* defer bind if ext bridge driver is not loaded */
-	for (i = 0; i < display->panel->host_config.ext_bridge_num; i++) {
-		j = display->panel->host_config.ext_bridge_map[i];
-		if (!display->ext_bridge[j].node_of) {
-			pr_err("invalid ext bridge node\n");
-			return -EINVAL;
-		}
-
-		if (!of_drm_find_bridge(display->ext_bridge[j].node_of)) {
-			pr_debug("defer for bridge[%d] %s\n", j,
-				display->ext_bridge[j].node_of->full_name);
-			return -EPROBE_DEFER;
+	if (display->panel && display->panel->host_config.ext_bridge_mode) {
+		for (i = 0; i < display->ext_bridge_cnt; i++) {
+			if (!of_drm_find_bridge(
+					display->ext_bridge[i].node_of)) {
+				pr_debug("defer for bridge[%d] %s\n", i,
+				  display->ext_bridge[i].node_of->full_name);
+				return -EPROBE_DEFER;
+			}
 		}
 	}
 
@@ -5571,9 +5570,11 @@ static struct dsi_display_ext_bridge *dsi_display_ext_get_bridge(
 {
 	struct msm_drm_private *priv;
 	struct sde_kms *sde_kms;
+	struct list_head *connector_list;
+	struct drm_connector *conn_iter;
+	struct sde_connector *sde_conn;
 	struct dsi_display *display;
-	int i, j, k;
-	u32 bridge_num;
+	int i;
 
 	if (!bridge || !bridge->encoder) {
 		SDE_ERROR("invalid argument\n");
@@ -5582,14 +5583,16 @@ static struct dsi_display_ext_bridge *dsi_display_ext_get_bridge(
 
 	priv = bridge->dev->dev_private;
 	sde_kms = to_sde_kms(priv->kms);
+	connector_list = &sde_kms->dev->mode_config.connector_list;
 
-	for (i = 0; i < sde_kms->dsi_display_count; i++) {
-		display = sde_kms->dsi_displays[i];
-		bridge_num = display->panel->host_config.ext_bridge_num;
-		for (j = 0; j < bridge_num; j++) {
-			k = display->panel->host_config.ext_bridge_map[j];
-			if (display->ext_bridge[k].bridge == bridge)
-				return &display->ext_bridge[k];
+	list_for_each_entry(conn_iter, connector_list, head) {
+		sde_conn = to_sde_connector(conn_iter);
+		if (sde_conn->encoder == bridge->encoder) {
+			display = sde_conn->display;
+			display_for_each_ctrl(i, display) {
+				if (display->ext_bridge[i].bridge == bridge)
+					return &display->ext_bridge[i];
+			}
 		}
 	}
 
@@ -5753,10 +5756,12 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 	struct drm_bridge *prev_bridge = bridge;
 	int rc = 0, i;
 
-	for (i = 0; i < display->panel->host_config.ext_bridge_num; i++) {
-		int j = display->panel->host_config.ext_bridge_map[i];
+	if (display->panel && !display->panel->host_config.ext_bridge_mode)
+		return 0;
+
+	for (i = 0; i < display->ext_bridge_cnt; i++) {
 		struct dsi_display_ext_bridge *ext_bridge_info =
-				&display->ext_bridge[j];
+				&display->ext_bridge[i];
 
 		/* return if ext bridge is already initialized */
 		if (ext_bridge_info->bridge)
@@ -5770,7 +5775,7 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 		}
 
 		/* override functions for mode adjustment */
-		if (display->panel->host_config.ext_bridge_num > 1) {
+		if (display->ext_bridge_cnt > 1) {
 			ext_bridge_info->bridge_funcs = *ext_bridge->funcs;
 			if (ext_bridge->funcs->mode_fixup)
 				ext_bridge_info->bridge_funcs.mode_fixup =
@@ -5815,7 +5820,7 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 		if (!display->ext_conn ||
 		    !display->ext_conn->funcs ||
 		    !display->ext_conn->helper_private ||
-		    display->panel->host_config.ext_bridge_num > 1) {
+		    display->ext_bridge_cnt > 1) {
 			display->ext_conn = NULL;
 			continue;
 		}
