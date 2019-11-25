@@ -778,7 +778,7 @@ static ssize_t measured_fps_show(struct device *device,
 	struct drm_crtc *crtc;
 	struct sde_crtc *sde_crtc;
 	unsigned int fps_int, fps_decimal;
-	u64 fps = 0, frame_count = 1;
+	u64 fps = 0, frame_count = 0;
 	ktime_t current_time;
 	int i = 0, current_time_index;
 	u64 diff_us;
@@ -857,7 +857,7 @@ static ssize_t measured_fps_show(struct device *device,
 	fps_int = (unsigned int) sde_crtc->fps_info.measured_fps;
 	fps_decimal = do_div(fps_int, 10);
 	return scnprintf(buf, PAGE_SIZE,
-		"fps: %d.%d duration:%d frame_count:%llu", fps_int, fps_decimal,
+	"fps: %d.%d duration:%d frame_count:%llu\n", fps_int, fps_decimal,
 			sde_crtc->fps_info.fps_periodic_duration, frame_count);
 }
 
@@ -3279,24 +3279,27 @@ static int _sde_crtc_check_dest_scaler_data(struct drm_crtc *crtc,
 
 	SDE_DEBUG("crtc%d\n", crtc->base.id);
 
+	mutex_lock(&sde_crtc->crtc_lock);
+
 	if (!cstate->ds_dirty) {
 		SDE_DEBUG("dest scaler property not set, skip validation\n");
-		return 0;
+		goto end;
 	}
 
 	if (!kms || !kms->catalog) {
 		SDE_ERROR("crtc%d: invalid parameters\n", crtc->base.id);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	if (!kms->catalog->mdp[0].has_dest_scaler) {
 		SDE_DEBUG("dest scaler feature not supported\n");
-		return 0;
+		goto end;
 	}
 
 	if (!sde_crtc->num_mixers) {
 		SDE_DEBUG("mixers not allocated\n");
-		return 0;
+		goto end;
 	}
 
 	ret = _sde_validate_hw_resources(sde_crtc);
@@ -3475,10 +3478,12 @@ disable:
 			cstate->ds_dirty = false;
 	}
 
-	return 0;
+	goto end;
 
 err:
 	cstate->ds_dirty = false;
+end:
+	mutex_unlock(&sde_crtc->crtc_lock);
 	return ret;
 }
 
@@ -3598,12 +3603,12 @@ static void _sde_crtc_setup_mixers(struct drm_crtc *crtc)
 	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
 	struct drm_encoder *enc;
 
+	mutex_lock(&sde_crtc->crtc_lock);
 	sde_crtc->num_ctls = 0;
 	sde_crtc->num_mixers = 0;
 	sde_crtc->mixers_swapped = false;
 	memset(sde_crtc->mixers, 0, sizeof(sde_crtc->mixers));
 
-	mutex_lock(&sde_crtc->crtc_lock);
 	/* Check for mixers on all encoders attached to this crtc */
 	list_for_each_entry(enc, &crtc->dev->mode_config.encoder_list, head) {
 		if (enc->crtc != crtc)
@@ -5293,31 +5298,14 @@ static int sde_crtc_atomic_check(struct drm_crtc *crtc,
 
 	drm_connector_list_iter_begin(dev, &conn_iter);
 	drm_for_each_connector_iter(conn, &conn_iter)
-		if ((state->connector_mask & (1 << drm_connector_index(conn)))
-				&& cstate->num_connectors < MAX_CONNECTORS) {
+		if (conn->state && conn->state->crtc == crtc &&
+				cstate->num_connectors < MAX_CONNECTORS) {
 			cstate->connectors[cstate->num_connectors++] = conn;
 		}
 	drm_connector_list_iter_end(&conn_iter);
 
 	mixer_width = sde_crtc_get_mixer_width(sde_crtc, cstate, mode);
 	mixer_height = sde_crtc_get_mixer_height(sde_crtc, cstate, mode);
-
-	if (cstate->num_ds_enabled) {
-		if (!state->state)
-			goto end;
-
-		drm_atomic_crtc_state_for_each_plane_state(plane,
-							pstate, state) {
-			if ((pstate->crtc_h > mixer_height) ||
-					(pstate->crtc_w > mixer_width)) {
-				SDE_ERROR("plane w/h:%x*%x > mixer w/h:%x*%x\n",
-					pstate->crtc_w, pstate->crtc_h,
-					mixer_width, mixer_height);
-				return -E2BIG;
-				goto end;
-			}
-		}
-	}
 
 	_sde_crtc_setup_is_ppsplit(state);
 	_sde_crtc_setup_lm_bounds(crtc, state);
@@ -5381,6 +5369,15 @@ static int sde_crtc_atomic_check(struct drm_crtc *crtc,
 		}
 
 		cnt++;
+
+		if ((pstate->crtc_h > mixer_height) ||
+		 (pstate->crtc_w > (mixer_width * sde_crtc->num_mixers))) {
+			SDE_ERROR("plane w/h:%x*%x more than mixer w/h:%x*%x\n",
+			pstate->crtc_w, pstate->crtc_h,
+			sde_crtc->num_mixers * mixer_width, mixer_height);
+			rc = -E2BIG;
+			goto end;
+		}
 
 		if (CHECK_LAYER_BOUNDS(pstate->crtc_y, pstate->crtc_h,
 				mode->vdisplay) ||

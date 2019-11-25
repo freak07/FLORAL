@@ -60,6 +60,7 @@
 	aliases {
 		serial0 = &qupv3_se12_2uart;
 		hsuart0 = &qupv3_se13_4uart;
+		hsuart1 = &qupv3_se4_2uart;
 		spi0 = &qupv3_se3_spi;
 		i2c0 = &qupv3_se4_i2c;
 	};
@@ -1374,14 +1375,20 @@
 		compatible = "qcom,bus-proxy-client";
 		qcom,msm-bus,name = "bus-proxy-client";
 		qcom,msm-bus,num-cases = <2>;
-		qcom,msm-bus,num-paths = <3>;
+		qcom,msm-bus,num-paths = <5>;
 		qcom,msm-bus,vectors-KBps =
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_DISPLAY_CFG 0 0>,
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_CAMERA_CFG 0 0>,
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_VENUS_CFG 0 0>,
+			<MSM_BUS_MASTER_MDP_PORT0 MSM_BUS_SLAVE_EBI_CH0 0 0>,
+			<MSM_BUS_MASTER_MDP_PORT1 MSM_BUS_SLAVE_EBI_CH0 0 0>,
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_DISPLAY_CFG 0 1>,
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_CAMERA_CFG 0 1>,
-			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_VENUS_CFG 0 1>;
+			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_VENUS_CFG 0 1>,
+			<MSM_BUS_MASTER_MDP_PORT0 MSM_BUS_SLAVE_EBI_CH0
+			1500000 1500000>,
+			<MSM_BUS_MASTER_MDP_PORT1 MSM_BUS_SLAVE_EBI_CH0
+			1500000 1500000>;
 		status = "ok";
 	};
 

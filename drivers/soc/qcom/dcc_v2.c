@@ -288,19 +288,19 @@ static int __dcc_ll_cfg(struct dcc_drvdata *drvdata, int curr_list)
 			ret = dcc_sram_writel(drvdata, addr, sram_offset);
 			if (ret)
 				goto overstep;
-				sram_offset += 4;
+			sram_offset += 4;
 
 			ret = dcc_sram_writel(drvdata,
 					entry->mask, sram_offset);
 			if (ret)
 				goto overstep;
-				sram_offset += 4;
+			sram_offset += 4;
 
 			ret = dcc_sram_writel(drvdata,
 					entry->write_val, sram_offset);
 			if (ret)
 				goto overstep;
-				sram_offset += 4;
+			sram_offset += 4;
 			addr = 0;
 			break;
 		}
@@ -383,18 +383,18 @@ static int __dcc_ll_cfg(struct dcc_drvdata *drvdata, int curr_list)
 			ret = dcc_sram_writel(drvdata, addr, sram_offset);
 			if (ret)
 				goto overstep;
-				sram_offset += 4;
+			sram_offset += 4;
 
 			ret = dcc_sram_writel(drvdata, link, sram_offset);
 			if (ret)
 				goto overstep;
-				sram_offset += 4;
+			sram_offset += 4;
 
 			ret = dcc_sram_writel(drvdata,
 				entry->write_val, sram_offset);
 			if (ret)
 				goto overstep;
-				sram_offset += 4;
+			sram_offset += 4;
 			addr = 0x00;
 			link = 0;
 			break;
@@ -612,6 +612,7 @@ static int dcc_enable(struct dcc_drvdata *drvdata)
 		ram_cfg_base = drvdata->ram_cfg;
 		ret = __dcc_ll_cfg(drvdata, list);
 		if (ret) {
+			dcc_writel(drvdata, 0, DCC_LL_LOCK(list));
 			dev_info(drvdata->dev, "DCC ram programming failed\n");
 			goto err;
 		}

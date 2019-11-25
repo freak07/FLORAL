@@ -183,6 +183,8 @@
 #include "dsi-panel-ext-bridge-1080p.dtsi"
 
 &dsi_ext_bridge_1080p {
+	qcom,mdss-dsi-ext-bridge = <0>;
+
 	qcom,mdss-dsi-display-timings {
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [00 1E 08 07 24 22
@@ -300,5 +302,9 @@
 };
 
 &mdss_mdp {
+	qcom,sde-ctl-display-pref = "primary", "none", "none",
+				"none", "none";
+	qcom,sde-mixer-display-pref = "primary", "none", "none",
+				"none", "none", "none";
 	connectors = <&dsi_dp1 &dsi_dp2 &sde_dp &sde_wb>;
 };

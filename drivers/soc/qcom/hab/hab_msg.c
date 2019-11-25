@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,10 +15,12 @@
 static int hab_rx_queue_empty(struct virtual_channel *vchan)
 {
 	int ret;
+	int irqs_disabled = irqs_disabled();
 
-	spin_lock_bh(&vchan->rx_lock);
+	hab_spin_lock(&vchan->rx_lock, irqs_disabled);
 	ret = list_empty(&vchan->rx_list);
-	spin_unlock_bh(&vchan->rx_lock);
+	hab_spin_unlock(&vchan->rx_lock, irqs_disabled);
+
 	return ret;
 }
 
@@ -56,6 +58,7 @@ hab_msg_dequeue(struct virtual_channel *vchan, struct hab_message **msg,
 	int ret = 0;
 	int wait = !(flags & HABMM_SOCKET_RECV_FLAGS_NON_BLOCKING);
 	int interruptible = !(flags & HABMM_SOCKET_RECV_FLAGS_UNINTERRUPTIBLE);
+	int irqs_disabled = irqs_disabled();
 
 	if (wait) {
 		if (hab_rx_queue_empty(vchan)) {
@@ -75,7 +78,7 @@ hab_msg_dequeue(struct virtual_channel *vchan, struct hab_message **msg,
 	 * and need empty check again in case the list is empty now due to
 	 * dequeue by other threads
 	 */
-	spin_lock_bh(&vchan->rx_lock);
+	hab_spin_lock(&vchan->rx_lock, irqs_disabled);
 
 	if ((!ret || (ret == -ERESTARTSYS)) && !list_empty(&vchan->rx_list)) {
 		message = list_first_entry(&vchan->rx_list,
@@ -99,7 +102,7 @@ hab_msg_dequeue(struct virtual_channel *vchan, struct hab_message **msg,
 		/* no message received, retain the original status */
 		*rsize = 0;
 
-	spin_unlock_bh(&vchan->rx_lock);
+	hab_spin_unlock(&vchan->rx_lock, irqs_disabled);
 
 	*msg = message;
 	return ret;
@@ -108,9 +111,11 @@ hab_msg_dequeue(struct virtual_channel *vchan, struct hab_message **msg,
 static void hab_msg_queue(struct virtual_channel *vchan,
 					struct hab_message *message)
 {
-	spin_lock_bh(&vchan->rx_lock);
+	int irqs_disabled = irqs_disabled();
+
+	hab_spin_lock(&vchan->rx_lock, irqs_disabled);
 	list_add_tail(&message->node, &vchan->rx_list);
-	spin_unlock_bh(&vchan->rx_lock);
+	hab_spin_unlock(&vchan->rx_lock, irqs_disabled);
 
 	wake_up(&vchan->rx_queue);
 }
@@ -119,11 +124,12 @@ static int hab_export_enqueue(struct virtual_channel *vchan,
 		struct export_desc *exp)
 {
 	struct uhab_context *ctx = vchan->ctx;
+	int irqs_disabled = irqs_disabled();
 
-	spin_lock_bh(&ctx->imp_lock);
+	hab_spin_lock(&ctx->imp_lock, irqs_disabled);
 	list_add_tail(&exp->node, &ctx->imp_whse);
 	ctx->import_total++;
-	spin_unlock_bh(&ctx->imp_lock);
+	hab_spin_unlock(&ctx->imp_lock, irqs_disabled);
 
 	return 0;
 }
@@ -151,6 +157,7 @@ static int hab_receive_create_export_ack(struct physical_channel *pchan,
 {
 	struct hab_export_ack_recvd *ack_recvd =
 		kzalloc(sizeof(*ack_recvd), GFP_ATOMIC);
+	int irqs_disabled = irqs_disabled();
 
 	if (!ack_recvd)
 		return -ENOMEM;
@@ -170,9 +177,9 @@ static int hab_receive_create_export_ack(struct physical_channel *pchan,
 		sizebytes) != sizebytes)
 		return -EIO;
 
-	spin_lock_bh(&ctx->expq_lock);
+	hab_spin_lock(&ctx->expq_lock, irqs_disabled);
 	list_add_tail(&ack_recvd->node, &ctx->exp_rxq);
-	spin_unlock_bh(&ctx->expq_lock);
+	hab_spin_unlock(&ctx->expq_lock, irqs_disabled);
 
 	return 0;
 }
@@ -206,6 +213,7 @@ int hab_msg_recv(struct physical_channel *pchan,
 	struct virtual_channel *vchan = NULL;
 	struct export_desc *exp_desc;
 	struct timeval tv;
+	unsigned long long rx_mpm_tv;
 
 	/* get the local virtual channel if it isn't an open message */
 	if (payload_type != HAB_PAYLOAD_TYPE_INIT &&
@@ -262,6 +270,8 @@ int hab_msg_recv(struct physical_channel *pchan,
 
 	switch (payload_type) {
 	case HAB_PAYLOAD_TYPE_MSG:
+	case HAB_PAYLOAD_TYPE_SCHE_RESULT_REQ:
+	case HAB_PAYLOAD_TYPE_SCHE_RESULT_RSP:
 		message = hab_msg_alloc(pchan, sizebytes);
 		if (!message)
 			break;
@@ -353,6 +363,19 @@ int hab_msg_recv(struct physical_channel *pchan,
 				(struct habmm_xing_vm_stat *)message->data;
 			pstat->rx_sec = tv.tv_sec;
 			pstat->rx_usec = tv.tv_usec;
+			hab_msg_queue(vchan, message);
+		}
+		break;
+
+	case HAB_PAYLOAD_TYPE_SCHE_MSG:
+	case HAB_PAYLOAD_TYPE_SCHE_MSG_ACK:
+		rx_mpm_tv = msm_timer_get_sclk_ticks();
+		/* pull down the incoming data */
+		message = hab_msg_alloc(pchan, sizebytes);
+		if (!message)
+			pr_err("failed to allocate msg Arrived msg will be lost\n");
+		else {
+			((unsigned long long *)message->data)[0] = rx_mpm_tv;
 			hab_msg_queue(vchan, message);
 		}
 		break;

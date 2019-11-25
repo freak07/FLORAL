@@ -176,10 +176,7 @@ int diag_remote_dev_open(int id)
 
 void diag_remote_dev_close(int id)
 {
-	if (id < 0 || id >= NUM_REMOTE_DEV)
-		return;
 
-	diag_mux_close_device(BRIDGE_TO_MUX(id));
 }
 
 int diag_remote_dev_read_done(int id, unsigned char *buf, int len)
@@ -276,7 +273,7 @@ uint16_t diag_get_remote_device_mask(void)
 
 void diag_register_with_bridge(void)
 {
-	if (IS_ENABLED(CONFIG_USB_QCOM_DIAG_BRIDGE))
+	if (IS_ENABLED(CONFIG_USB_QTI_DIAG_BRIDGE))
 		diag_register_with_hsic();
 	else if (IS_ENABLED(CONFIG_MHI_BUS))
 		diag_register_with_mhi();
@@ -284,7 +281,7 @@ void diag_register_with_bridge(void)
 
 void diag_unregister_bridge(void)
 {
-	if (IS_ENABLED(CONFIG_USB_QCOM_DIAG_BRIDGE))
+	if (IS_ENABLED(CONFIG_USB_QTI_DIAG_BRIDGE))
 		diag_unregister_hsic();
 	else if (IS_ENABLED(CONFIG_MHI_BUS))
 		diag_unregister_mhi();

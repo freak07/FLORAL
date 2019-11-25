@@ -176,9 +176,11 @@ int cnss_request_bus_bandwidth(struct device *dev, int bandwidth)
 
 	switch (bandwidth) {
 	case CNSS_BUS_WIDTH_NONE:
+	case CNSS_BUS_WIDTH_IDLE:
 	case CNSS_BUS_WIDTH_LOW:
 	case CNSS_BUS_WIDTH_MEDIUM:
 	case CNSS_BUS_WIDTH_HIGH:
+	case CNSS_BUS_WIDTH_VERY_HIGH:
 		ret = msm_bus_scale_client_update_request(
 			bus_bw_info->bus_client, bandwidth);
 		if (!ret)
@@ -241,6 +243,9 @@ int cnss_wlan_enable(struct device *dev,
 	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
 	int ret = 0;
 
+	if (!plat_priv)
+		return -ENODEV;
+
 	if (plat_priv->device_id == QCA6174_DEVICE_ID)
 		return 0;
 
@@ -275,6 +280,9 @@ EXPORT_SYMBOL(cnss_wlan_enable);
 int cnss_wlan_disable(struct device *dev, enum cnss_driver_mode mode)
 {
 	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
+
+	if (!plat_priv)
+		return -ENODEV;
 
 	if (plat_priv->device_id == QCA6174_DEVICE_ID)
 		return 0;
@@ -347,6 +355,9 @@ EXPORT_SYMBOL(cnss_athdiag_write);
 int cnss_set_fw_log_mode(struct device *dev, u8 fw_log_mode)
 {
 	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
+
+	if (!plat_priv)
+		return -ENODEV;
 
 	if (plat_priv->device_id == QCA6174_DEVICE_ID)
 		return 0;
@@ -651,7 +662,7 @@ int cnss_idle_restart(struct device *dev)
 
 	ret = cnss_driver_event_post(plat_priv,
 				     CNSS_DRIVER_EVENT_IDLE_RESTART,
-				     CNSS_EVENT_SYNC, NULL);
+				     CNSS_EVENT_SYNC_UNINTERRUPTIBLE, NULL);
 	if (ret)
 		goto out;
 
@@ -705,7 +716,7 @@ int cnss_idle_shutdown(struct device *dev)
 skip_wait:
 	return cnss_driver_event_post(plat_priv,
 				      CNSS_DRIVER_EVENT_IDLE_SHUTDOWN,
-				      CNSS_EVENT_SYNC, NULL);
+				      CNSS_EVENT_SYNC_UNINTERRUPTIBLE, NULL);
 }
 EXPORT_SYMBOL(cnss_idle_shutdown);
 
@@ -1203,6 +1214,26 @@ int cnss_force_collect_rddm(struct device *dev)
 }
 EXPORT_SYMBOL(cnss_force_collect_rddm);
 
+int cnss_qmi_send_get(struct device *dev)
+{
+	return 0;
+}
+EXPORT_SYMBOL(cnss_qmi_send_get);
+
+int cnss_qmi_send_put(struct device *dev)
+{
+	return 0;
+}
+EXPORT_SYMBOL(cnss_qmi_send_put);
+
+int cnss_qmi_send(struct device *dev, int type, void *cmd,
+		  int cmd_len, void *cb_ctx,
+		  int (*cb)(void *ctx, void *event, int event_len))
+{
+	return -EINVAL;
+}
+EXPORT_SYMBOL(cnss_qmi_send);
+
 static int cnss_cold_boot_cal_start_hdlr(struct cnss_plat_data *plat_priv)
 {
 	int ret = 0;
@@ -1341,7 +1372,7 @@ static int cnss_qdss_trace_save_hdlr(struct cnss_plat_data *plat_priv,
 			va = cnss_qdss_trace_pa_to_va(plat_priv, pa,
 						      size, &seg_id);
 			if (!va) {
-				cnss_pr_err("Fail to find matching va for pa %pa\n",
+				cnss_pr_err("Fail to find matching va for pa 0x%llx\n",
 					    pa);
 				ret = -EINVAL;
 				break;

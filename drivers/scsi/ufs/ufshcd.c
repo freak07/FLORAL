@@ -962,7 +962,8 @@ static inline void ufshcd_cond_add_cmd_trace(struct ufs_hba *hba,
 		}
 	}
 
-	if (lrbp->cmd && (lrbp->command_type == UTP_CMD_TYPE_SCSI)) {
+	if (lrbp->cmd && ((lrbp->command_type == UTP_CMD_TYPE_SCSI) ||
+			  (lrbp->command_type == UTP_CMD_TYPE_UFS_STORAGE))) {
 		cmd_type = "scsi";
 		cmd_id = (u8)(*lrbp->cmd->cmnd);
 	} else if (lrbp->command_type == UTP_CMD_TYPE_DEV_MANAGE) {
@@ -3272,7 +3273,8 @@ int ufshcd_copy_query_response(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 	memcpy(&query_res->upiu_res, &lrbp->ucd_rsp_ptr->qr, QUERY_OSF_SIZE);
 
 	/* Get the descriptor */
-	if (lrbp->ucd_rsp_ptr->qr.opcode == UPIU_QUERY_OPCODE_READ_DESC) {
+	if (hba->dev_cmd.query.descriptor &&
+	    lrbp->ucd_rsp_ptr->qr.opcode == UPIU_QUERY_OPCODE_READ_DESC) {
 		u8 *descp = (u8 *)lrbp->ucd_rsp_ptr +
 				GENERAL_UPIU_REQUEST_SIZE;
 		u16 resp_len;
@@ -4008,8 +4010,8 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	if (err) {
 		if (err != -EAGAIN)
 			dev_err(hba->dev,
-				"%s: failed to compose upiu %d\n",
-				__func__, err);
+				"%s: failed to compose upiu %d cmd:0x%08x lun:%d\n",
+				__func__, err, cmd, lrbp->lun);
 
 		lrbp->cmd = NULL;
 		clear_bit_unlock(tag, &hba->lrb_in_use);
@@ -5792,9 +5794,10 @@ static int ufshcd_config_pwr_mode(struct ufs_hba *hba,
  */
 static int ufshcd_complete_dev_init(struct ufs_hba *hba)
 {
-	int i;
+	int i = 0;
 	int err;
 	bool flag_res = 1;
+	ktime_t timeout;
 
 	err = ufshcd_query_flag_retry(hba, UPIU_QUERY_OPCODE_SET_FLAG,
 		QUERY_FLAG_IDN_FDEVICEINIT, NULL);
@@ -5805,10 +5808,30 @@ static int ufshcd_complete_dev_init(struct ufs_hba *hba)
 		goto out;
 	}
 
-	/* poll for max. 1000 iterations for fDeviceInit flag to clear */
-	for (i = 0; i < 1000 && !err && flag_res; i++)
+	/*
+	 * Some vendor devices are taking longer time to complete its internal
+	 * initialization, so set fDeviceInit flag poll time to 5 secs
+	 */
+	timeout = ktime_add_ms(ktime_get(), 5000);
+
+	/* poll for max. 5sec for fDeviceInit flag to clear */
+	while (1) {
+		bool timedout = ktime_after(ktime_get(), timeout);
 		err = ufshcd_query_flag_retry(hba, UPIU_QUERY_OPCODE_READ_FLAG,
-			QUERY_FLAG_IDN_FDEVICEINIT, &flag_res);
+					QUERY_FLAG_IDN_FDEVICEINIT, &flag_res);
+		if (err || !flag_res || timedout)
+			break;
+
+		/*
+		 * Poll for this flag in a tight loop for first 1000 iterations.
+		 * This is same as old logic which is working for most of the
+		 * devices, so continue using the same.
+		 */
+		if (i == 1000)
+			msleep(20);
+		else
+			i++;
+	}
 
 	if (err)
 		dev_err(hba->dev,
@@ -8447,19 +8470,19 @@ static u32 ufshcd_find_max_sup_active_icc_level(struct ufs_hba *hba,
 		goto out;
 	}
 
-	if (hba->vreg_info.vcc)
+	if (hba->vreg_info.vcc && hba->vreg_info.vcc->max_uA)
 		icc_level = ufshcd_get_max_icc_level(
 				hba->vreg_info.vcc->max_uA,
 				POWER_DESC_MAX_ACTV_ICC_LVLS - 1,
 				&desc_buf[PWR_DESC_ACTIVE_LVLS_VCC_0]);
 
-	if (hba->vreg_info.vccq)
+	if (hba->vreg_info.vccq && hba->vreg_info.vccq->max_uA)
 		icc_level = ufshcd_get_max_icc_level(
 				hba->vreg_info.vccq->max_uA,
 				icc_level,
 				&desc_buf[PWR_DESC_ACTIVE_LVLS_VCCQ_0]);
 
-	if (hba->vreg_info.vccq2)
+	if (hba->vreg_info.vccq2 && hba->vreg_info.vccq2->max_uA)
 		icc_level = ufshcd_get_max_icc_level(
 				hba->vreg_info.vccq2->max_uA,
 				icc_level,
@@ -9712,6 +9735,15 @@ static int ufshcd_config_vreg_load(struct device *dev, struct ufs_vreg *vreg,
 	if (!vreg)
 		return 0;
 
+	/*
+	 * "set_load" operation shall be required on those regulators
+	 * which specifically configured current limitation. Otherwise
+	 * zero max_uA may cause unexpected behavior when regulator is
+	 * enabled or set as high power mode.
+	 */
+	if (!vreg->max_uA)
+		return 0;
+
 	ret = regulator_set_load(vreg->reg, ua);
 	if (ret < 0) {
 		dev_err(dev, "%s: %s set load (ua=%d) failed, err=%d\n",
@@ -9763,15 +9795,18 @@ static int ufshcd_config_vreg(struct device *dev,
 		if (ret)
 			goto out;
 
-		min_uV = on ? vreg->min_uV : 0;
-		if (vreg->low_voltage_sup && !vreg->low_voltage_active)
-			min_uV = vreg->max_uV;
+		if (vreg->min_uV && vreg->max_uV) {
+			min_uV = on ? vreg->min_uV : 0;
+			if (vreg->low_voltage_sup && !vreg->low_voltage_active)
+				min_uV = vreg->max_uV;
 
-		ret = regulator_set_voltage(reg, min_uV, vreg->max_uV);
-		if (ret) {
-			dev_err(dev, "%s: %s set voltage failed, err=%d\n",
+			ret = regulator_set_voltage(reg, min_uV, vreg->max_uV);
+			if (ret) {
+				dev_err(dev,
+					"%s: %s set voltage failed, err=%d\n",
 					__func__, name, ret);
-			goto out;
+				goto out;
+			}
 		}
 	}
 out:
@@ -10641,7 +10676,19 @@ static int ufshcd_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	ret = ufshcd_vreg_set_hpm(hba);
 	if (ret)
 		goto disable_irq_and_vops_clks;
-
+	if (hba->restore) {
+		/* Configure UTRL and UTMRL base address registers */
+		ufshcd_writel(hba, lower_32_bits(hba->utrdl_dma_addr),
+			      REG_UTP_TRANSFER_REQ_LIST_BASE_L);
+		ufshcd_writel(hba, upper_32_bits(hba->utrdl_dma_addr),
+			      REG_UTP_TRANSFER_REQ_LIST_BASE_H);
+		ufshcd_writel(hba, lower_32_bits(hba->utmrdl_dma_addr),
+			      REG_UTP_TASK_REQ_LIST_BASE_L);
+		ufshcd_writel(hba, upper_32_bits(hba->utmrdl_dma_addr),
+			      REG_UTP_TASK_REQ_LIST_BASE_H);
+		/* Commit the registers */
+		mb();
+	}
 	/*
 	 * Call vendor specific resume callback. As these callbacks may access
 	 * vendor specific host controller register space call them when the
@@ -10655,6 +10702,10 @@ static int ufshcd_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	    (ufshcd_is_card_offline(hba) ||
 	     (ufshcd_is_card_online(hba) && !hba->sdev_ufs_device)))
 		goto skip_dev_ops;
+
+	/* Resuming from hibernate, assume that link was OFF */
+	if (hba->restore)
+		ufshcd_set_link_off(hba);
 
 	if (ufshcd_is_link_hibern8(hba)) {
 		ret = ufshcd_uic_hibern8_exit(hba);
@@ -10726,6 +10777,9 @@ disable_irq_and_vops_clks:
 		hba->clk_gating.state = CLKS_OFF;
 out:
 	hba->pm_op_in_progress = 0;
+
+	if (hba->restore)
+		hba->restore = false;
 
 	if (ret)
 		ufshcd_update_error_stats(hba, UFS_ERR_RESUME);
@@ -10888,6 +10942,25 @@ int ufshcd_runtime_idle(struct ufs_hba *hba)
 	return 0;
 }
 EXPORT_SYMBOL(ufshcd_runtime_idle);
+
+int ufshcd_system_freeze(struct ufs_hba *hba)
+{
+	return ufshcd_system_suspend(hba);
+}
+EXPORT_SYMBOL(ufshcd_system_freeze);
+
+int ufshcd_system_restore(struct ufs_hba *hba)
+{
+	hba->restore = true;
+	return ufshcd_system_resume(hba);
+}
+EXPORT_SYMBOL(ufshcd_system_restore);
+
+int ufshcd_system_thaw(struct ufs_hba *hba)
+{
+	return ufshcd_system_resume(hba);
+}
+EXPORT_SYMBOL(ufshcd_system_thaw);
 
 static inline ssize_t ufshcd_pm_lvl_store(struct device *dev,
 					   struct device_attribute *attr,

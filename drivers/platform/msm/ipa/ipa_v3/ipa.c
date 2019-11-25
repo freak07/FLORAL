@@ -41,6 +41,7 @@
 #include <asm/cacheflush.h>
 #include <linux/soc/qcom/smem_state.h>
 #include <linux/of_irq.h>
+#include <linux/ctype.h>
 
 #ifdef CONFIG_ARM64
 
@@ -213,7 +214,8 @@ int ipa3_active_clients_log_print_table(char *buf, int size)
 			"\nTotal active clients count: %d\n",
 			atomic_read(&ipa3_ctx->ipa3_active_clients.cnt));
 
-	cnt += ipa_mpm_panic_handler(buf + cnt, size - cnt);
+	if (ipa3_is_mhip_offload_enabled())
+		cnt += ipa_mpm_panic_handler(buf + cnt, size - cnt);
 
 	spin_unlock_irqrestore(&ipa3_ctx->ipa3_active_clients_logging.lock,
 		flags);
@@ -256,6 +258,24 @@ static int ipa3_clean_modem_rule(void)
 	}
 
 	return val;
+}
+
+static int ipa3_clean_mhip_dl_rule(void)
+{
+	struct ipa_remove_offload_connection_req_msg_v01 req;
+
+	memset(&req, 0, sizeof(struct
+		ipa_remove_offload_connection_req_msg_v01));
+
+	req.clean_all_rules_valid = true;
+	req.clean_all_rules = true;
+
+	if (ipa3_qmi_rmv_offload_request_send(&req)) {
+		IPAWANDBG("clean dl rule cache failed\n");
+		return -EFAULT;
+	}
+
+	return 0;
 }
 
 static int ipa3_active_clients_panic_notifier(struct notifier_block *this,
@@ -1861,7 +1881,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		memset(&nat_del, 0, sizeof(nat_del));
 		nat_del.table_index = 0;
 		retval = ipa3_nat_del_cmd(&nat_del);
-		retval = ipa3_clean_modem_rule();
+		if (ipa3_ctx->platform_type == IPA_PLAT_TYPE_APQ)
+			retval = ipa3_clean_mhip_dl_rule();
+		else
+			retval = ipa3_clean_modem_rule();
 		ipa3_counter_id_remove_all();
 		break;
 
@@ -2437,7 +2460,7 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				((struct ipa_ioc_mdfy_flt_rule_v2 *)
 				header)->rule_mdfy_size);
 		/* modify the rule pointer to the kernel pointer */
-		((struct ipa_ioc_add_flt_rule_after_v2 *)header)->rules =
+		((struct ipa_ioc_mdfy_flt_rule_v2 *)header)->rules =
 			(uintptr_t)kptr;
 		if (ipa3_mdfy_flt_rule_v2
 			((struct ipa_ioc_mdfy_flt_rule_v2 *)header)) {
@@ -2460,6 +2483,12 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case IPA_IOC_FNR_COUNTER_ALLOC:
+		if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_5) {
+			IPAERR("FNR stats not supported on IPA ver %d",
+				ipa3_ctx->ipa_hw_type);
+			retval = -EFAULT;
+			break;
+		}
 		if (copy_from_user(header, (const void __user *)arg,
 			sizeof(struct ipa_ioc_flt_rt_counter_alloc))) {
 			IPAERR("copy_from_user fails\n");
@@ -2503,6 +2532,12 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case IPA_IOC_FNR_COUNTER_DEALLOC:
+		if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_5) {
+			IPAERR("FNR stats not supported on IPA ver %d",
+				ipa3_ctx->ipa_hw_type);
+			retval = -EFAULT;
+			break;
+		}
 		hdl = (int)arg;
 		if (hdl < 0) {
 			IPAERR("IPA_FNR_COUNTER_DEALLOC failed: hdl %d\n",
@@ -2514,6 +2549,12 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case IPA_IOC_FNR_COUNTER_QUERY:
+		if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_5) {
+			IPAERR("FNR stats not supported on IPA ver %d",
+				ipa3_ctx->ipa_hw_type);
+			retval = -EFAULT;
+			break;
+		}
 		if (copy_from_user(header, (const void __user *)arg,
 			sizeof(struct ipa_ioc_flt_rt_query))) {
 			IPAERR_RL("copy_from_user fails\n");
@@ -2608,6 +2649,10 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = -EFAULT;
 			break;
 		}
+
+		/* null terminate the string */
+		fst_switch.netdev_name[IPA_RESOURCE_NAME_MAX - 1] = '\0';
+
 		retval = ipa_wigig_send_msg(WIGIG_FST_SWITCH,
 			fst_switch.netdev_name,
 			fst_switch.client_mac_addr,
@@ -2910,6 +2955,12 @@ static void ipa3_q6_avoid_holb(void)
 			ipahal_write_reg_n_fields(
 				IPA_ENDP_INIT_HOL_BLOCK_EN_n,
 				ep_idx, &ep_holb);
+
+			/* IPA4.5 issue requires HOLB_EN to be written twice */
+			if (ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5)
+				ipahal_write_reg_n_fields(
+					IPA_ENDP_INIT_HOL_BLOCK_EN_n,
+					ep_idx, &ep_holb);
 		}
 	}
 }
@@ -2982,6 +3033,9 @@ static int ipa3_q6_clean_q6_flt_tbls(enum ipa_ip_type ip,
 	u32 lcl_addr_mem_part;
 	u32 lcl_hdr_sz;
 	struct ipa_mem_buffer mem;
+	struct ipahal_reg_valmask valmask;
+	struct ipahal_imm_cmd_register_write reg_write_coal_close;
+	int i;
 
 	IPADBG("Entry\n");
 
@@ -2999,13 +3053,13 @@ static int ipa3_q6_clean_q6_flt_tbls(enum ipa_ip_type ip,
 		return retval;
 	}
 
-	/* Up to filtering pipes we have filtering tables */
-	desc = kcalloc(ipa3_ctx->ep_flt_num, sizeof(struct ipa3_desc),
+	/* Up to filtering pipes we have filtering tables + 1 for coal close */
+	desc = kcalloc(ipa3_ctx->ep_flt_num + 1, sizeof(struct ipa3_desc),
 		GFP_KERNEL);
 	if (!desc)
 		return -ENOMEM;
 
-	cmd_pyld = kcalloc(ipa3_ctx->ep_flt_num,
+	cmd_pyld = kcalloc(ipa3_ctx->ep_flt_num + 1,
 		sizeof(struct ipahal_imm_cmd_pyld *), GFP_KERNEL);
 	if (!cmd_pyld) {
 		retval = -ENOMEM;
@@ -3035,6 +3089,28 @@ static int ipa3_q6_clean_q6_flt_tbls(enum ipa_ip_type ip,
 	if (retval) {
 		IPAERR("failed to generate flt single tbl empty img\n");
 		goto free_cmd_pyld;
+	}
+
+	/* IC to close the coal frame before HPS Clear if coal is enabled */
+	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1) {
+		i = ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS);
+		reg_write_coal_close.skip_pipeline_clear = false;
+		reg_write_coal_close.pipeline_clear_options = IPAHAL_HPS_CLEAR;
+		reg_write_coal_close.offset = ipahal_get_reg_ofst(
+			IPA_AGGR_FORCE_CLOSE);
+		ipahal_get_aggr_force_close_valmask(i, &valmask);
+		reg_write_coal_close.value = valmask.val;
+		reg_write_coal_close.value_mask = valmask.mask;
+		cmd_pyld[num_cmds] = ipahal_construct_imm_cmd(
+			IPA_IMM_CMD_REGISTER_WRITE,
+			&reg_write_coal_close, false);
+		if (!cmd_pyld[num_cmds]) {
+			IPAERR("failed to construct coal close IC\n");
+			retval = -ENOMEM;
+			goto free_empty_img;
+		}
+		ipa3_init_imm_cmd_desc(&desc[num_cmds], cmd_pyld[num_cmds]);
+		++num_cmds;
 	}
 
 	for (pipe_idx = 0; pipe_idx < ipa3_ctx->ipa_num_pipes; pipe_idx++) {
@@ -3102,13 +3178,17 @@ static int ipa3_q6_clean_q6_rt_tbls(enum ipa_ip_type ip,
 {
 	struct ipa3_desc *desc;
 	struct ipahal_imm_cmd_dma_shared_mem cmd = {0};
-	struct ipahal_imm_cmd_pyld *cmd_pyld = NULL;
+	struct ipahal_imm_cmd_pyld **cmd_pyld;
 	int retval = 0;
+	int num_cmds = 0;
 	u32 modem_rt_index_lo;
 	u32 modem_rt_index_hi;
 	u32 lcl_addr_mem_part;
 	u32 lcl_hdr_sz;
 	struct ipa_mem_buffer mem;
+	struct ipahal_reg_valmask valmask;
+	struct ipahal_imm_cmd_register_write reg_write_coal_close;
+	int i;
 
 	IPADBG("Entry\n");
 
@@ -3156,10 +3236,38 @@ static int ipa3_q6_clean_q6_rt_tbls(enum ipa_ip_type ip,
 		return -ENOMEM;
 	}
 
-	desc = kzalloc(sizeof(struct ipa3_desc), GFP_KERNEL);
+	desc = kcalloc(2, sizeof(struct ipa3_desc), GFP_KERNEL);
 	if (!desc) {
-		IPAERR("failed to allocate memory\n");
+		retval = -ENOMEM;
 		goto free_empty_img;
+	}
+
+	cmd_pyld = kcalloc(2, sizeof(struct ipahal_imm_cmd_pyld *), GFP_KERNEL);
+	if (!cmd_pyld) {
+		retval = -ENOMEM;
+		goto free_desc;
+	}
+
+	/* IC to close the coal frame before HPS Clear if coal is enabled */
+	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1) {
+		i = ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS);
+		reg_write_coal_close.skip_pipeline_clear = false;
+		reg_write_coal_close.pipeline_clear_options = IPAHAL_HPS_CLEAR;
+		reg_write_coal_close.offset = ipahal_get_reg_ofst(
+			IPA_AGGR_FORCE_CLOSE);
+		ipahal_get_aggr_force_close_valmask(i, &valmask);
+		reg_write_coal_close.value = valmask.val;
+		reg_write_coal_close.value_mask = valmask.mask;
+		cmd_pyld[num_cmds] = ipahal_construct_imm_cmd(
+			IPA_IMM_CMD_REGISTER_WRITE,
+			&reg_write_coal_close, false);
+		if (!cmd_pyld[num_cmds]) {
+			IPAERR("failed to construct coal close IC\n");
+			retval = -ENOMEM;
+			goto free_cmd_pyld;
+		}
+		ipa3_init_imm_cmd_desc(&desc[num_cmds], cmd_pyld[num_cmds]);
+		++num_cmds;
 	}
 
 	cmd.is_read = false;
@@ -3170,23 +3278,27 @@ static int ipa3_q6_clean_q6_rt_tbls(enum ipa_ip_type ip,
 	cmd.local_addr = ipa3_ctx->smem_restricted_bytes +
 		lcl_addr_mem_part +
 		modem_rt_index_lo * ipahal_get_hw_tbl_hdr_width();
-	cmd_pyld = ipahal_construct_imm_cmd(
+	cmd_pyld[num_cmds] = ipahal_construct_imm_cmd(
 			IPA_IMM_CMD_DMA_SHARED_MEM, &cmd, false);
-	if (!cmd_pyld) {
+	if (!cmd_pyld[num_cmds]) {
 		IPAERR("failed to construct dma_shared_mem imm cmd\n");
 		retval = -ENOMEM;
-		goto free_desc;
+		goto free_cmd_pyld;
 	}
-	ipa3_init_imm_cmd_desc(desc, cmd_pyld);
+	ipa3_init_imm_cmd_desc(&desc[num_cmds], cmd_pyld[num_cmds]);
+	++num_cmds;
 
 	IPADBG("Sending 1 descriptor for rt tbl clearing\n");
-	retval = ipa3_send_cmd(1, desc);
+	retval = ipa3_send_cmd(num_cmds, desc);
 	if (retval) {
 		IPAERR("failed to send immediate command (err %d)\n", retval);
 		retval = -EFAULT;
 	}
 
-	ipahal_destroy_imm_cmd(cmd_pyld);
+free_cmd_pyld:
+	for (i = 0; i < num_cmds; i++)
+		ipahal_destroy_imm_cmd(cmd_pyld[i]);
+	kfree(cmd_pyld);
 free_desc:
 	kfree(desc);
 free_empty_img:
@@ -3197,11 +3309,14 @@ free_empty_img:
 static int ipa3_q6_clean_q6_tables(void)
 {
 	struct ipa3_desc *desc;
-	struct ipahal_imm_cmd_pyld *cmd_pyld = NULL;
+	struct ipahal_imm_cmd_pyld **cmd_pyld;
 	struct ipahal_imm_cmd_register_write reg_write_cmd = {0};
 	int retval = 0;
+	int num_cmds = 0;
 	struct ipahal_reg_fltrt_hash_flush flush;
 	struct ipahal_reg_valmask valmask;
+	struct ipahal_imm_cmd_register_write reg_write_coal_close;
+	int i;
 
 	IPADBG("Entry\n");
 
@@ -3247,9 +3362,37 @@ static int ipa3_q6_clean_q6_tables(void)
 	if (ipa3_ctx->ipa_fltrt_not_hashable)
 		return retval;
 	/* Flush rules cache */
-	desc = kzalloc(sizeof(struct ipa3_desc), GFP_KERNEL);
+	desc = kcalloc(2, sizeof(struct ipa3_desc), GFP_KERNEL);
 	if (!desc)
 		return -ENOMEM;
+
+	cmd_pyld = kcalloc(2, sizeof(struct ipahal_imm_cmd_pyld *), GFP_KERNEL);
+	if (!cmd_pyld) {
+		retval = -ENOMEM;
+		goto bail_desc;
+	}
+
+	/* IC to close the coal frame before HPS Clear if coal is enabled */
+	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1) {
+		i = ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS);
+		reg_write_coal_close.skip_pipeline_clear = false;
+		reg_write_coal_close.pipeline_clear_options = IPAHAL_HPS_CLEAR;
+		reg_write_coal_close.offset = ipahal_get_reg_ofst(
+			IPA_AGGR_FORCE_CLOSE);
+		ipahal_get_aggr_force_close_valmask(i, &valmask);
+		reg_write_coal_close.value = valmask.val;
+		reg_write_coal_close.value_mask = valmask.mask;
+		cmd_pyld[num_cmds] = ipahal_construct_imm_cmd(
+			IPA_IMM_CMD_REGISTER_WRITE,
+			&reg_write_coal_close, false);
+		if (!cmd_pyld[num_cmds]) {
+			IPAERR("failed to construct coal close IC\n");
+			retval = -ENOMEM;
+			goto free_cmd_pyld;
+		}
+		ipa3_init_imm_cmd_desc(&desc[num_cmds], cmd_pyld[num_cmds]);
+		++num_cmds;
+	}
 
 	flush.v4_flt = true;
 	flush.v4_rt = true;
@@ -3261,24 +3404,27 @@ static int ipa3_q6_clean_q6_tables(void)
 	reg_write_cmd.offset = ipahal_get_reg_ofst(IPA_FILT_ROUT_HASH_FLUSH);
 	reg_write_cmd.value = valmask.val;
 	reg_write_cmd.value_mask = valmask.mask;
-	cmd_pyld = ipahal_construct_imm_cmd(IPA_IMM_CMD_REGISTER_WRITE,
-		&reg_write_cmd, false);
-	if (!cmd_pyld) {
+	cmd_pyld[num_cmds] = ipahal_construct_imm_cmd(
+		IPA_IMM_CMD_REGISTER_WRITE, &reg_write_cmd, false);
+	if (!cmd_pyld[num_cmds]) {
 		IPAERR("fail construct register_write imm cmd\n");
 		retval = -EFAULT;
-		goto bail_desc;
+		goto free_cmd_pyld;
 	}
-	ipa3_init_imm_cmd_desc(desc, cmd_pyld);
+	ipa3_init_imm_cmd_desc(&desc[num_cmds], cmd_pyld[num_cmds]);
+	++num_cmds;
 
 	IPADBG("Sending 1 descriptor for tbls flush\n");
-	retval = ipa3_send_cmd(1, desc);
+	retval = ipa3_send_cmd(num_cmds, desc);
 	if (retval) {
 		IPAERR("failed to send immediate command (err %d)\n", retval);
 		retval = -EFAULT;
 	}
 
-	ipahal_destroy_imm_cmd(cmd_pyld);
-
+free_cmd_pyld:
+	for (i = 0; i < num_cmds; i++)
+		ipahal_destroy_imm_cmd(cmd_pyld[i]);
+	kfree(cmd_pyld);
 bail_desc:
 	kfree(desc);
 	IPADBG("Done - retval = %d\n", retval);
@@ -3295,11 +3441,38 @@ static int ipa3_q6_set_ex_path_to_apps(void)
 	struct ipahal_imm_cmd_register_write reg_write;
 	struct ipahal_imm_cmd_pyld *cmd_pyld;
 	int retval;
+	struct ipahal_reg_valmask valmask;
+	struct ipahal_imm_cmd_register_write reg_write_coal_close;
+	int i;
 
-	desc = kcalloc(ipa3_ctx->ipa_num_pipes, sizeof(struct ipa3_desc),
+	desc = kcalloc(ipa3_ctx->ipa_num_pipes + 1, sizeof(struct ipa3_desc),
 			GFP_KERNEL);
 	if (!desc)
 		return -ENOMEM;
+
+	/* IC to close the coal frame before HPS Clear if coal is enabled */
+	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1) {
+		i = ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS);
+		reg_write_coal_close.skip_pipeline_clear = false;
+		reg_write_coal_close.pipeline_clear_options = IPAHAL_HPS_CLEAR;
+		reg_write_coal_close.offset = ipahal_get_reg_ofst(
+			IPA_AGGR_FORCE_CLOSE);
+		ipahal_get_aggr_force_close_valmask(i, &valmask);
+		reg_write_coal_close.value = valmask.val;
+		reg_write_coal_close.value_mask = valmask.mask;
+		cmd_pyld = ipahal_construct_imm_cmd(
+			IPA_IMM_CMD_REGISTER_WRITE,
+			&reg_write_coal_close, false);
+		if (!cmd_pyld) {
+			IPAERR("failed to construct coal close IC\n");
+			ipa_assert();
+			return -ENOMEM;
+		}
+		ipa3_init_imm_cmd_desc(&desc[num_descs], cmd_pyld);
+		desc[num_descs].callback = ipa3_destroy_imm;
+		desc[num_descs].user1 = cmd_pyld;
+		++num_descs;
+	}
 
 	/* Set the exception path to AP */
 	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++) {
@@ -3626,11 +3799,17 @@ int _ipa_init_sram_v3(void)
  */
 int _ipa_init_hdr_v3_0(void)
 {
-	struct ipa3_desc desc;
+	struct ipa3_desc hdr_init_desc;
+	struct ipa3_desc dma_cmd_desc[2];
 	struct ipa_mem_buffer mem;
 	struct ipahal_imm_cmd_hdr_init_local cmd = {0};
-	struct ipahal_imm_cmd_pyld *cmd_pyld;
+	struct ipahal_imm_cmd_pyld *hdr_init_cmd_payload;
+	struct ipahal_imm_cmd_pyld *cmd_pyld[2];
 	struct ipahal_imm_cmd_dma_shared_mem dma_cmd = { 0 };
+	struct ipahal_reg_valmask valmask;
+	struct ipahal_imm_cmd_register_write reg_write_coal_close;
+	int num_cmds = 0;
+	int i;
 
 	mem.size = IPA_MEM_PART(modem_hdr_size) + IPA_MEM_PART(apps_hdr_size);
 	mem.base = dma_alloc_coherent(ipa3_ctx->pdev, mem.size, &mem.phys_base,
@@ -3645,29 +3824,51 @@ int _ipa_init_hdr_v3_0(void)
 	cmd.size_hdr_table = mem.size;
 	cmd.hdr_addr = ipa3_ctx->smem_restricted_bytes +
 		IPA_MEM_PART(modem_hdr_ofst);
-	cmd_pyld = ipahal_construct_imm_cmd(
+	hdr_init_cmd_payload = ipahal_construct_imm_cmd(
 		IPA_IMM_CMD_HDR_INIT_LOCAL, &cmd, false);
-	if (!cmd_pyld) {
+	if (!hdr_init_cmd_payload) {
 		IPAERR("fail to construct hdr_init_local imm cmd\n");
 		dma_free_coherent(ipa3_ctx->pdev,
 			mem.size, mem.base,
 			mem.phys_base);
 		return -EFAULT;
 	}
-	ipa3_init_imm_cmd_desc(&desc, cmd_pyld);
+	ipa3_init_imm_cmd_desc(&hdr_init_desc, hdr_init_cmd_payload);
 	IPA_DUMP_BUFF(mem.base, mem.phys_base, mem.size);
 
-	if (ipa3_send_cmd(1, &desc)) {
+	if (ipa3_send_cmd(1, &hdr_init_desc)) {
 		IPAERR("fail to send immediate command\n");
-		ipahal_destroy_imm_cmd(cmd_pyld);
+		ipahal_destroy_imm_cmd(hdr_init_cmd_payload);
 		dma_free_coherent(ipa3_ctx->pdev,
 			mem.size, mem.base,
 			mem.phys_base);
 		return -EFAULT;
 	}
 
-	ipahal_destroy_imm_cmd(cmd_pyld);
+	ipahal_destroy_imm_cmd(hdr_init_cmd_payload);
 	dma_free_coherent(ipa3_ctx->pdev, mem.size, mem.base, mem.phys_base);
+
+	/* IC to close the coal frame before HPS Clear if coal is enabled */
+	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1) {
+		i = ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS);
+		reg_write_coal_close.skip_pipeline_clear = false;
+		reg_write_coal_close.pipeline_clear_options = IPAHAL_HPS_CLEAR;
+		reg_write_coal_close.offset = ipahal_get_reg_ofst(
+			IPA_AGGR_FORCE_CLOSE);
+		ipahal_get_aggr_force_close_valmask(i, &valmask);
+		reg_write_coal_close.value = valmask.val;
+		reg_write_coal_close.value_mask = valmask.mask;
+		cmd_pyld[num_cmds] = ipahal_construct_imm_cmd(
+			IPA_IMM_CMD_REGISTER_WRITE,
+			&reg_write_coal_close, false);
+		if (!cmd_pyld[num_cmds]) {
+			IPAERR("failed to construct coal close IC\n");
+			return -ENOMEM;
+		}
+		ipa3_init_imm_cmd_desc(&dma_cmd_desc[num_cmds],
+			cmd_pyld[num_cmds]);
+		++num_cmds;
+	}
 
 	mem.size = IPA_MEM_PART(modem_hdr_proc_ctx_size) +
 		IPA_MEM_PART(apps_hdr_proc_ctx_size);
@@ -3686,28 +3887,31 @@ int _ipa_init_hdr_v3_0(void)
 	dma_cmd.local_addr = ipa3_ctx->smem_restricted_bytes +
 		IPA_MEM_PART(modem_hdr_proc_ctx_ofst);
 	dma_cmd.size = mem.size;
-	cmd_pyld = ipahal_construct_imm_cmd(
+	cmd_pyld[num_cmds] = ipahal_construct_imm_cmd(
 		IPA_IMM_CMD_DMA_SHARED_MEM, &dma_cmd, false);
-	if (!cmd_pyld) {
+	if (!cmd_pyld[num_cmds]) {
 		IPAERR("fail to construct dma_shared_mem imm\n");
 		dma_free_coherent(ipa3_ctx->pdev,
 			mem.size, mem.base,
 			mem.phys_base);
 		return -ENOMEM;
 	}
-	ipa3_init_imm_cmd_desc(&desc, cmd_pyld);
+	ipa3_init_imm_cmd_desc(&dma_cmd_desc[num_cmds], cmd_pyld[num_cmds]);
+	++num_cmds;
 	IPA_DUMP_BUFF(mem.base, mem.phys_base, mem.size);
 
-	if (ipa3_send_cmd(1, &desc)) {
+	if (ipa3_send_cmd(num_cmds, dma_cmd_desc)) {
 		IPAERR("fail to send immediate command\n");
-		ipahal_destroy_imm_cmd(cmd_pyld);
+		for (i = 0; i < num_cmds; i++)
+			ipahal_destroy_imm_cmd(cmd_pyld[i]);
 		dma_free_coherent(ipa3_ctx->pdev,
 			mem.size,
 			mem.base,
 			mem.phys_base);
 		return -EBUSY;
 	}
-	ipahal_destroy_imm_cmd(cmd_pyld);
+	for (i = 0; i < num_cmds; i++)
+		ipahal_destroy_imm_cmd(cmd_pyld[i]);
 
 	ipahal_write_reg(IPA_LOCAL_PKT_PROC_CNTXT_BASE, dma_cmd.local_addr);
 
@@ -4482,8 +4686,8 @@ void ipa3_enable_clks(void)
 	if (msm_bus_scale_client_update_request(ipa3_ctx->ipa_bus_hdl,
 	    ipa3_get_bus_vote()))
 		WARN(1, "bus scaling failed");
-	atomic_set(&ipa3_ctx->ipa_clk_vote, 1);
 	ipa3_ctx->ctrl->ipa3_enable_clks();
+	atomic_set(&ipa3_ctx->ipa_clk_vote, 1);
 }
 
 
@@ -5899,10 +6103,12 @@ static ssize_t ipa3_write(struct file *file, const char __user *buf,
 
 	char dbg_buff[32] = { 0 };
 
+	int i = 0;
+
 	if (sizeof(dbg_buff) < count + 1)
 		return -EFAULT;
 
-	missing = copy_from_user(dbg_buff, buf, count);
+	missing = copy_from_user(dbg_buff, buf, min(sizeof(dbg_buff), count));
 
 	if (missing) {
 		IPAERR("Unable to copy data from user\n");
@@ -5917,6 +6123,17 @@ static ssize_t ipa3_write(struct file *file, const char __user *buf,
 	/* Prevent consequent calls from trying to load the FW again. */
 	if (ipa3_is_ready())
 		return count;
+
+	/*Ignore empty ipa_config file*/
+	for (i = 0 ; i < count ; ++i) {
+		if (!isspace(dbg_buff[i]))
+			break;
+	}
+
+	if (i == count) {
+		IPADBG("Empty ipa_config file\n");
+		return count;
+	}
 
 	/* Check MHI configuration on MDM devices */
 	if (!ipa3_is_msm_device()) {
@@ -6142,7 +6359,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 		struct platform_device *ipa_pdev)
 {
 	int result = 0;
-	int i;
+	int i, j;
 	struct ipa3_rt_tbl_set *rset;
 	struct ipa_active_client_logging_info log_info;
 	struct cdev *cdev;
@@ -6164,6 +6381,15 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	for (i = 0; i < IPA_SMMU_CB_MAX; i++)
 		ipa3_ctx->s1_bypass_arr[i] = true;
 
+	/* initialize the gsi protocol info for uC debug stats */
+	for (i = 0; i < IPA_HW_PROTOCOL_MAX; i++) {
+		ipa3_ctx->gsi_info[i].protocol = i;
+		/* initialize all to be not started */
+		for (j = 0; j < IPA_MAX_CH_STATS_SUPPORTED; j++)
+			ipa3_ctx->gsi_info[i].ch_id_info[j].ch_id =
+				0xFF;
+	}
+
 	ipa3_ctx->ipa_wrapper_base = resource_p->ipa_mem_base;
 	ipa3_ctx->ipa_wrapper_size = resource_p->ipa_mem_size;
 	ipa3_ctx->ipa_hw_type = resource_p->ipa_hw_type;
@@ -6178,6 +6404,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	ipa3_ctx->use_64_bit_dma_mask = resource_p->use_64_bit_dma_mask;
 	ipa3_ctx->wan_rx_ring_size = resource_p->wan_rx_ring_size;
 	ipa3_ctx->lan_rx_ring_size = resource_p->lan_rx_ring_size;
+	ipa3_ctx->ipa_wan_skb_page = resource_p->ipa_wan_skb_page;
 	ipa3_ctx->skip_uc_pipe_reset = resource_p->skip_uc_pipe_reset;
 	ipa3_ctx->tethered_flow_control = resource_p->tethered_flow_control;
 	ipa3_ctx->ee = resource_p->ee;
@@ -6200,6 +6427,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	ipa3_ctx->ipa_endp_delay_wa = resource_p->ipa_endp_delay_wa;
 	ipa3_ctx->secure_debug_check_action =
 	    resource_p->secure_debug_check_action;
+	ipa3_ctx->ipa_mhi_proxy = resource_p->ipa_mhi_proxy;
 
 	if (ipa3_ctx->secure_debug_check_action == USE_SCM) {
 		if (ipa_is_mem_dump_allowed())
@@ -6792,7 +7020,7 @@ static int get_ipa_dts_pm_info(struct platform_device *pdev,
 
 		result = of_property_read_string_index(pdev->dev.of_node,
 			"qcom,scaling-exceptions",
-			i * ipa_drv_res->pm_init.threshold_size,
+			i * (ipa_drv_res->pm_init.threshold_size + 1),
 			&ex[i].usecase);
 		if (result) {
 			IPAERR("failed to read qcom,scaling-exceptions");
@@ -6805,7 +7033,8 @@ static int get_ipa_dts_pm_info(struct platform_device *pdev,
 			result = of_property_read_string_index(
 				pdev->dev.of_node,
 				"qcom,scaling-exceptions",
-				i * ipa_drv_res->pm_init.threshold_size + j + 1,
+				i * (ipa_drv_res->pm_init.threshold_size + 1)
+				+ j + 1,
 				&str);
 			if (result) {
 				IPAERR("failed to read qcom,scaling-exceptions"
@@ -6840,6 +7069,7 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	ipa_drv_res->platform_type = 0;
 	ipa_drv_res->modem_cfg_emb_pipe_flt = false;
 	ipa_drv_res->ipa_wdi2 = false;
+	ipa_drv_res->ipa_wan_skb_page = false;
 	ipa_drv_res->ipa_wdi2_over_gsi = false;
 	ipa_drv_res->ipa_wdi3_over_gsi = false;
 	ipa_drv_res->ipa_mhi_dynamic_config = false;
@@ -6961,6 +7191,13 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 			ipa_drv_res->ipa_wdi2
 			? "True" : "False");
 
+	ipa_drv_res->ipa_wan_skb_page =
+			of_property_read_bool(pdev->dev.of_node,
+			"qcom,wan-use-skb-page");
+	IPADBG(": Use skb page = %s\n",
+			ipa_drv_res->ipa_wan_skb_page
+			? "True" : "False");
+
 	ipa_drv_res->ipa_fltrt_not_hashable =
 			of_property_read_bool(pdev->dev.of_node,
 			"qcom,ipa-fltrt-not-hashable");
@@ -6994,6 +7231,13 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 		"qcom,tethered-flow-control");
 	IPADBG(": Use apps based flow control = %s\n",
 		ipa_drv_res->tethered_flow_control
+		? "True" : "False");
+
+	ipa_drv_res->ipa_mhi_proxy =
+		of_property_read_bool(pdev->dev.of_node,
+		"qcom,ipa-mhi-proxy");
+	IPADBG(": Use mhi proxy = %s\n",
+		ipa_drv_res->ipa_mhi_proxy
 		? "True" : "False");
 
 	/* Get IPA wrapper address */
@@ -7265,12 +7509,16 @@ static int ipa_smmu_wlan_cb_probe(struct device *dev)
 		/* assume this failure is because iommu driver is not ready */
 		return -EPROBE_DEFER;
 	}
+
+	cb->is_cache_coherent = of_property_read_bool(dev->of_node,
+							"dma-coherent");
 	cb->valid = true;
 
 	if (of_property_read_bool(dev->of_node, "qcom,smmu-s1-bypass") ||
 		ipa3_ctx->ipa_config_is_mhi) {
 		smmu_info.s1_bypass_arr[IPA_SMMU_CB_WLAN] = true;
 		ipa3_ctx->s1_bypass_arr[IPA_SMMU_CB_WLAN] = true;
+		cb->is_cache_coherent = false;
 
 		if (iommu_domain_set_attr(cb->iommu,
 					DOMAIN_ATTR_S1_BYPASS,
@@ -7402,6 +7650,8 @@ static int ipa_smmu_uc_cb_probe(struct device *dev)
 		/* assume this failure is because iommu driver is not ready */
 		return -EPROBE_DEFER;
 	}
+	cb->is_cache_coherent = of_property_read_bool(dev->of_node,
+							"dma-coherent");
 	IPADBG("SMMU mapping created\n");
 	cb->valid = true;
 
@@ -7411,6 +7661,7 @@ static int ipa_smmu_uc_cb_probe(struct device *dev)
 		ipa3_ctx->ipa_config_is_mhi) {
 		smmu_info.s1_bypass_arr[IPA_SMMU_CB_UC] = true;
 		ipa3_ctx->s1_bypass_arr[IPA_SMMU_CB_UC] = true;
+		cb->is_cache_coherent = false;
 
 		if (iommu_domain_set_attr(cb->mapping->domain,
 			DOMAIN_ATTR_S1_BYPASS,
@@ -7531,6 +7782,8 @@ static int ipa_smmu_ap_cb_probe(struct device *dev)
 		}
 	}
 
+	cb->is_cache_coherent = of_property_read_bool(dev->of_node,
+							"dma-coherent");
 	cb->dev = dev;
 	cb->mapping = arm_iommu_create_mapping(dev->bus,
 					cb->va_start, cb->va_size);
@@ -7546,6 +7799,8 @@ static int ipa_smmu_ap_cb_probe(struct device *dev)
 		"qcom,smmu-s1-bypass") || ipa3_ctx->ipa_config_is_mhi) {
 		smmu_info.s1_bypass_arr[IPA_SMMU_CB_AP] = true;
 		ipa3_ctx->s1_bypass_arr[IPA_SMMU_CB_AP] = true;
+		cb->is_cache_coherent = false;
+
 		if (iommu_domain_set_attr(cb->mapping->domain,
 				DOMAIN_ATTR_S1_BYPASS,
 				&bypass)) {
@@ -8018,6 +8273,7 @@ int ipa3_iommu_map(struct iommu_domain *domain,
 {
 	struct ipa_smmu_cb_ctx *ap_cb = ipa3_get_smmu_ctx(IPA_SMMU_CB_AP);
 	struct ipa_smmu_cb_ctx *uc_cb = ipa3_get_smmu_ctx(IPA_SMMU_CB_UC);
+	struct ipa_smmu_cb_ctx *wlan_cb = ipa3_get_smmu_ctx(IPA_SMMU_CB_WLAN);
 
 	IPADBG_LOW("domain =0x%pK iova 0x%lx\n", domain, iova);
 	IPADBG_LOW("paddr =0x%pa size 0x%x\n", &paddr, (u32)size);
@@ -8029,20 +8285,29 @@ int ipa3_iommu_map(struct iommu_domain *domain,
 			ipa_assert();
 			return -EFAULT;
 		}
+		if (ap_cb->is_cache_coherent)
+			prot |= IOMMU_CACHE;
 	} else if (domain == ipa3_get_wlan_smmu_domain()) {
 		/* wlan is one time map */
+		if (wlan_cb->is_cache_coherent)
+			prot |= IOMMU_CACHE;
 	} else if (domain == ipa3_get_uc_smmu_domain()) {
 		if (iova >= uc_cb->va_start && iova < uc_cb->va_end) {
 			IPAERR("iommu uC overlap addr 0x%lx\n", iova);
 			ipa_assert();
 			return -EFAULT;
 		}
+		if (uc_cb->is_cache_coherent)
+			prot |= IOMMU_CACHE;
 	} else {
 		IPAERR("Unexpected domain 0x%pK\n", domain);
 		ipa_assert();
 		return -EFAULT;
 	}
-
+	/*
+	 * IOMMU_CACHE is needed in prot to make the entries cachable
+	 * if cache coherency is enabled in dtsi.
+	 */
 	return iommu_map(domain, iova, paddr, size, prot);
 }
 
