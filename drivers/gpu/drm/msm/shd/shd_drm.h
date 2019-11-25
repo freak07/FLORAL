@@ -55,7 +55,6 @@ struct shd_display {
 	struct dsi_display dsi_base;
 	struct drm_device *drm_dev;
 	const char *name;
-	const char *display_type;
 
 	struct shd_display_base *base;
 	struct drm_bridge *bridge;
