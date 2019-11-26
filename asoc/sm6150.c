@@ -5827,6 +5827,16 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 		slot_mask = 0x0000FFFF >> (16-slots);
 		channels = slots;
 
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+		if (cpu_dai->id == AFE_PORT_ID_SECONDARY_TDM_RX) {
+		//TODO: Should it dynamic or support 2 slots ?
+		/* Force slot 4 for RX/TX */
+			slots = 4;
+			slot_mask = 0x0000FFFF >> (16 - slots);
+			channels = tdm_rx_cfg[TDM_SEC][TDM_0].channels;
+		}
+#endif
+
 		pr_debug("%s: tdm rx slot_width %d slots %d\n",
 			__func__, slot_width, slots);
 
@@ -5857,6 +5867,15 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 			channels = tdm_tx_cfg[TDM_TERT][TDM_0].channels;
 		}
 #endif
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L41)
+		if (cpu_dai->id == AFE_PORT_ID_SECONDARY_TDM_TX) {
+		/* Force slot 4 for RX/TX */
+			slots = 4;
+			slot_mask = 0x0000FFFF >> (16 - slots);
+			channels = tdm_tx_cfg[TDM_SEC][TDM_0].channels;
+		}
+#endif
+
 		pr_debug("%s: tdm tx slot_width %d slots %d\n",
 			__func__, slot_width, slots);
 
@@ -5947,7 +5966,7 @@ static int sm6150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 				"Failed to set dai clock %u, ret = %d\n",
 				clk_freq, ret);
 
-		ret = snd_soc_component_set_sysclk(codec_dais[i]->component,
+		ret = snd_soc_codec_set_sysclk(codec_dais[i]->codec,
 					0, 0, clk_freq, SND_SOC_CLOCK_IN);
 		if (ret != 0)
 			dev_err(codec_dai->dev,
