@@ -1122,15 +1122,11 @@ static void msm_geni_serial_set_manual_flow(bool enable,
 		 * doing a stop_rx.
 		 */
 		mb();
-		IPC_LOG_MSG(port->ipc_log_pwr,
-			"%s: Manual Flow Enabled, HW Flow OFF\n", __func__);
 	} else {
 		geni_write_reg_nolog(0, port->uport.membase,
 						SE_UART_MANUAL_RFR);
 		/* Ensure that the manual flow off writes go through */
 		mb();
-		IPC_LOG_MSG(port->ipc_log_pwr,
-			"%s: Manual Flow Disabled, HW Flow ON\n", __func__);
 	}
 }
 
