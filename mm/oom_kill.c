@@ -72,11 +72,12 @@ DEFINE_MUTEX(oom_adj_mutex);
 
 static atomic64_t ulmk_wdog_expired = ATOMIC64_INIT(0);
 static atomic64_t ulmk_kill_jiffies = ATOMIC64_INIT(INITIAL_JIFFIES);
+static atomic64_t ulmk_watchdog_pet_jiffies = ATOMIC64_INIT(INITIAL_JIFFIES);
 static unsigned long psi_emergency_jiffies = INITIAL_JIFFIES;
 /* Prevents contention on the mutex_trylock in psi_emergency_jiffies */
 static DEFINE_MUTEX(ulmk_retry_lock);
 
-static bool ulmk_kill_possible(void)
+static bool __maybe_unused ulmk_kill_possible(void)
 {
 	struct task_struct *tsk;
 	bool ret = false;
@@ -111,7 +112,7 @@ static bool ulmk_kill_possible(void)
  */
 bool should_ulmk_retry(gfp_t gfp_mask)
 {
-	unsigned long now, last_kill;
+	unsigned long now, last_kill, last_wdog_pet;
 	bool ret = true;
 	bool wdog_expired, trigger_active;
 
@@ -137,13 +138,50 @@ bool should_ulmk_retry(gfp_t gfp_mask)
 
 	now = jiffies;
 	last_kill = atomic64_read(&ulmk_kill_jiffies);
+	last_wdog_pet = atomic64_read(&ulmk_watchdog_pet_jiffies);
 	wdog_expired = atomic64_read(&ulmk_wdog_expired);
 	trigger_active = psi_is_trigger_active();
 
+	/*
+	 * Returning True causes direct reclaim retry and false
+	 * causes to take OOM path.
+	 * Conditions check is as below:
+	 * a) If there is a kill after the previous update of
+	 *    psi_emergency_jiffies, then system kills are happening
+	 *    properly. Thus update the psi_emergency_jiffies with the
+	 *    current time and return true.
+	 *
+	 * b) If no kill have had happened in the last ULMK_TIMEOUT and
+	 *    LMKD also stuck for the last ULMK_TIMEOUT, which then means
+	 *    that system kill logic is not responding despite PSI events
+	 *    sent from kernel. Return false.
+	 *
+	 * c) Cond1: trigger = !active && wdog_expired = false:
+	 *    Then give a chance to the ULMK by raising emergnecy trigger
+	 *    which also registers a watchdog timer with timeout of
+	 *    2 * trigger's ->win_size. And thus further process entering
+	 *    gets returned with true.
+	 *
+	 *    Cond2: trigger = active && wdog_expired = true:
+	 *    This represents that the previously raised event is not
+	 *    consumed by ULMK in 2*HZ timeout. Under this condition we rely
+	 *    on OOM killer to select the positive adj task and kill. If
+	 *    the OOM killer fails to find a +ve adj task, we return false.
+	 *
+	 *    Cond3: trigger = !active && wdog_expired = true:
+	 *    This is a case of previous events to previous are yet to be
+	 *    consumed by ULMK, if triggered, thus only this process is
+	 *    asked to raise the trigger and the subsequent ones in the
+	 *    triggers ->win.size fall back to OOM.
+	 *
+	 *    Cond4: trigger = !active && wdog_expired = false:
+	 *    ULMK is perfectly working fine.
+	 */
 	if (time_after(last_kill, psi_emergency_jiffies)) {
 		psi_emergency_jiffies = now;
 		ret = true;
-	} else if (time_after(now, psi_emergency_jiffies + ULMK_TIMEOUT)) {
+	} else if (time_after(now, psi_emergency_jiffies + ULMK_TIMEOUT) &&
+		   time_after(now, last_wdog_pet + ULMK_TIMEOUT)) {
 		ret = false;
 	} else if (!trigger_active) {
 		psi_emergency_trigger();
@@ -152,8 +190,6 @@ bool should_ulmk_retry(gfp_t gfp_mask)
 		mutex_lock(&oom_lock);
 		ret = out_of_memory(&oc);
 		mutex_unlock(&oom_lock);
-	} else if (!ulmk_kill_possible()) {
-		ret = false;
 	}
 
 	mutex_unlock(&ulmk_retry_lock);
@@ -169,6 +205,7 @@ void ulmk_watchdog_pet(struct timer_list *t)
 {
 	del_timer_sync(t);
 	atomic64_set(&ulmk_wdog_expired, 0);
+	atomic64_set(&ulmk_watchdog_pet_jiffies, jiffies);
 }
 
 void ulmk_update_last_kill(void)
