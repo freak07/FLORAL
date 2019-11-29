@@ -1169,7 +1169,7 @@ static int smb1390_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	chip->cp_ws = wakeup_source_register(NULL, "qcom-chargepump");
+	chip->cp_ws = wakeup_source_register("qcom-chargepump");
 	if (!chip->cp_ws)
 		return -ENOMEM;
 
