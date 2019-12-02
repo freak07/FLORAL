@@ -193,10 +193,11 @@ int ethqos_init_pinctrl(struct device *dev)
 {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pinctrl_state;
+	int ret = 0;
 	int i = 0;
 	int num_names;
 	const char *name;
-	int ret = 0;
+
 
 	pinctrl = devm_pinctrl_get(dev);
 	if (IS_ERR_OR_NULL(pinctrl)) {

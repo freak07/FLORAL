@@ -28,7 +28,3 @@
 &qnand_1 {
 	status = "ok";
 };
-
-&blsp1_uart2b_hs {
-	status = "okay";
-};

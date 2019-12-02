@@ -11,6 +11,7 @@
  */
 
 #include "sdxprairie.dtsi"
+#include "sdxprairie-cpe-memory-map.dtsi"
 #include "sdxprairie-mtp.dtsi"
 
 &qnand_1 {
@@ -75,4 +76,8 @@
 
 &mhi_net_device {
 	status = "ok";
+};
+
+&usb {
+	qcom,smmu-s1-bypass;
 };

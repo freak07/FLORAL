@@ -142,7 +142,6 @@ static struct clk_rcg2 scc_main_rcg_clk_src = {
 	.hid_width = 5,
 	.parent_map = scc_parent_map_0,
 	.freq_tbl = ftbl_scc_main_rcg_clk_src,
-	.enable_safe_config = true,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "scc_main_rcg_clk_src",
 		.parent_names = scc_parent_names_0,
@@ -202,7 +201,6 @@ static struct clk_rcg2 scc_qupv3_se1_clk_src = {
 	.hid_width = 5,
 	.parent_map = scc_parent_map_0,
 	.freq_tbl = ftbl_scc_qupv3_se0_clk_src,
-	.enable_safe_config = true,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "scc_qupv3_se1_clk_src",
 		.parent_names = scc_parent_names_0,
@@ -224,7 +222,6 @@ static struct clk_rcg2 scc_qupv3_se2_clk_src = {
 	.hid_width = 5,
 	.parent_map = scc_parent_map_0,
 	.freq_tbl = ftbl_scc_qupv3_se0_clk_src,
-	.enable_safe_config = true,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "scc_qupv3_se2_clk_src",
 		.parent_names = scc_parent_names_0,
@@ -246,7 +243,6 @@ static struct clk_rcg2 scc_qupv3_se3_clk_src = {
 	.hid_width = 5,
 	.parent_map = scc_parent_map_0,
 	.freq_tbl = ftbl_scc_qupv3_se0_clk_src,
-	.enable_safe_config = true,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "scc_qupv3_se3_clk_src",
 		.parent_names = scc_parent_names_0,
@@ -268,7 +264,6 @@ static struct clk_rcg2 scc_qupv3_se4_clk_src = {
 	.hid_width = 5,
 	.parent_map = scc_parent_map_0,
 	.freq_tbl = ftbl_scc_qupv3_se0_clk_src,
-	.enable_safe_config = true,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "scc_qupv3_se4_clk_src",
 		.parent_names = scc_parent_names_0,
@@ -290,7 +285,6 @@ static struct clk_rcg2 scc_qupv3_se5_clk_src = {
 	.hid_width = 5,
 	.parent_map = scc_parent_map_0,
 	.freq_tbl = ftbl_scc_qupv3_se0_clk_src,
-	.enable_safe_config = true,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "scc_qupv3_se5_clk_src",
 		.parent_names = scc_parent_names_0,
@@ -547,10 +541,26 @@ static const struct of_device_id scc_sm6150_match_table[] = {
 };
 MODULE_DEVICE_TABLE(of, scc_sm6150_match_table);
 
+static int scc_sa6150_resume(struct device *dev)
+{
+	struct regmap *regmap = dev_get_drvdata(dev);
+
+	clk_alpha_pll_configure(&scc_pll_out_aux2, regmap,
+			scc_pll_out_aux2.config);
+
+	return 0;
+}
+
+static const struct dev_pm_ops scc_sa6150_pm_ops = {
+	.restore_early = scc_sa6150_resume,
+};
+
 static void scc_sm6150_fixup_sa6155(struct platform_device *pdev)
 {
 	vdd_scc_cx.num_levels = VDD_NUM_SA6155;
 	vdd_scc_cx.cur_level = VDD_NUM_SA6155;
+
+	pdev->dev.driver->pm =  &scc_sa6150_pm_ops;
 }
 
 static int scc_sm6150_probe(struct platform_device *pdev)
@@ -593,6 +603,9 @@ static int scc_sm6150_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to register with DFS!\n");
 		return ret;
 	}
+
+	if (is_sa6155)
+		dev_set_drvdata(&pdev->dev, regmap);
 
 	dev_info(&pdev->dev, "Registered SCC clocks\n");
 

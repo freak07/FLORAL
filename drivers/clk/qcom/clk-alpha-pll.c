@@ -2045,7 +2045,8 @@ static int clk_fabia_pll_enable(struct clk_hw *hw)
 			pr_err("Failed to configure %s\n", clk_hw_get_name(hw));
 			return ret;
 		}
-		pr_warn("PLL configuration lost, reconfiguration of PLL done.\n");
+		pr_warn("%s: PLL configuration lost, reconfiguration of PLL done.\n",
+				clk_hw_get_name(hw));
 	}
 
 	/* Disable PLL output */
