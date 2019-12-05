@@ -760,7 +760,8 @@ static void csr_get_channel_power_info(tpAniSirGlobal pMac, tDblLinkList *list,
 	struct csr_channel_powerinfo *ch_set;
 
 	/* Get 2.4Ghz first */
-	entry = csr_ll_peek_head(list, LL_ACCESS_LOCK);
+	csr_ll_lock(list);
+	entry = csr_ll_peek_head(list, LL_ACCESS_NOLOCK);
 	while (entry && (chn_idx < *num_ch)) {
 		ch_set = GET_BASE_ADDR(entry,
 				struct csr_channel_powerinfo, link);
@@ -771,8 +772,9 @@ static void csr_get_channel_power_info(tpAniSirGlobal pMac, tDblLinkList *list,
 				 + (idx * ch_set->interChannelOffset));
 			chn_pwr_info[chn_idx++].tx_power = ch_set->txPower;
 		}
-		entry = csr_ll_next(list, entry, LL_ACCESS_LOCK);
+		entry = csr_ll_next(list, entry, LL_ACCESS_NOLOCK);
 	}
+	csr_ll_unlock(list);
 	*num_ch = chn_idx;
 
 }
@@ -1615,7 +1617,8 @@ static void csr_save_tx_power_to_cfg(tpAniSirGlobal pMac, tDblLinkList *pList,
 		return;
 
 	ch_pwr_set = (tSirMacChanInfo *) (pBuf);
-	pEntry = csr_ll_peek_head(pList, LL_ACCESS_LOCK);
+	csr_ll_lock(pList);
+	pEntry = csr_ll_peek_head(pList, LL_ACCESS_NOLOCK);
 	/*
 	 * write the tuples (startChan, numChan, txPower) for each channel found
 	 * in the channel power list.
@@ -1685,8 +1688,9 @@ static void csr_save_tx_power_to_cfg(tpAniSirGlobal pMac, tDblLinkList *pList,
 			cbLen += sizeof(tSirMacChanInfo);
 			ch_pwr_set++;
 		}
-		pEntry = csr_ll_next(pList, pEntry, LL_ACCESS_LOCK);
+		pEntry = csr_ll_next(pList, pEntry, LL_ACCESS_NOLOCK);
 	}
+	csr_ll_unlock(pList);
 	if (cbLen)
 		cfg_set_str(pMac, cfgId, (uint8_t *) pBuf, cbLen);
 
