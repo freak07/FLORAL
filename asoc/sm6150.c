@@ -23,6 +23,7 @@
 #include <linux/of_device.h>
 #include <linux/pm_qos.h>
 #include <linux/soc/qcom/fsa4480-i2c.h>
+#include <linux/regulator/consumer.h>
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -226,6 +227,7 @@ struct msm_asoc_mach_data {
 #if IS_ENABLED(CONFIG_SND_SOC_RT5514)
 	struct gpio_desc *ldo1_gpio;
 	struct gpio_desc *ldo2_gpio;
+	struct regulator *dcvdd_reg;
 #endif
 };
 
@@ -9480,6 +9482,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	struct snd_soc_card *card;
 	struct msm_asoc_mach_data *pdata;
 	const char *mbhc_audio_jack_type = NULL;
+#if IS_ENABLED(CONFIG_SND_SOC_RT5514)
+	const char *reg_name = NULL;
+#endif
 	int ret;
 
 	if (!pdev->dev.of_node) {
@@ -9649,6 +9654,34 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 							GPIOD_OUT_LOW);
 	if (IS_ERR_OR_NULL(pdata->ldo2_gpio))
 		dev_warn(&pdev->dev, "Request mic2 GPIO failed\n");
+
+	/* Find and enable DCVDD.
+	 * It is necessary to enable regulator for DCVDD to keep correct voltage
+	 * when device enter suspend. Otherwise all functions on 5514 would be
+	 * abnormal since dsp may be reset unexpectedly.
+	 */
+
+	ret = of_property_read_string(pdev->dev.of_node,
+		"rt5514,regulator_dcvdd", &reg_name);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to find regulator for dcvdd\n");
+	} else {
+		pdata->dcvdd_reg = regulator_get(&pdev->dev, reg_name);
+		if (IS_ERR(pdata->dcvdd_reg)) {
+			dev_err(&pdev->dev, "Failed to get regulator\n");
+			if (pdata->dcvdd_reg) {
+				regulator_put(pdata->dcvdd_reg);
+				pdata->dcvdd_reg = NULL;
+			}
+			return -EINVAL;
+		}
+		ret = regulator_enable(pdata->dcvdd_reg);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Failed to enable regulator\n");
+			return ret;
+		}
+	}
+
 #endif
 
 	ret = msm_audio_ssr_register(&pdev->dev);
