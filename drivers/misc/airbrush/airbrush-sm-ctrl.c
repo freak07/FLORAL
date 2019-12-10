@@ -30,7 +30,6 @@
 #include "airbrush-pmic-ctrl.h"
 #include "airbrush-pmu.h"
 #include "airbrush-regs.h"
-#include "airbrush-spi.h"
 #include "airbrush-thermal.h"
 
 #define CREATE_TRACE_POINTS
@@ -40,7 +39,7 @@
 #define AB_MAX_TRANSITION_TIME_MS	\
 	(10000 + (150 * CONFIG_AB_DDR_SANITY_SZ_MBYTES))
 #else
-#define AB_MAX_TRANSITION_TIME_MS	10000
+#define AB_MAX_TRANSITION_TIME_MS	1000
 #endif
 #define AB_KFIFO_ENTRY_SIZE	32
 #define to_chip_substate_category(chip_substate_id) ((chip_substate_id) / 100)
@@ -301,10 +300,10 @@ static struct chip_to_block_map chip_state_map[] = {
 	CHIP_TO_BLOCK_MAP_INIT(403, 303, 303, 305, 305, 300, 302),
 	CHIP_TO_BLOCK_MAP_INIT(404, 304, 305, 305, 305, 300, 302),
 	CHIP_TO_BLOCK_MAP_INIT(405, 305, 302, 305, 305, 300, 302),
-	CHIP_TO_BLOCK_MAP_INIT(406, 302, 305, 305, 305, 300, 303),
-	CHIP_TO_BLOCK_MAP_INIT(407, 305, 303, 305, 305, 300, 303),
-	CHIP_TO_BLOCK_MAP_INIT(408, 303, 305, 305, 305, 300, 303),
-	CHIP_TO_BLOCK_MAP_INIT(409, 305, 305, 305, 305, 300, 303),
+	CHIP_TO_BLOCK_MAP_INIT(406, 302, 302, 305, 305, 300, 302),
+	CHIP_TO_BLOCK_MAP_INIT(407, 302, 302, 305, 305, 300, 302),
+	CHIP_TO_BLOCK_MAP_INIT(408, 302, 302, 305, 305, 300, 302),
+	CHIP_TO_BLOCK_MAP_INIT(409, 302, 302, 305, 305, 300, 302),
 
 	/* IPU Only */
 	CHIP_TO_BLOCK_MAP_INIT(500, 300, 200, 305, 305, 300, 302),
@@ -1249,6 +1248,12 @@ static int ab_sm_update_chip_state(struct ab_state_context *sc)
 		return -ENODEV;
 	}
 
+	if (atomic_read(&sc->is_cleanup_in_progress) ==
+		AB_SM_CLEANUP_IN_PROGRESS) {
+		dev_err(sc->dev, "Cleanup in progress, ignore state change request\n");
+		return -EAGAIN;
+	}
+
 	to_chip_substate_id = ab_sm_throttled_chip_substate_id(
 			sc->dest_chip_substate_id,
 			sc->throttle_state_id);
@@ -1974,7 +1979,6 @@ int ab_sm_disable_pcie(struct ab_state_context *ab_ctx)
 static void __ab_sm_schedule_shutdown_work(struct ab_state_context *sc,
 					   const char *reason)
 {
-
 	if (atomic_cmpxchg(&sc->is_cleanup_in_progress,
 			   AB_SM_CLEANUP_NOT_IN_PROGRESS,
 			   AB_SM_CLEANUP_IN_PROGRESS) ==
@@ -1986,8 +1990,6 @@ static void __ab_sm_schedule_shutdown_work(struct ab_state_context *sc,
 	sc->asv_info.last_volt = 0; /* reset cache of last voltage */
 	dev_info(sc->dev, "schedule shutdown work for reason: %s\n", reason);
 	schedule_work(&sc->shutdown_work);
-	sysfs_notify(&sc->dev->kobj, NULL, "error_event");
-
 }
 
 static void __throttle_nocompute_notify(struct ab_state_context *sc);
@@ -2227,13 +2229,26 @@ int ab_sm_enter_el2(struct ab_state_context *sc)
 {
 	int ret;
 
+	mutex_lock(&sc->mfd_lock);
+	if (sc->el2_mode) {
+		dev_warn(sc->dev, "Already in el2 mode\n");
+		mutex_unlock(&sc->mfd_lock);
+		return -EINVAL;
+	}
+
+	mutex_unlock(&sc->mfd_lock);
 	mutex_lock(&sc->state_transitioning_lock);
+
 	sc->return_chip_substate_id = sc->dest_chip_substate_id;
-	sc->dest_chip_substate_id = CHIP_STATE_SECURE_APP;
+
+	if (is_powered_down(sc->return_chip_substate_id))
+		sc->dest_chip_substate_id = CHIP_STATE_SECURE_APP;
+	else
+		sc->dest_chip_substate_id = CHIP_STATE_SUSPEND;
 
 	mutex_unlock(&sc->state_transitioning_lock);
 
-	/* Wait for state change to SECURE_APP state */
+	/* Wait for state change */
 	reinit_completion(&sc->transition_comp);
 	complete_all(&sc->request_state_change_comp);
 	ret = wait_for_completion_timeout(&sc->transition_comp,
@@ -2241,6 +2256,20 @@ int ab_sm_enter_el2(struct ab_state_context *sc)
 	if (ret == 0) {
 		dev_warn(sc->dev, "State change timed out\n");
 		return -ETIMEDOUT;
+	}
+
+	if (!is_powered_down(sc->return_chip_substate_id)) {
+		sc->dest_chip_substate_id = CHIP_STATE_SECURE_APP;
+
+		/* Wait for state change */
+		reinit_completion(&sc->transition_comp);
+		complete_all(&sc->request_state_change_comp);
+		ret = wait_for_completion_timeout(&sc->transition_comp,
+				msecs_to_jiffies(AB_MAX_TRANSITION_TIME_MS));
+		if (ret == 0) {
+			dev_warn(sc->dev, "State change timed out\n");
+			return -ETIMEDOUT;
+		}
 	}
 
 	mutex_lock(&sc->state_transitioning_lock);
@@ -2258,17 +2287,13 @@ int ab_sm_enter_el2(struct ab_state_context *sc)
 		return -EINVAL;
 	}
 
-	if (!sc->el2_mode) {
-		mutex_lock(&sc->mfd_lock);
-		ret = sc->mfd_ops->enter_el2(sc->mfd_ops->ctx);
-		mutex_unlock(&sc->mfd_lock);
+	mutex_lock(&sc->mfd_lock);
+	ret = sc->mfd_ops->enter_el2(sc->mfd_ops->ctx);
 
-		if (!ret)
-			sc->el2_mode = 1;
-	} else {
-		ret = -EINVAL;
-		dev_warn(sc->dev, "Already in el2 mode\n");
-	}
+	if (!ret)
+		sc->el2_mode = 1;
+
+	mutex_unlock(&sc->mfd_lock);
 	mutex_unlock(&sc->state_transitioning_lock);
 
 	return ret;
