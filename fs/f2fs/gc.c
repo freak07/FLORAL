@@ -296,24 +296,27 @@ static int msm_drm_notifier_callback(struct notifier_block *self,
 	int *blank;
 
 	if (event != MSM_DRM_EVENT_BLANK)
-		return NOTIFY_DONE;
+		return 0;
 
-	if (!evdata || !evdata->data || evdata->id != MSM_DRM_PRIMARY_DISPLAY)
-		return NOTIFY_DONE;
+	if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
+		return 0;
 
-	blank = evdata->data;
-	switch (*blank) {
-	case MSM_DRM_BLANK_POWERDOWN:
-		screen_on = false;
-		queue_work(system_power_efficient_wq, &f2fs_gc_fb_worker);
-		break;
-	case MSM_DRM_BLANK_UNBLANK:
-		screen_on = true;
-		queue_work(system_power_efficient_wq, &f2fs_gc_fb_worker);
-		break;
+	if (evdata && evdata->data) {
+		blank = evdata->data;
+
+		switch (*blank) {
+		case MSM_DRM_BLANK_POWERDOWN:
+			screen_on = false;
+			queue_work(system_power_efficient_wq, &f2fs_gc_fb_worker);
+			break;
+		case MSM_DRM_BLANK_UNBLANK:
+			screen_on = true;
+			queue_work(system_power_efficient_wq, &f2fs_gc_fb_worker);
+			break;
+		}
 	}
 
-	return NOTIFY_OK;
+	return 0;
 }
 
 static struct notifier_block fb_notifier_block = {
