@@ -13,7 +13,7 @@
 #include <linux/kthread.h>
 #include <linux/delay.h>
 #include <linux/freezer.h>
-#include <linux/msm_drm_notify.h>
+#include <linux/fb.h>
 #include <linux/power_supply.h>
 
 #include "f2fs.h"
@@ -293,27 +293,21 @@ static void f2fs_gc_fb_work(struct work_struct *work)
 	}
 }
 
-static int msm_drm_notifier_callback(struct notifier_block *self,
+static int fb_notifier_callback(struct notifier_block *self,
 				unsigned long event, void *data)
 {
-	struct msm_drm_notifier *evdata = data;
+	struct fb_event *evdata = data;
 	int *blank;
 
-	if (event != MSM_DRM_EVENT_BLANK)
-		return 0;
-
-	if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
-		return 0;
-
-	if (evdata && evdata->data) {
+	if ((event == FB_EVENT_BLANK) && evdata && evdata->data) {
 		blank = evdata->data;
 
 		switch (*blank) {
-		case MSM_DRM_BLANK_POWERDOWN:
+		case FB_BLANK_POWERDOWN:
 			screen_on = false;
 			queue_work(system_power_efficient_wq, &f2fs_gc_fb_worker);
 			break;
-		case MSM_DRM_BLANK_UNBLANK:
+		case FB_BLANK_UNBLANK:
 			screen_on = true;
 			queue_work(system_power_efficient_wq, &f2fs_gc_fb_worker);
 			break;
@@ -324,13 +318,13 @@ static int msm_drm_notifier_callback(struct notifier_block *self,
 }
 
 static struct notifier_block fb_notifier_block = {
-	.notifier_call = msm_drm_notifier_callback,
+	.notifier_call = fb_notifier_callback,
 };
 
 static int __init f2fs_gc_register_fb(void)
 {
 	INIT_WORK(&f2fs_gc_fb_worker, f2fs_gc_fb_work);
-	msm_drm_register_client(&fb_notifier_block);
+	fb_register_client(&fb_notifier_block);
 
 	return 0;
 }
