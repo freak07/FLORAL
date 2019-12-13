@@ -843,7 +843,7 @@
 
 				config {
 					pins = "gpio11", "gpio39";
-					drive-strength = <16>; /* 16 mA */
+					drive-strength = <2>; /* 2 mA */
 					bias-pull-up;
 					output-high;
 				};
@@ -857,9 +857,9 @@
 
 				config {
 					pins = "gpio11", "gpio39";
-					drive-strength = <16>; /* 16 mA */
-					bias-pull-up;
-					output-high;
+					drive-strength = <2>; /* 2 mA */
+					bias-pull-down;
+					output-low;
 				};
 			};
 		};
@@ -946,7 +946,7 @@
 
 				config {
 					pins = "gpio41", "gpio42";
-					drive-strength = <16>;
+					drive-strength = <2>;
 					bias-disable;
 				};
 			};
@@ -959,7 +959,7 @@
 
 				config {
 					pins = "gpio41", "gpio42";
-					drive-strength = <16>;
+					drive-strength = <2>;
 					bias-disable;
 				};
 			};
