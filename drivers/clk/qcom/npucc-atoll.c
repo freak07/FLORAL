@@ -296,17 +296,6 @@ static const struct freq_tbl ftbl_npu_cc_cal_hm0_clk_no_crc_src[] = {
 	{ }
 };
 
-static const struct freq_tbl ftbl_npu_cc_cal_hm0_clk_no_crc_src[] = {
-	F(19200000, P_BI_TCXO, 1, 0, 0),
-	F(100000000, P_NPU_CC_CRC_DIV, 2, 0, 0),
-	F(200000000, P_NPU_CC_CRC_DIV, 2, 0, 0),
-	F(400000000, P_NPU_CC_CRC_DIV, 2, 0, 0),
-	F(515000000, P_NPU_CC_CRC_DIV, 2, 0, 0),
-	F(650000000, P_NPU_CC_CRC_DIV, 2, 0, 0),
-	F(800000000, P_NPU_CC_CRC_DIV, 2, 0, 0),
-	{ }
-};
-
 static struct clk_rcg2 npu_cc_cal_hm0_clk_src = {
 	.cmd_rcgr = 0x1100,
 	.mnd_width = 0,
