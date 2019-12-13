@@ -79,7 +79,7 @@ enum toggle_reason {
 	TOGGLE_STOP,
 };
 
-#define SUSPEND_TIMER_TIMEOUT_MS 30000
+#define SUSPEND_TIMER_TIMEOUT_MS 60000
 static struct task_struct *ksuspend_mon_tsk;
 static DECLARE_WAIT_QUEUE_HEAD(power_suspend_waitqueue);
 static enum toggle_reason suspend_mon_toggle;
