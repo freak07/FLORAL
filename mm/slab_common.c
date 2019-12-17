@@ -1052,21 +1052,10 @@ void __init setup_kmalloc_cache_index_table(void)
 	}
 }
 
-static void __init
-new_kmalloc_cache(int idx, int type, unsigned long flags)
+static void __init new_kmalloc_cache(int idx, unsigned long flags)
 {
-	const char *name;
-
-	if (type == KMALLOC_RECLAIM) {
-		flags |= SLAB_RECLAIM_ACCOUNT;
-		name = kasprintf(GFP_NOWAIT, "kmalloc-rcl-%lu",
-						kmalloc_info[idx].size);
-		BUG_ON(!name);
-	} else {
-		name = kmalloc_info[idx].name;
-	}
-
-	kmalloc_caches[type][idx] = create_kmalloc_cache(name,
+	kmalloc_caches[KMALLOC_NORMAL][idx] = create_kmalloc_cache(
+					kmalloc_info[idx].name,
 					kmalloc_info[idx].size, flags);
 }
 
@@ -1077,25 +1066,22 @@ new_kmalloc_cache(int idx, int type, unsigned long flags)
  */
 void __init create_kmalloc_caches(unsigned long flags)
 {
-	int i, type;
+	int i;
+	int type = KMALLOC_NORMAL;
 
-	for (type = KMALLOC_NORMAL; type <= KMALLOC_RECLAIM; type++) {
-		for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
-			if (!kmalloc_caches[type][i])
-				new_kmalloc_cache(i, type, flags);
+	for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
+		if (!kmalloc_caches[type][i])
+			new_kmalloc_cache(i, flags);
 
-			/*
-			 * Caches that are not of the two-to-the-power-of size.
-			 * These have to be created immediately after the
-			 * earlier power of two caches
-			 */
-			if (KMALLOC_MIN_SIZE <= 32 && i == 6 &&
-					!kmalloc_caches[type][1])
-				new_kmalloc_cache(1, type, flags);
-			if (KMALLOC_MIN_SIZE <= 64 && i == 7 &&
-					!kmalloc_caches[type][2])
-				new_kmalloc_cache(2, type, flags);
-		}
+		/*
+		 * Caches that are not of the two-to-the-power-of size.
+		 * These have to be created immediately after the
+		 * earlier power of two caches
+		 */
+		if (KMALLOC_MIN_SIZE <= 32 && !kmalloc_caches[type][1] && i == 6)
+			new_kmalloc_cache(1, flags);
+		if (KMALLOC_MIN_SIZE <= 64 && !kmalloc_caches[type][2] && i == 7)
+			new_kmalloc_cache(2, flags);
 	}
 
 	/* Kmalloc array is now usable */
