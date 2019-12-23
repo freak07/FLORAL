@@ -551,7 +551,7 @@ int32_t cam_csiphy_config_dev(struct csiphy_device *csiphy_dev)
 void cam_csiphy_shutdown(struct csiphy_device *csiphy_dev)
 {
 	struct cam_hw_soc_info *soc_info;
-	int32_t i = 0, rc = 0;
+	int32_t i = 0;
 
 	if (csiphy_dev->csiphy_state == CAM_CSIPHY_INIT)
 		return;
@@ -574,10 +574,7 @@ void cam_csiphy_shutdown(struct csiphy_device *csiphy_dev)
 		cam_csiphy_reset(csiphy_dev);
 		cam_soc_util_disable_platform_resource(soc_info, true, true);
 
-		rc = cam_cpas_stop(csiphy_dev->cpas_handle);
-		if (rc)
-			CAM_ERR(CAM_CSIPHY, "cpas stop failed %d", rc);
-
+		cam_cpas_stop(csiphy_dev->cpas_handle);
 		csiphy_dev->csiphy_state = CAM_CSIPHY_ACQUIRE;
 	}
 
@@ -965,10 +962,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			if (rc < 0) {
 				csiphy_dev->csiphy_info.secure_mode[offset] =
 					CAM_SECURE_MODE_NON_SECURE;
-				rc = cam_cpas_stop(csiphy_dev->cpas_handle);
-				if (rc < 0)
-					CAM_ERR(CAM_CSIPHY,
-						"de-voting CPAS: %d", rc);
+				cam_cpas_stop(csiphy_dev->cpas_handle);
 				goto release_mutex;
 			}
 		}
@@ -982,9 +976,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 				csiphy_dev->csiphy_info.secure_mode[offset] =
 					CAM_SECURE_MODE_NON_SECURE;
 			}
-			rc = cam_cpas_stop(csiphy_dev->cpas_handle);
-			if (rc < 0)
-				CAM_ERR(CAM_CSIPHY, "de-voting CPAS: %d", rc);
+			cam_cpas_stop(csiphy_dev->cpas_handle);
 			goto release_mutex;
 		}
 
@@ -1001,9 +993,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 					CAM_SECURE_MODE_NON_SECURE;
 			}
 			cam_csiphy_disable_hw(csiphy_dev);
-			rc = cam_cpas_stop(csiphy_dev->cpas_handle);
-			if (rc < 0)
-				CAM_ERR(CAM_CSIPHY, "de-voting CPAS: %d", rc);
+			cam_cpas_stop(csiphy_dev->cpas_handle);
 			goto release_mutex;
 		}
 		csiphy_dev->start_dev_count++;
