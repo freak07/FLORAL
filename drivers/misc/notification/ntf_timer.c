@@ -243,13 +243,6 @@ extern bool ntf_ringing;
 void flash_blink(bool haptic);
 void flash_stop_blink(void);
 
-int smart_get_notification_level(int notif_type) {
-//        int diff_in_sec = smart_get_inactivity_time();
-        int ret = NOTIF_DEFAULT;
-	return ret;
-}
-EXPORT_SYMBOL(smart_get_notification_level);
-
 static int smart_get_flash_blink_on(void) {
 	int ret = 0;
 	int level = smart_get_notification_level(NOTIF_FLASHLIGHT);

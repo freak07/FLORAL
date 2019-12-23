@@ -106,3 +106,4 @@ obj-$(CONFIG_SYSTRACE) += systrace.o
 
 obj-$(CONFIG_UCI)  += uci/
 obj-$(CONFIG_UCI_NOTIFICATIONS)  += notification/
+obj-y  += inputfilter/
