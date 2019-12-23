@@ -283,7 +283,6 @@ struct cam_vfe_bus_irq_evt_payload {
 	uint32_t                    error_type;
 	struct cam_isp_timestamp    ts;
 	void                       *ctx;
-	uint32_t                    enable_dump;
 };
 
 /*
