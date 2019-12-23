@@ -353,7 +353,8 @@ static void __cam_req_mgr_reset_req_slot(struct cam_req_mgr_core_link *link,
 	struct cam_req_mgr_req_queue *in_q = link->req.in_q;
 
 	slot = &in_q->slot[idx];
-	CAM_DBG(CAM_CRM, "RESET: idx: %d: slot->status %d", idx, slot->status);
+	CAM_DBG(CAM_CRM, "RESET: last applied idx %d: idx %d: slot->status %d",
+			in_q->last_applied_idx, idx, slot->status);
 
 	/* Check if CSL has already pushed new request*/
 	if (slot->status == CRM_SLOT_STATUS_REQ_ADDED ||
@@ -1125,8 +1126,7 @@ static uint32_t __cam_req_mgr_get_cam_id(struct cam_req_mgr_core_link *link)
 static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 		uint32_t trigger, uint64_t sof_timestamp_val)
 {
-
-	int                                  rc = 0, idx, i = 0;
+	int                                  rc = 0, idx, i = 0, last_app_idx;
 	int                                  reset_step = 0;
 	struct cam_req_mgr_slot             *slot = NULL;
 	struct cam_req_mgr_req_queue        *in_q;
@@ -1264,8 +1264,7 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 				link->link_hdl);
 			slot->apply_timestamp = sof_timestamp_val;
 			idx = in_q->rd_idx;
-			if (slot->req_id > 0)
-				in_q->last_applied_idx = idx;
+
 			reset_step = link->max_delay;
 			if (link->sync_links_num > 0) {
 				for (i = 0; i < link->sync_links_num; i++) {
@@ -1276,6 +1275,25 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 							sync_link->max_delay;
 				}
 			}
+
+			/* This is to handle a rare scenario of scheduling
+			 * issue. If ISP sends multiple sofs due to scheduling
+			 * issue, it is required to retain last applied index
+			 * to help recover.
+			 * In this case, ISP goes into Bubble, asking to reapply
+			 * the bubbled request which has already been reset by
+			 * CRM. Below code retains the last applied request.
+			 */
+
+			if (slot->req_id > 0) {
+				last_app_idx = in_q->last_applied_idx;
+				in_q->last_applied_idx = idx;
+				if (abs(last_app_idx - idx) >=
+					reset_step + 1)
+					__cam_req_mgr_reset_req_slot(link,
+						last_app_idx);
+			}
+
 			__cam_req_mgr_dec_idx(
 				&idx, reset_step + 1,
 				in_q->num_slots);
