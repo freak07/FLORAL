@@ -1,0 +1,9 @@
+#
+# Unprivileged Configuration Interface
+#
+menu "UCI Notifications Module"
+config UCI_NOTIFICATIONS
+       default y
+       tristate "UCI notifications module"
+
+endmenu
