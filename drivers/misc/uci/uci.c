@@ -537,13 +537,8 @@ static enum alarmtimer_restart parse_user_cfg_rtc_callback(struct alarm *al, kti
 }
 
 static void start_alarm_parse(int sec) {
-	ktime_t wakeup_time;
-	ktime_t curr_time;
-	curr_time = ktime_get();
-	wakeup_time = ktime_add_us(curr_time,
-	    (sec * 1000LL * 1000LL)); // 40 sec to msec to usec
 	alarm_cancel(&parse_user_cfg_rtc);
-	alarm_start_relative(&parse_user_cfg_rtc, wakeup_time); // start new...
+	alarm_start_relative(&parse_user_cfg_rtc, ms_to_ktime(sec * 1000)); // start new...
 }
 
 void notify_uci_file_closed(const char *file_name) {
