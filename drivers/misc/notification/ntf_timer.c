@@ -338,9 +338,9 @@ static int vib_notification_length = DEFAULT_VIB_LENGTH;
 static int uci_get_vib_notification_slowness(void) {
 	return uci_get_user_property_int_mm("vib_notification_slowness", vib_notification_slowness, 0, 30);
 }
-//static int uci_get_vib_notification_length(void) {
-//	return uci_get_user_property_int_mm("vib_notification_length", vib_notification_length, 0, 500);
-//}
+static int uci_get_vib_notification_length(void) {
+	return uci_get_user_property_int_mm("vib_notification_length", vib_notification_length, 0, 500);
+}
 
 void set_vib_notification_reminder(int value) {
 	vib_notification_reminder = !!value;
@@ -418,7 +418,6 @@ static bool in_no_flash_long_alarm_wake_time = false;
 
 void do_flash_blink(void) {
 	ktime_t wakeup_time;
-	ktime_t wakeup_time_vib;
 	int count = 0;
 	int limit = 3;
 	int dim = 0;
@@ -479,15 +478,9 @@ void do_flash_blink(void) {
 
 	if (!ntf_ringing) {
 	if (smart_get_vib_notification_reminder() && current_blink_num % vib_slowness == (vib_slowness - 1)) {
-		{
-			ktime_t curr_time;
-			curr_time = ktime_get();
-			wakeup_time_vib = ktime_add_us(curr_time,
-				(1 * 1000LL * 1000LL)); // msec to usec 
-		}
 		// call vibration from a real time alarm thread, otherwise it can get stuck vibrating
 		if (alarm_try_to_cancel(&vib_rtc)>=0) { // stop pending alarm...
-			alarm_start_relative(&vib_rtc, wakeup_time_vib); // start new...
+			alarm_start_relative(&vib_rtc, ms_to_ktime(1000)); // start new...
 		}
 	}
 	}
@@ -531,9 +524,13 @@ void do_flash_blink(void) {
 			ktime_to_timeval(curr_time).tv_sec,
 			ktime_to_timeval(wakeup_time).tv_sec);
 
-			if (alarm_try_to_cancel(&flash_blink_rtc)>=0) { // stop pending alarm...
+			if (alarm_try_to_cancel(&flash_blink_rtc)>=0)
+			{ // stop pending alarm...
 				flash_start_queued = true;
-				alarm_start_relative(&flash_blink_rtc, wakeup_time); // start new...
+				pr_info("%s: flash next alarm queued...##",__func__);
+				alarm_start_relative(&flash_blink_rtc, ms_to_ktime(
+						( (smart_get_flash_blink_wait_sec() + min(max(((calc_with_blink_num-6)/4),0),uci_get_flash_blink_wait_inc_max()) * uci_get_flash_blink_wait_inc()) * 1000LL) * multiplicator
+					)); // start new...
 			}
 
 	} else {
@@ -647,11 +644,11 @@ static void flash_blink_work_func(struct work_struct *work)
 }
 
 //extern void set_vibrate(int value);
-//extern void set_vibrate_boosted(int value);
+extern void set_vibrate_boosted(int value);
 static void vib_work_func(struct work_struct *vib_work_func_work)
 {
 	pr_info("%s set_vibrate boosted\n",__func__);
-//	set_vibrate_boosted(uci_get_vib_notification_length());
+	set_vibrate_boosted(uci_get_vib_notification_length());
 }
 static DECLARE_WORK(vib_work_func_work, vib_work_func);
 
@@ -666,9 +663,6 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 {
 	pr_info("%s [flashwake] flash_blink | interrupt_retime: %d\n",__func__,interrupt_retime);
 	if (!interrupt_retime) {
-		ktime_t wakeup_time_unidle;
-		ktime_t curr_time;
-		curr_time = ktime_get();
 		pr_info("%s [flashwake] blink queue work ALARM...\n",__func__);
 		smp_processor = smp_processor_id();
 		pr_info("%s [flashwake] flash_blink cpu %d\n",__func__, smp_processor);
@@ -677,10 +671,8 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 		flash_start_queued = true;
 		queue_work_on(smp_processor,flash_blink_workqueue, &flash_blink_work);
 
-		wakeup_time_unidle = ktime_add_us(curr_time,
-			(500LL * 1000LL)); // 2 sec
 		alarm_cancel(&flash_blink_unidle_smp_cpu_rtc); // stop pending alarm...
-		alarm_start_relative(&flash_blink_unidle_smp_cpu_rtc, wakeup_time_unidle); // start new...
+		alarm_start_relative(&flash_blink_unidle_smp_cpu_rtc, ms_to_ktime(500)); // start new...
 	}
 	pr_info("%s flash_blink exit\n",__func__);
 	return ALARMTIMER_NORESTART;
