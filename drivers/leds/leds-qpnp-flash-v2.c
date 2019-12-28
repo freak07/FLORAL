@@ -723,6 +723,7 @@ static int qpnp_flash_led_hw_strobe_enable(struct flash_node_data *fnode,
 	return rc;
 }
 
+
 static int qpnp_flash_led_regulator_enable(struct qpnp_flash_led *led,
 				struct flash_switch_data *snode, bool on)
 {
@@ -1483,8 +1484,15 @@ static int qpnp_flash_led_switch_set(struct flash_switch_data *snode, bool on)
 	u8 pmic_subtype = led->pdata->pmic_rev_id->pmic_subtype;
 	int rc, i, addr_offset;
 	u8 val, mask;
+#if 1
+	pr_debug("%s -- %s %d\n",__func__,snode->cdev.name,on);
+#endif
 
 	if (snode->enabled == on) {
+#if 1
+		pr_debug("%s Switch node is already %s!\n",__func__,
+			on ? "enabled" : "disabled");
+#endif
 		pr_debug("Switch node is already %s!\n",
 			on ? "enabled" : "disabled");
 		return 0;
@@ -1625,6 +1633,40 @@ static int qpnp_flash_led_switch_set(struct flash_switch_data *snode, bool on)
 	return 0;
 }
 
+#ifdef CONFIG_UCI
+static struct flash_switch_data *led0 = NULL;
+static struct flash_switch_data *led1 = NULL;
+
+static struct led_classdev *led_cdev_f0 = NULL;
+static struct flash_node_data *fnode_f0 = NULL;
+
+static struct led_classdev *led_cdev_f1 = NULL;
+static struct flash_node_data *fnode_f1 = NULL;
+
+static struct led_classdev *led_cdev_t0 = NULL;
+static struct flash_node_data *fnode_t0 = NULL;
+
+static struct led_classdev *led_cdev_t1 = NULL;
+static struct flash_node_data *fnode_t1 = NULL;
+#endif
+
+
+#ifdef CONFIG_UCI
+int qpnp_flash_led_prepare_s0(bool on)
+{
+	int rc = 0;
+        struct flash_switch_data *snode = led0;
+        struct qpnp_flash_led *led = dev_get_drvdata(&led0->pdev->dev);
+        rc = qpnp_flash_led_regulator_enable(led, snode, on);
+        if (rc < 0) {
+                pr_err("enable regulator failed, rc=%d\n", rc);
+                return rc;
+        }
+	return rc;
+}
+#endif
+
+
 static int qpnp_flash_led_regulator_control(struct led_classdev *led_cdev,
 					int options, int *max_current)
 {
@@ -1647,6 +1689,10 @@ static int qpnp_flash_led_regulator_control(struct led_classdev *led_cdev,
 		if (rc < 0)
 			return rc;
 	}
+
+#if 1
+	pr_debug("%s flash -- %s \n",__func__,led_cdev->name);
+#endif
 
 	if (!(options & FLASH_LED_PREPARE_OPTIONS_MASK)) {
 		pr_err("Invalid options %d\n", options);
@@ -1736,6 +1782,9 @@ static void qpnp_flash_led_brightness_set(struct led_classdev *led_cdev,
 	struct qpnp_flash_led *led = NULL;
 	int rc;
 
+#if 1
+	pr_debug("%s -- %s %d\n",__func__,led_cdev->name,value);
+#endif
 	/*
 	 * strncmp() must be used here since a prefix comparison is required
 	 * in order to support names like led:switch_0 and led:flash_1.
@@ -2160,8 +2209,75 @@ static int qpnp_flash_led_parse_each_led_dt(struct qpnp_flash_led *led,
 		}
 	}
 
+#ifdef CONFIG_UCI
+	{
+	struct led_classdev *led_cdev = &fnode->cdev;
+	pr_info("%s flash register classdev %s\n",__func__,(char *)fnode->cdev.name);
+        if (!strncmp(led_cdev->name, "led:switch", strlen("led:switch"))) {
+//                snode = container_of(led_cdev, struct flash_switch_data, cdev);
+//                led = dev_get_drvdata(&snode->pdev->dev);
+//		if (!strcmp(led_cdev->name, "led:switch_0")) {
+//			led_cdev_s0 = led_cdev;
+//		}
+        } else if (!strncmp(led_cdev->name, "led:flash", strlen("led:flash")) ||
+                        !strncmp(led_cdev->name, "led:torch",
+                                                strlen("led:torch"))) {
+		if (!strcmp(led_cdev->name, "led:flash_0")) {
+			led_cdev_f0 = led_cdev;
+			fnode_f0 = fnode;
+		}
+		if (!strcmp(led_cdev->name, "led:flash_1")) {
+			led_cdev_f1 = led_cdev;
+			fnode_f1 = fnode;
+		}
+		if (!strcmp(led_cdev->name, "led:torch_0")) {
+			led_cdev_t0 = led_cdev;
+			fnode_t0 = fnode;
+		}
+		if (!strcmp(led_cdev->name, "led:torch_1")) {
+			led_cdev_t1 = led_cdev;
+			fnode_t1 = fnode;
+		}
+//                fnode = container_of(led_cdev, struct flash_node_data, cdev);
+//                led = dev_get_drvdata(&fnode->pdev->dev);
+        }
+	}
+#endif
 	return 0;
 }
+
+#ifdef CONFIG_UCI
+void qpnp_torch_main(int led0_lvl, int led1_lvl) {
+        pr_info("%s __ enter t\n",__func__);
+
+        if (led0) {
+		struct led_classdev *led_s0 = &led0->cdev;
+		if (led0_lvl) {
+			// on
+			qpnp_flash_led_prepare_s0(true);
+			qpnp_flash_led_brightness_set(led_cdev_f0,0); // fl 0
+			qpnp_flash_led_brightness_set(led_cdev_f1,0); // fl 1
+			qpnp_flash_led_brightness_set(led_cdev_t0,65); // torch 0
+			qpnp_flash_led_brightness_set(led_cdev_t1,65); // torch 1
+			qpnp_flash_led_brightness_set(led_s0,1); // switch 0
+			qpnp_flash_led_switch_set(led0, !!led0_lvl);
+		} else {
+			// off
+			qpnp_flash_led_brightness_set(led_cdev_f0,0); // fl 0
+			qpnp_flash_led_brightness_set(led_cdev_f1,0); // fl 1
+			qpnp_flash_led_brightness_set(led_cdev_t0,0); // torch 0
+			qpnp_flash_led_brightness_set(led_cdev_t1,0); // torch 1
+			qpnp_flash_led_brightness_set(led_s0,0); // switch 0
+			qpnp_flash_led_switch_set(led0, !!led0_lvl);
+			qpnp_flash_led_prepare_s0(false);
+		}
+        } else {
+                pr_info("%s flash led0 not present\n",__func__);
+        }
+        pr_info("%s __ exit t\n",__func__);
+}
+EXPORT_SYMBOL(qpnp_torch_main);
+#endif
 
 static int qpnp_flash_led_parse_and_register_switch(struct qpnp_flash_led *led,
 						struct flash_switch_data *snode,
@@ -2255,7 +2371,15 @@ static int qpnp_flash_led_parse_and_register_switch(struct qpnp_flash_led *led,
 			return PTR_ERR(snode->gpio_state_suspend);
 		}
 	}
-
+#ifdef CONFIG_UCI
+	if (!led0) {
+		pr_info("%s register led0 switch %s\n",__func__,snode->cdev.name);
+		led0 = snode;
+	} else {
+		pr_info("%s register led1 switch %s\n",__func__,snode->cdev.name);
+		led1 = snode;
+	}
+#endif
 	return 0;
 }
 
