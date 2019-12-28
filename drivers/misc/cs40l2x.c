@@ -5380,6 +5380,7 @@ void set_vibrate(int time_ms)
 }
 void set_vibrate_boosted(int time_ms)
 {
+	pr_info("%s time_ms = %d\n",__func__,time_ms);
 	set_vibrate(time_ms);
 }
 EXPORT_SYMBOL(set_vibrate);
