@@ -29,7 +29,8 @@
 #include <linux/notifier.h>
 #include <linux/fb.h>
 
-#if defined(CONFIG_MSM_RDM_NOTIFY)
+#if defined(CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS)
+#elif defined(CONFIG_MSM_RDM_NOTIFY)
 #include <linux/msm_drm_notify.h>
 #endif
 
@@ -48,7 +49,8 @@ MODULE_DESCRIPTION(DRIVER_DESCRIPTION);
 MODULE_VERSION(DRIVER_VERSION);
 MODULE_LICENSE("GPL");
 
-#if defined(CONFIG_FB)
+#if defined(CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS)
+#elif defined(CONFIG_FB)
 struct notifier_block *uci_ntf_fb_notifier;
 #elif defined(CONFIG_MSM_RDM_NOTIFY)
 struct notifier_block *uci_ntf_msm_drm_notif;
@@ -165,7 +167,47 @@ static bool wake_by_user = true;
 static unsigned long screen_off_jiffies = 0;
 static bool kad_wake = false;
 
-#if defined(CONFIG_FB)
+
+#if defined(CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS)
+void ntf_screen_on(void) {
+		long last_input_event_diff = (get_global_mseconds() - last_input_event);
+		screen_on_early = true;
+		ntf_notify_listeners(NTF_EVENT_WAKE_EARLY,1,"");
+		pr_info("%s ntf uci screen on -early\n",__func__);
+		if (!screen_on || screen_off_early) {
+			wake_by_user = kad_wake?false:true; //first_unblank || last_input_event_diff < 1400; // TODO to identify wake by ambient display, this callback is not sufficient. for now setting wake by user all the time
+			// ...as after motion launch or Always on there's no screen on event again when pressing an input... so this is not called at that time
+			kad_wake = false;
+			pr_info("[cleanslate] ntf uci screen on , wake_by_user = %d last input diff %d \n", wake_by_user, (int)last_input_event_diff);
+			screen_on = true;
+			screen_on_early = true;
+			screen_off_early = false;
+			if (wake_by_user) {
+				ntf_notify_listeners(NTF_EVENT_WAKE_BY_USER,1,"");
+			} else {
+				ntf_notify_listeners(NTF_EVENT_WAKE_BY_FRAMEWORK,1,"");
+			}
+		}
+}
+EXPORT_SYMBOL(ntf_screen_on);
+
+void ntf_screen_off(void) {
+		screen_off_early = true;
+		ntf_notify_listeners(NTF_EVENT_SLEEP_EARLY,1,"");
+		pr_info("%s ntf uci screen off\n",__func__);
+		{
+			pr_info("ntf uci screen off\n");
+			screen_on = false;
+			screen_on_early = false;
+			screen_off_early = true;
+			wake_by_user = false;
+			screen_off_jiffies = jiffies;
+			ntf_notify_listeners(NTF_EVENT_SLEEP,1,"");
+		}
+}
+EXPORT_SYMBOL(ntf_screen_off);
+
+#elif defined(CONFIG_FB)
 static int first_unblank = 1;
 
 static int fb_notifier_callback(struct notifier_block *self,
@@ -474,18 +516,19 @@ static void uci_user_listener(void) {
 static int __init ntf_init(void)
 {
 	int rc = 0;
-	int status = 0;
 	pr_info("uci ntf - init\n");
-#if defined(CONFIG_FB)
+#if defined(CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS)
+	// nothing to do here...
+#elif defined(CONFIG_FB)
 	uci_ntf_fb_notifier = kzalloc(sizeof(struct notifier_block), GFP_KERNEL);;
 	uci_ntf_fb_notifier->notifier_call = fb_notifier_callback;
 	fb_register_client(uci_ntf_fb_notifier);
 #elif defined(CONFIG_MSM_RDM_NOTIFY)
         uci_ntf_msm_drm_notif = kzalloc(sizeof(struct notifier_block), GFP_KERNEL);;
         uci_ntf_msm_drm_notif->notifier_call = fb_notifier_callback;
-        status = msm_drm_register_client(uci_ntf_msm_drm_notif);
-        if (status)
-                pr_err("Unable to register msm_drm_notifier: %d\n", status);
+        rc = msm_drm_register_client(uci_ntf_msm_drm_notif);
+        if (rc)
+                pr_err("Unable to register msm_drm_notifier: %d\n", rc);
 #endif
 	uci_add_sys_listener(uci_sys_listener);
 	uci_add_user_listener(uci_user_listener);

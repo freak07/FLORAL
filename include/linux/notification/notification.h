@@ -89,6 +89,12 @@ extern void ntf_block_camera(bool val);
 extern void ntf_screen_aod_on(void);
 extern void ntf_screen_full_on(void);
 
+#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
+// screen on/off callbacks - insert in driver code like backlight...
+extern void ntf_screen_on(void);
+extern void ntf_screen_off(void);
+#endif
+
 /** add change listener */
 extern void ntf_add_listener(void (*f)(char* event, int num_param, char* str_param));
 
