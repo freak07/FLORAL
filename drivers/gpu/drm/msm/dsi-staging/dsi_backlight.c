@@ -27,6 +27,10 @@
 #include "dsi_display.h"
 #include "dsi_panel.h"
 
+#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
+#include <linux/notification/notification.h>
+#endif
+
 #ifdef CONFIG_KLAPSE
 #include <linux/klapse.h>
 #endif
@@ -721,7 +725,13 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 		return 0;
 
 	pr_info("power_mode:%d state:0x%0x\n", power_mode, bd->props.state);
-
+#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
+	if (power_mode==5 || power_mode==1) { // 5 - fully off / 1 - AOD
+		ntf_screen_off();
+	} else if (power_mode==0 && bd->props.state!=2) { // 0 ON (state!= 0x02 it's a transient state while getting out of pocket, ON's 'state' value will be 0x80000)
+		ntf_screen_on();
+	}
+#endif
 	mutex_lock(&bd->ops_lock);
 	state = get_state_after_dpms(bl, power_mode);
 
