@@ -393,7 +393,7 @@ static int smart_get_vib_notification_slowness(void) {
 //extern void boosted_vib(int time);
 
 #define DIM_USEC 2
-#define BRIGHT_USEC 1250
+#define BRIGHT_USEC 1550
 
 void precise_delay(int usec) {
 	ktime_t start, end;
@@ -406,12 +406,7 @@ void precise_delay(int usec) {
 	}
 }
 
-//extern void qpnp_torch_main(int led0, int led1);
-void qpnp_torch_main(int led0, int led1) {
-//	int i=0;
-	return;
-//	htc_torch_main(led0,led1);
-}
+extern void qpnp_torch_main(int led0, int led1);
 
 // should be true if phone was not in flashlight ready state, like not on a table face down. Then next flashblink start should reschedule work.
 static bool in_no_flash_long_alarm_wake_time = false;
@@ -443,8 +438,7 @@ void do_flash_blink(void) {
 
 	if (uci_get_flash_blink_bright() && ntf_ringing) bright = 1;
 
-//TODO 	qpnp_torch_main(0,0);
-//	htc_flash_main(0,0);
+	qpnp_torch_main(0,0);
 
 	if (uci_get_flash_blink_wait_inc() && !dim) {
 		// while in the first fast paced periodicity, don't do that much of flashing in one blink...
@@ -459,15 +453,21 @@ void do_flash_blink(void) {
 	if ((uci_get_flash_only_face_down() && ntf_face_down) || !uci_get_flash_only_face_down()) {
 		flash_next = 1; // should flash next time, alarm wait normal... if no flashing is being done, vibrating reminder wait period should be waited instead!
 		while (count++<limit) {
+#if 1
+			// always set light brightest...vary with time length only
+			qpnp_torch_main(300,0);  // [o] [ ]
+#endif
+#if 0
 			qpnp_torch_main(150*(bright+1),0);  // [o] [ ]
-			precise_delay(135 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
+#endif
+			precise_delay(520 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
 			qpnp_torch_main(0,0);	// [ ] [ ]
 			udelay(15000);
 
 			//if (!dim) 
 			{
 				qpnp_torch_main(0,150*(bright+1));  // [ ] [o]
-				precise_delay(135 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
+				precise_delay(520 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
 				qpnp_torch_main(0,0);	// [ ] [ ]
 				udelay(15000);
 			}

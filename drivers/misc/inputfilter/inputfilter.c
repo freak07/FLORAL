@@ -5,12 +5,6 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 
-#define CONFIG_MSM_RDM_NOTIFY
-#undef CONFIG_FB
-
-#if defined(CONFIG_MSM_RDM_NOTIFY)
-#include <linux/msm_drm_notify.h>
-#endif
 
 #define CONFIG_IFILTER_KCAL_ANYTIME
 
@@ -110,13 +104,6 @@ static unsigned long last_screen_on_early_time = 0;
 // full screen on flag
 static int screen_on_full = 1;
 static int screen_off_early = 0;
-struct notifier_block *fb_notifier;
-#if defined(CONFIG_FB)
-struct notifier_block *fb_notifier;
-#elif defined(CONFIG_MSM_RDM_NOTIFY)
-struct notifier_block *msm_drm_notif;
-#endif
-
 
 int input_is_screen_on(void) {
 	return screen_on;
@@ -260,12 +247,12 @@ void ifilter_uci_sys_listener(void) {
 		pr_info("%s uci sys silent %d ringing %d face_down %d timeout %d \n",__func__,silent, ringing, face_down, screen_timeout_sec);
 		ifilter_silent_mode = silent;
 		if (ifilter_silent_mode && ringing && (ringing!=ifilter_ringing) && get_phone_ring_in_silent_mode()) {
-			ktime_t wakeup_time;
-			ktime_t curr_time = ktime_get();
-			wakeup_time = ktime_add_us(curr_time,
-			    (2 * 1000LL * 1000LL)); // msec to usec
+//			ktime_t wakeup_time;
+//			ktime_t curr_time = ktime_get();
+//			wakeup_time = ktime_add_us(curr_time,
+//			    (2 * 1000LL * 1000LL)); // msec to usec
 			alarm_cancel(&vibrate_rtc);
-			alarm_start_relative(&vibrate_rtc, wakeup_time); // start new...
+			alarm_start_relative(&vibrate_rtc, ms_to_ktime(2 * 1000)); // start new...
 			set_vibrate_boosted(999);
 		} else {
 			if (!ringing) {
@@ -1027,12 +1014,12 @@ void register_fp_irq(void) {
 	}
 	if (init_done && screen_on_full && !screen_off_early) { 
 	// only register user input when screen is on, cause FP Wake is not enabled for FP, meaning it shouldn't count as a user input while screen is still off
-		ktime_t wakeup_time;
-		ktime_t curr_time = ktime_get();
-		wakeup_time = ktime_add_us(curr_time,
-		    (1 * 500LL)); // msec to usec
+//		ktime_t wakeup_time;
+//		ktime_t curr_time = ktime_get();
+//		wakeup_time = ktime_add_us(curr_time,
+//		    (1 * 500LL)); // msec to usec
 		alarm_cancel(&register_input_rtc);
-		alarm_start_relative(&register_input_rtc, wakeup_time); // start new...
+		alarm_start_relative(&register_input_rtc, ms_to_ktime(1)); // start new...
 	}
 }
 EXPORT_SYMBOL(register_fp_irq);
@@ -1143,13 +1130,16 @@ static bool ifilter_input_filter(struct input_handle *handle,
 								triple_tap_wait = false;
 								ifilter_pwrtrigger(0,__func__);
 							} else {
-								ktime_t wakeup_time;
-								ktime_t curr_time = ktime_get();
+//								ktime_t wakeup_time;
+//								ktime_t curr_time = ktime_get();
 								triple_tap_wait = true;
-								wakeup_time = ktime_add_us(curr_time,
-									    (((DT_WAIT_PERIOD_BASE_VALUE + 9 + get_doubletap_wait_period()*2)*10LL + 5LL) * 1000LL)); // msec to usec 30+ jiffies (300msec)
+//								wakeup_time = ktime_add_us(curr_time,
+//									    (((DT_WAIT_PERIOD_BASE_VALUE + 9 + get_doubletap_wait_period()*2)*10LL + 5LL) * 1000LL)); // msec to usec 30+ jiffies (300msec)
 								alarm_cancel(&triple_tap_rtc);
-								alarm_start_relative(&triple_tap_rtc, wakeup_time); // start new...
+								alarm_start_relative(&triple_tap_rtc, ms_to_ktime(
+										(((DT_WAIT_PERIOD_BASE_VALUE + 9 + get_doubletap_wait_period()*2)*10LL + 5LL))
+										)
+									); // start new...
 							}
 						}
 					}
@@ -1676,7 +1666,7 @@ static void ts_poke(void) {
 	wakeup_time = ktime_add_us(curr_time,
 		(100LL)); // msec to usec
 	alarm_cancel(&ts_poke_rtc);
-	alarm_start_relative(&ts_poke_rtc,wakeup_time);
+	alarm_start(&ts_poke_rtc,wakeup_time);
 #endif
 }
 
@@ -2065,12 +2055,14 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 			kad_repeat_counter++;
 			if (should_kad_start() && kad_repeat_counter<smart_get_kad_repeat_times()) { // only reschedule if kad should still smart start...and counter is below times limit...
 				// alarm timer
-				ktime_t wakeup_time;
-				ktime_t curr_time = ktime_get();
-				wakeup_time = ktime_add_us(curr_time,
-					(smart_get_kad_repeat_period_sec() * (get_kad_repeat_multiply_period()?kad_repeat_counter:1) * 1000LL * 1000LL)); // msec to usec
+//				ktime_t wakeup_time;
+//				ktime_t curr_time = ktime_get();
+//				wakeup_time = ktime_add_us(curr_time,
+//					(smart_get_kad_repeat_period_sec() * (get_kad_repeat_multiply_period()?kad_repeat_counter:1) * 1000LL * 1000LL)); // msec to usec
 				alarm_cancel(&kad_repeat_rtc);
-				alarm_start_relative(&kad_repeat_rtc, wakeup_time); // start new...
+				alarm_start_relative(&kad_repeat_rtc, ms_to_ktime(
+						(smart_get_kad_repeat_period_sec() * (get_kad_repeat_multiply_period()?kad_repeat_counter:1) * 1000LL)
+					)); // start new...
 			}
 		}
 	} else {
@@ -2124,13 +2116,13 @@ int register_fp_vibration(void) {
 			alarm_cancel(&check_single_fp_vib_rtc);
 			check_single_fp_running = 0;
 		} else {
-			ktime_t wakeup_time;
-			ktime_t curr_time = ktime_get();
+//			ktime_t wakeup_time;
+//			ktime_t curr_time = ktime_get();
 			pr_info("%s kad double fp vibration detection start!\n",__func__);
 			check_single_fp_running = 1;
-			wakeup_time = ktime_add_us(curr_time,
-				(160LL * 1000LL)); // msec to usec
-			alarm_start_relative(&check_single_fp_vib_rtc, wakeup_time);
+//			wakeup_time = ktime_add_us(curr_time,
+//				(160LL * 1000LL)); // msec to usec
+			alarm_start_relative(&check_single_fp_vib_rtc, ms_to_ktime(160));
 		}
 	}
 	return get_unlock_vib_strength();
@@ -2415,12 +2407,14 @@ static void kernel_ambient_display_internal(bool led_intercepted) {
 	{
 		// alarm timer
 		// ...to wait a bit with starting the first instance, because of phone calls/alarms can turn screen on in the meantime
-		ktime_t wakeup_time;
-		ktime_t curr_time = ktime_get();
-		wakeup_time = ktime_add_us(curr_time,
-			( (get_kad_start_delay_halfseconds() * 500LL) + 100LL) * 1000LL); // config to avoid collision of notif sound and pwr button interrupt
+//		ktime_t wakeup_time;
+//		ktime_t curr_time = ktime_get();
+//		wakeup_time = ktime_add_us(curr_time,
+//			( (get_kad_start_delay_halfseconds() * 500LL) + 100LL) * 1000LL); // config to avoid collision of notif sound and pwr button interrupt
 		alarm_cancel(&kad_repeat_rtc);
-		alarm_start_relative(&kad_repeat_rtc, wakeup_time); // start new...
+		alarm_start_relative(&kad_repeat_rtc, ms_to_ktime(
+				( (get_kad_start_delay_halfseconds() * 500LL) + 100LL) // config to avoid collision of notif sound and pwr button interrupt
+			)); // start new...
 	}
 }
 void kernel_ambient_display(void) {
@@ -2897,6 +2891,7 @@ static void ts_input_event(struct input_handle *handle, unsigned int type,
 static int ts_input_dev_filter(struct input_dev *dev) {
 	pr_info("%s %s\n",__func__, dev->name);
 	if (
+		strstr(dev->name, "fts") ||
 		strstr(dev->name, "himax-touchscreen") ||
 		strstr(dev->name, "synaptics_dsx") ||
 		strstr(dev->name, "synaptics,s3320") ||
@@ -2908,6 +2903,8 @@ static int ts_input_dev_filter(struct input_dev *dev) {
 	    ) {
 		// storing static ts_device for using outside this handle context as well
 
+		// Pixel4
+		if (strstr(dev->name, "fts")) ts_device = dev;
 		// U11
 		if (strstr(dev->name, "cyttsp")) ts_device = dev;
 		// U11Life
