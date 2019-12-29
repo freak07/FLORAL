@@ -63,7 +63,11 @@ static int flash_blink_number = DEFAULT_BLINK_NUMBER;
 static int flash_blink_wait_sec = DEFAULT_BLINK_WAIT_SEC;
 static int flash_blink_wait_inc = DEFAULT_WAIT_INC;
 static int flash_blink_wait_inc_max = DEFAULT_WAIT_INC_MAX;
+#ifdef CONFIG_UCI_NOTIFICATIONS_DETECT_VIBRATIONS
 static int haptic_mode = 1; // 0 - always blink, 1 - only blink with haptic vibration notifications
+#else
+static int haptic_mode = 0; // 0 - always blink, 1 - only blink with haptic vibration notifications
+#endif
 static int flash_only_face_down = 1;
 
 static bool flash_start_queued = false;
@@ -72,7 +76,11 @@ static int get_flash_ignore_vibration(void) {
 	return uci_get_user_property_int_mm("flash_ignore_vibration", 0, 0, 1);
 }
 static int uci_get_flash_haptic_mode(void) {
+#ifdef CONFIG_UCI_NOTIFICATIONS_DETECT_VIBRATIONS
 	return uci_get_user_property_int_mm("flash_haptic_mode", haptic_mode, 0, 1);
+#else
+	return haptic_mode;
+#endif
 }
 static int uci_get_flash_blink_bright(void) {
 	return uci_get_user_property_int_mm("flash_blink_bright", flash_blink_bright, 0, 1);
