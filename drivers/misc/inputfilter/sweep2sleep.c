@@ -28,8 +28,9 @@ MODULE_LICENSE("GPL");
 #if 1
 // 3040x1440
 static int S2S_Y_MAX = 3040;
-static int S2S_X_LEFT_CORNER_END = 90;
-static int S2S_X_RIGHT_CORNER_START = 1350;
+static int S2S_X_MAX = 1440;
+static int S2S_X_LEFT_CORNER_END = 150;
+static int S2S_X_RIGHT_CORNER_START = 1290; // 1440-150
 #else
 // 2280x1080
 #define S2S_Y_MAX             	2280
@@ -51,7 +52,7 @@ static int s2s_height_above = 20;
 static int s2s_width = 70;
 static int s2s_from_corner = 0;
 static int touch_x = 0, touch_y = 0, firstx = 0;
-static bool touch_x_called = false, touch_y_called = false;
+static bool touch_x_called = false, touch_y_called = false, touch_down_called = false;
 static bool scr_on_touch = false, barrier[2] = {false, false};
 static bool exec_count = true;
 static struct input_dev * sweep2sleep_pwrdev;
@@ -78,8 +79,17 @@ static int get_s2s_height_above(void) {
 static int get_s2s_width(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_width", s2s_width, 0, 150);
 }
+static int get_s2s_width_cutoff(void) {
+	return uci_get_user_property_int_mm("sweep2sleep_width_cutoff", 60, 0, 80);
+}
+static int get_s2s_corner_width(void) {
+	return uci_get_user_property_int_mm("sweep2sleep_corner_width", 150, 100, 250);
+}
 static int get_s2s_from_corner(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_from_corner", s2s_from_corner, 0, 1);
+}
+static int get_s2s_continuous_vib(void) {
+	return uci_get_user_property_int_mm("sweep2sleep_continuous_vib", 0, 0, 1);
 }
 static int get_s2s_y_limit(void) {
 	return S2S_Y_MAX - get_s2s_height();
@@ -99,8 +109,9 @@ static void s2s_setup_values() {
 		pr_info("%s hw flame\n",__func__);
 		// FLAME 2280x1080
 		S2S_Y_MAX = 2280;
-		S2S_X_LEFT_CORNER_END = 90;
-		S2S_X_RIGHT_CORNER_START = 950;
+		S2S_X_MAX = 1080;
+		S2S_X_LEFT_CORNER_END = 100;
+		S2S_X_RIGHT_CORNER_START = 1080-100;
 	}
 }
 
@@ -173,7 +184,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		s2s_switch = 3;
 
 	//left->right
-	if (single_touch && ((firstx < (S2S_X_RIGHT_CORNER_START-40) && !get_s2s_from_corner()) || firstx < S2S_X_LEFT_CORNER_END) && (get_s2s_switch() & SWEEP_RIGHT)) {
+	if (single_touch && ((firstx < (S2S_X_RIGHT_CORNER_START-40) && firstx < (S2S_X_MAX/2) && !get_s2s_from_corner()) || ((firstx > get_s2s_width_cutoff()) && firstx < get_s2s_corner_width())) && (get_s2s_switch() & SWEEP_RIGHT)) {
 		scr_on_touch=true;
 		prevx = firstx;
 		nextx = prevx + x_threshold_1;
@@ -181,7 +192,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		   ((x > prevx) &&
 		    (x < nextx) &&
 		    (y > s2s_y_limit && y < s2s_y_above))) {
-			if (first_event) { // signal gesture start with vib
+			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continously
 				schedule_work(&sweep2sleep_vib_work);
 				first_event = false;
 			}
@@ -206,7 +217,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 			}
 		}
 	//right->left
-	} else if (((firstx >= (S2S_X_LEFT_CORNER_END-40) && !get_s2s_from_corner()) || firstx >=S2S_X_RIGHT_CORNER_START) && (get_s2s_switch() & SWEEP_LEFT)) {
+	} else if (((firstx >= (S2S_X_LEFT_CORNER_END-40) && firstx > (S2S_X_MAX/2) && !get_s2s_from_corner()) || (firstx >= S2S_X_MAX - get_s2s_corner_width() && (firstx < S2S_X_MAX - get_s2s_width_cutoff()))) && (get_s2s_switch() & SWEEP_LEFT)) {
 		scr_on_touch=true;
 		prevx = firstx;
 		nextx = prevx - x_threshold_1;
@@ -214,7 +225,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		   ((x < prevx) &&
 		    (x > nextx) &&
 		    (y > s2s_y_limit && y < s2s_y_above))) {
-			if (first_event) { // signal gesture start with vib
+			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
 				schedule_work(&sweep2sleep_vib_work);
 				first_event = false;
 			}
@@ -252,8 +263,17 @@ static void s2s_input_callback(struct work_struct *unused) {
 static void s2s_input_event(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
 
+	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
+		touch_down_called = true;
+		sweep2sleep_reset();
+		return;
+	}
 
-
+	if (type == EV_KEY && code == BTN_TOUCH && value == 0) {
+		touch_down_called = false;
+		sweep2sleep_reset();
+		return;
+	}
 
 	if (code == ABS_MT_SLOT) {
 		sweep2sleep_reset();
@@ -265,20 +285,27 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
 		return;
 	}
 
-	if (code == ABS_MT_POSITION_X) {
+	if (code == ABS_MT_POSITION_X && touch_down_called) {
 		touch_x = value;
 		touch_x_called = true;
 	}
 
-	if (code == ABS_MT_POSITION_Y) {
+	if (code == ABS_MT_POSITION_Y && touch_down_called) {
 		touch_y = value;
 		touch_y_called = true;
 	}
 
-	if (touch_x_called && touch_y_called) {
+	if (touch_x_called && touch_y_called && touch_down_called) {
+		int s2s_y_limit = get_s2s_y_limit();
+		int s2s_y_above = get_s2s_y_above();
 		touch_x_called = false;
 		touch_y_called = false;
-		queue_work_on(0, s2s_input_wq, &s2s_input_work);
+		if (touch_y > s2s_y_above || touch_y < s2s_y_limit) {
+			touch_down_called = false;
+			sweep2sleep_reset();
+		} else {
+			queue_work_on(0, s2s_input_wq, &s2s_input_work);
+		}
 	}
 }
 
