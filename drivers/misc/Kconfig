@@ -661,6 +661,7 @@ source "drivers/misc/fpr_FingerprintCard/Kconfig"
 source "drivers/misc/airbrush/Kconfig"
 source "drivers/misc/uci/Kconfig"
 source "drivers/misc/notification/Kconfig"
+source "drivers/misc/inputfilter/Kconfig"
 endmenu
 
 config OKL4_USER_VIPC
