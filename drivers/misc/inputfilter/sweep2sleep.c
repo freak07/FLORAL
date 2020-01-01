@@ -265,12 +265,16 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
 		touch_down_called = true;
+		touch_x_called = false;
+		touch_y_called = false;
 		sweep2sleep_reset();
 		return;
 	}
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 0) {
 		touch_down_called = false;
+		touch_x_called = false;
+		touch_y_called = false;
 		sweep2sleep_reset();
 		return;
 	}
@@ -300,7 +304,7 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
 		int s2s_y_above = get_s2s_y_above();
 		touch_x_called = false;
 		touch_y_called = false;
-		if (touch_y > s2s_y_above || touch_y < s2s_y_limit) {
+		if (touch_y > s2s_y_above || touch_y < s2s_y_limit || (touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff())) {
 			touch_down_called = false;
 			sweep2sleep_reset();
 		} else {
