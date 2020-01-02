@@ -363,7 +363,7 @@ static struct input_handler s2s_input_handler = {
 	.name		= "s2s_inputreq",
 	.id_table	= s2s_ids,
 };
-
+#if 0
 static ssize_t sweep2sleep_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -390,6 +390,8 @@ static ssize_t sweep2sleep_dump(struct device *dev,
 
 static DEVICE_ATTR(sweep2sleep, (S_IWUSR|S_IRUGO),
 	sweep2sleep_show, sweep2sleep_dump);
+
+#endif
 
 static ssize_t vib_strength_show(struct device *dev,
 		 struct device_attribute *attr, char *buf)
@@ -456,11 +458,11 @@ static int __init sweep2sleep_init(void)
 	if (sweep2sleep_kobj == NULL) {
 		pr_warn("%s: sweep2sleep_kobj failed\n", __func__);
 	}
-
+#if 0
 	rc = sysfs_create_file(sweep2sleep_kobj, &dev_attr_sweep2sleep.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for sweep2sleep\n", __func__);
-
+#endif
 	rc = sysfs_create_file(sweep2sleep_kobj, &dev_attr_vib_strength.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for vib_strength\n", __func__);
