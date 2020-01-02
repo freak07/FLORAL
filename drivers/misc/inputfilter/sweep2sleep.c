@@ -42,11 +42,13 @@ static int S2S_X_RIGHT_CORNER_START = 1290; // 1440-150
 #define SWEEP_LEFT		0x02
 #define VIB_STRENGTH		20
 
-#define X_DIFF_THRESHOLD_0 100 // 200
-#define X_DIFF_THRESHOLD_1 80 // 180
+#define X_DIFF_THRESHOLD_0 70 // 200
+#define X_DIFF_THRESHOLD_1 70 // 180
 
 // 1=sweep right, 2=sweep left, 3=both
 static int s2s_switch = 0;
+static int s2s_filter_mode = 1; // 0 input filter NO, 1 YES RIGHT HANDED MODE, 2 YES LEFT HANDED MODE
+static int s2s_doubletap_mode = 1; // 0 - off, 1 - powerOff, 2 - signal thru UCI
 static int s2s_height = 130;
 static int s2s_height_above = 20;
 static int s2s_width = 70;
@@ -64,11 +66,19 @@ static int vib_strength = VIB_STRENGTH;
 static bool first_event = false;
 static bool setup_done = false;
 
+static bool filter_coords_status = false;
+
 extern char* init_get_saved_command_line(void);
 
 #ifdef CONFIG_UCI
 static int get_s2s_switch(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_mode", s2s_switch, 0, 3);
+}
+static int get_s2s_filter_mode(void) {
+	return uci_get_user_property_int_mm("sweep2sleep_filter_mode", s2s_filter_mode, 0, 2);
+}
+static int get_s2s_doubletap_mode(void) {
+	return uci_get_user_property_int_mm("sweep2sleep_doubletap_mode", s2s_doubletap_mode, 0, 2);
 }
 static int get_s2s_height(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_height", s2s_height, 50, 350);
@@ -153,6 +163,7 @@ static void sweep2sleep_reset(void) {
 	firstx = 0;
 	first_event = false;
 	scr_on_touch = false;
+	filter_coords_status = false;
 }
 
 /* Sweep2sleep main function */
@@ -260,15 +271,20 @@ static void s2s_input_callback(struct work_struct *unused) {
 	return;
 }
 
-static void s2s_input_event(struct input_handle *handle, unsigned int type,
+static int last_tap_coord_x = 0;
+static int last_tap_coord_y = 0;
+static unsigned long last_tap_jiffies = 0;
+
+static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
+	bool first_touch_detection = false;
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
 		touch_down_called = true;
 		touch_x_called = false;
 		touch_y_called = false;
 		sweep2sleep_reset();
-		return;
+		return false;
 	}
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 0) {
@@ -276,17 +292,22 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
 		touch_x_called = false;
 		touch_y_called = false;
 		sweep2sleep_reset();
-		return;
+		return false;
 	}
 
 	if (code == ABS_MT_SLOT) {
+		touch_x_called = false;
+		touch_y_called = false;
 		sweep2sleep_reset();
-		return;
+		return false;
 	}
 
 	if (code == ABS_MT_TRACKING_ID && value == -1) {
+		touch_down_called = false;
+		touch_x_called = false;
+		touch_y_called = false;
 		sweep2sleep_reset();
-		return;
+		return false;
 	}
 
 	if (code == ABS_MT_POSITION_X && touch_down_called) {
@@ -304,14 +325,55 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
 		int s2s_y_above = get_s2s_y_above();
 		touch_x_called = false;
 		touch_y_called = false;
-		if (touch_y > s2s_y_above || touch_y < s2s_y_limit || (touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff())) {
+		if (touch_y > s2s_y_above || touch_y < s2s_y_limit || (touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff()) || (get_s2s_filter_mode() == 1 && (touch_x < (S2S_X_MAX * 0.60))) || (get_s2s_filter_mode() == 2 && (touch_x > (S2S_X_MAX * 0.40)))) { // TODO left to right mode?
 			touch_down_called = false;
 			sweep2sleep_reset();
 		} else {
+			// in touch area...
+			if (get_s2s_filter_mode()>0 && !filter_coords_status) { // filtered input mode, and first touch point registered without lifting finger...
+				first_touch_detection = true; // this is the firt touch so far without lifting finger...
+				if (get_s2s_doubletap_mode()>0) {
+					unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
+					int delta_x = last_tap_coord_x - touch_x;
+					int delta_y = last_tap_coord_y - touch_y;
+					//pr_info("%d doubletap check, Time: %u X: %d Y: %d\n",last_tap_time_diff,delta_x,delta_y);
+					if (last_tap_time_diff < 150) { // previous first touch time and coordinate comparision to detect double tap...
+						if (delta_x < 60 && delta_x > -60 && delta_y < 60 && delta_y > -60) {
+							touch_down_called = false;
+							sweep2sleep_reset();
+							if (get_s2s_doubletap_mode()==1) { // power button mode
+								sweep2sleep_pwrtrigger();
+							} else { // mode 2
+								schedule_work(&sweep2sleep_vib_work);
+								write_uci_out("fp_touch");
+							}
+							last_tap_coord_x = 0;
+							last_tap_coord_y = 0;
+							last_tap_jiffies = 0;
+							return false; // break out here, don't filter
+						}
+					}
+					last_tap_coord_x = touch_x;
+					last_tap_coord_y = touch_y;
+					last_tap_jiffies = jiffies;
+				}
+			}
+			// in touch area, set filter status True...
+			filter_coords_status = true;
+
 			queue_work_on(0, s2s_input_wq, &s2s_input_work);
 		}
 	}
+	// filter if filter mode active and in sweep touch area, and...
+	// ...this is not right the first touch detection and so the Y coordinate 
+	//    which should NOT be filtered, or it will cause touch positioning issues...
+	return get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status && !first_touch_detection; 
 }
+
+static void s2s_input_event(struct input_handle *handle, unsigned int type,
+                                unsigned int code, int value) {
+}
+
 
 static int input_dev_filter(struct input_dev *dev) {
 	if (strstr(dev->name, "synaptics,s3320")) {
@@ -361,6 +423,7 @@ static const struct input_device_id s2s_ids[] = {
 };
 
 static struct input_handler s2s_input_handler = {
+	.filter         = s2s_input_filter,
 	.event		= s2s_input_event,
 	.connect	= s2s_input_connect,
 	.disconnect	= s2s_input_disconnect,
@@ -385,9 +448,9 @@ static ssize_t sweep2sleep_dump(struct device *dev,
 		return ret;
 
 	if (input < 0 || input > 3)
-		input = 0;				
+		input = 0;
 
-	s2s_switch = input;			
+	s2s_switch = input;
 	
 	return count;
 }
@@ -414,9 +477,9 @@ static ssize_t vib_strength_dump(struct device *dev,
 		return ret;
 
 	if (input < 0 || input > 90)
-		input = 20;				
+		input = 20;
 
-	vib_strength = input;			
+	vib_strength = input;
 	
 	return count;
 }
