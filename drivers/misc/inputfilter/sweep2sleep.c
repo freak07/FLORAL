@@ -47,8 +47,8 @@ static int S2S_X_RIGHT_CORNER_START = 1290; // 1440-150
 
 // 1=sweep right, 2=sweep left, 3=both
 static int s2s_switch = 0;
-static int s2s_filter_mode = 1; // 0 input filter NO, 1 YES RIGHT HANDED MODE, 2 YES LEFT HANDED MODE
-static int s2s_doubletap_mode = 1; // 0 - off, 1 - powerOff, 2 - signal thru UCI
+static int s2s_filter_mode = 0; // 0 input filter NO, 1 YES RIGHT HANDED MODE, 2 YES LEFT HANDED MODE
+static int s2s_doubletap_mode = 0; // 0 - off, 1 - powerOff, 2 - signal thru UCI
 static int s2s_height = 130;
 static int s2s_height_above = 20;
 static int s2s_width = 70;
@@ -380,6 +380,9 @@ static int input_dev_filter(struct input_dev *dev) {
 		return 0;
 	} else
 	if (strstr(dev->name, "fts")) {
+		return 0;
+	} else
+	if (strstr(dev->name, "sec_touchscreen")) {
 		return 0;
 	} else {
 		return 1;

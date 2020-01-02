@@ -2894,6 +2894,7 @@ static int ts_input_dev_filter(struct input_dev *dev) {
 	pr_info("%s %s\n",__func__, dev->name);
 	if (
 		strstr(dev->name, "fts") ||
+		strstr(dev->name, "sec_touchscreen") ||
 		strstr(dev->name, "himax-touchscreen") ||
 		strstr(dev->name, "synaptics_dsx") ||
 		strstr(dev->name, "synaptics,s3320") ||
@@ -2905,8 +2906,10 @@ static int ts_input_dev_filter(struct input_dev *dev) {
 	    ) {
 		// storing static ts_device for using outside this handle context as well
 
-		// Pixel4
+		// Pixel4XL
 		if (strstr(dev->name, "fts")) ts_device = dev;
+		// Pixel4
+		if (strstr(dev->name, "sec_touchscreen")) ts_device = dev;
 		// U11
 		if (strstr(dev->name, "cyttsp")) ts_device = dev;
 		// U11Life
