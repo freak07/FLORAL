@@ -395,6 +395,7 @@ void ntf_input_event(const char* caller, const char *param) {
 	// input event happened, stop stuff, store timesamp, set wake_by_user
 	set_last_input_event(__func__);
 	wake_by_user = true;
+	smart_set_last_user_activity_time();
 	ntf_notify_listeners(NTF_EVENT_INPUT,1,(char *)param);
 }
 EXPORT_SYMBOL(ntf_input_event);

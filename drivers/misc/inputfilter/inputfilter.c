@@ -244,7 +244,7 @@ void ifilter_uci_sys_listener(void) {
 		locked = uci_get_sys_property_int_mm("locked", 0, 0, 1);
 		if (screen_waking_app != -EINVAL) ifilter_screen_waking_app = screen_waking_app;
 
-		pr_info("%s uci sys silent %d ringing %d face_down %d timeout %d \n",__func__,silent, ringing, face_down, screen_timeout_sec);
+		pr_info("%s uci sys silent %d ringing %d face_down %d timeout %d last_face_down %d wake_by_user %d screen_waking_app %d \n",__func__,silent, ringing, face_down, screen_timeout_sec, last_face_down, ntf_wake_by_user(),ifilter_screen_waking_app);
 		ifilter_silent_mode = silent;
 		if (ifilter_silent_mode && ringing && (ringing!=ifilter_ringing) && get_phone_ring_in_silent_mode()) {
 //			ktime_t wakeup_time;
@@ -298,9 +298,7 @@ int smart_get_inactivity_time(void) {
 	diff = get_global_seconds() - smart_last_user_activity_time;
 	diff_in_sec = diff / 1;
 	pr_info("%s smart_notif - inactivity in sec: %d\n",__func__, diff_in_sec);
-// TODO register user activites...
-	if (1) return 0;
-// TODO
+//	if (1) return 0;
 	return diff_in_sec;
 }
 
@@ -563,12 +561,14 @@ static struct alarm kad_repeat_rtc;
 * tells if currently a facedown event from companion app UCI sys triggering, should at the same time do a screen off as well
 */
 bool should_screen_off_face_down(int screen_timeout_sec, int face_down) {
+	pr_info("%s face down screen off? kad_running %d screen_on %d \n",__func__, kad_running, screen_on);
 	if (get_face_down_screen_off() && !kad_running && screen_on) {
 		if (smart_get_inactivity_time()<(screen_timeout_sec-3) && face_down) {
-			pr_info("%s face down screen off! \n",__func__);
+			pr_info("%s yes, face down screen off! \n",__func__);
 			return true;
 		}
 	}
+	pr_info("%s no, no face down screen off... \n",__func__);
 	return false;
 }
 
