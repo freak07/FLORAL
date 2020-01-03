@@ -61,7 +61,8 @@ static struct input_dev * sweep2sleep_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 static struct workqueue_struct *s2s_input_wq;
 static struct work_struct s2s_input_work;
-extern void set_vibrate(int value); 
+//extern void set_vibrate(int value);
+extern void set_vibrate_2(int value, int boost_power);
 static int vib_strength = VIB_STRENGTH;
 static bool first_event = false;
 static bool setup_done = false;
@@ -142,15 +143,16 @@ static void sweep2sleep_presspwr(struct work_struct * sweep2sleep_presspwr_work)
 }
 static DECLARE_WORK(sweep2sleep_presspwr_work, sweep2sleep_presspwr);
 
+static int vib_power = 50;
 static void sweep2sleep_vib(struct work_struct * sweep2sleep_vib_work) {
-	set_vibrate(vib_strength-10);
+	set_vibrate_2(vib_strength-10,vib_power);
 	return;
 }
 static DECLARE_WORK(sweep2sleep_vib_work, sweep2sleep_vib);
 
 /* PowerKey trigger */
 static void sweep2sleep_pwrtrigger(void) {
-	set_vibrate(vib_strength);
+	set_vibrate_2(vib_strength,100);
 	schedule_work(&sweep2sleep_presspwr_work);
         return;
 }
@@ -165,6 +167,7 @@ static void sweep2sleep_reset(void) {
 	scr_on_touch = false;
 	filter_coords_status = false;
 }
+
 
 /* Sweep2sleep main function */
 static void detect_sweep2sleep(int x, int y, bool st)
@@ -203,8 +206,11 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		   ((x > prevx) &&
 		    (x < nextx) &&
 		    (y > s2s_y_limit && y < s2s_y_above))) {
-			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continously
-				schedule_work(&sweep2sleep_vib_work);
+			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
+				if (exec_count) {
+					if (barrier[1] == true) { vib_power = 50; } else { vib_power = 1; }
+					schedule_work(&sweep2sleep_vib_work);
+				}
 				first_event = false;
 			}
 			prevx = nextx;
@@ -237,7 +243,10 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		    (x > nextx) &&
 		    (y > s2s_y_limit && y < s2s_y_above))) {
 			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
-				schedule_work(&sweep2sleep_vib_work);
+				if (exec_count) {
+					if (barrier[1] == true) { vib_power = 50; } else { vib_power = 1; }
+					schedule_work(&sweep2sleep_vib_work);
+				}
 				first_event = false;
 			}
 			prevx = nextx;
@@ -344,6 +353,7 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 							if (get_s2s_doubletap_mode()==1) { // power button mode
 								sweep2sleep_pwrtrigger();
 							} else { // mode 2
+								vib_power = 60;
 								schedule_work(&sweep2sleep_vib_work);
 								write_uci_out("fp_touch");
 							}

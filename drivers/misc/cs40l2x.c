@@ -5372,17 +5372,42 @@ void __set_vibrate()
 }
 #define CONFIG_UCI_INPUTFILTER
 #ifdef CONFIG_UCI_INPUTFILTER
-void set_vibrate(int time_ms)
+/*
+Click - long
+ cp_dig_scale  			84   - 65
+ cp_trigger_duration		540  - not set
+ cp_trigger_index		2    - 32771
+ cp_trigger_q_sub		6    - not set
+*/
+void set_vibrate_2(int time_ms, int boost_power)
 {
+	if (time_ms<=20) { // set fast hz mode to haptic feedback...
+		cs40l2x_g->cp_trigger_index = 2; // set trigger index for played pattern to be a click...
+	} else {
+		cs40l2x_g->cp_trigger_index = 32771; // set trigger index for played pattern to be a long vibe...
+	}
+
+	if (boost_power>=1 && boost_power<=100) {
+		mutex_lock(&cs40l2x_g->lock);
+		cs40l2x_cp_dig_scale_set(cs40l2x_g, 101-boost_power); // set voltage scale (lower the more powerful
+		mutex_unlock(&cs40l2x_g->lock);
+	}
+
 	queue_work(cs40l2x_g->vibe_workqueue, &cs40l2x_g->vibe_start_work);
 	mdelay(time_ms); // cannot sleep, as this can be in atomic context as well
 	queue_work(cs40l2x_g->vibe_workqueue, &cs40l2x_g->vibe_stop_work);
 }
+void set_vibrate(int time_ms)
+{
+	pr_info("%s time_ms = %d\n",__func__,time_ms);
+	set_vibrate_2(time_ms, 50);
+}
 void set_vibrate_boosted(int time_ms)
 {
 	pr_info("%s time_ms = %d\n",__func__,time_ms);
-	set_vibrate(time_ms);
+	set_vibrate_2(time_ms, 100);
 }
+EXPORT_SYMBOL(set_vibrate_2);
 EXPORT_SYMBOL(set_vibrate);
 EXPORT_SYMBOL(set_vibrate_boosted);
 #endif
