@@ -246,7 +246,7 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 		return;
 	}
 #if 1
-	pr_info("%s [CLEANSLATE] kcal setup... \n",__func__);
+	//pr_info("%s [CLEANSLATE] kcal setup... \n",__func__);
         enable = uci_get_user_property_int_mm("kcal_enable", enable, 0, 1);
         r = uci_get_user_property_int_mm("kcal_red", r, 0, 256);
         g = uci_get_user_property_int_mm("kcal_green", g, 0, 256);
@@ -331,7 +331,7 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 #if 1
 		if (enable && i==0) {
 			SDE_REG_WRITE(&ctx->hw, base + PCC_R_OFF, (coeffs->r * r)/256);
-			pr_info("%s [CLEANSLATE] kcal r = %d\n",__func__,(coeffs->r * r)/256);
+			//pr_info("%s [CLEANSLATE] kcal r = %d\n",__func__,(coeffs->r * r)/256);
 		} else
 #endif
 		SDE_REG_WRITE(&ctx->hw, base + PCC_R_OFF, coeffs->r);
@@ -339,7 +339,7 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 #if 1
 		if (enable && i==1) {
 			SDE_REG_WRITE(&ctx->hw, base + PCC_G_OFF, (coeffs->g * g)/256);
-			pr_info("%s [CLEANSLATE] kcal g = %d\n",__func__,(coeffs->g * g)/256);
+			//pr_info("%s [CLEANSLATE] kcal g = %d\n",__func__,(coeffs->g * g)/256);
 		} else
 #endif
 		SDE_REG_WRITE(&ctx->hw, base + PCC_G_OFF, coeffs->g);
@@ -347,7 +347,7 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 #if 1
 		if (enable && i==2) {
 			SDE_REG_WRITE(&ctx->hw, base + PCC_B_OFF, (coeffs->b * b)/256);
-			pr_info("%s [CLEANSLATE] kcal b = %d\n",__func__,(coeffs->b * b)/256);
+			//pr_info("%s [CLEANSLATE] kcal b = %d\n",__func__,(coeffs->b * b)/256);
 		} else
 #endif
 		SDE_REG_WRITE(&ctx->hw, base + PCC_B_OFF, coeffs->b);
