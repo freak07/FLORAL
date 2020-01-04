@@ -175,7 +175,7 @@ void ntf_screen_on(void) {
 		ntf_notify_listeners(NTF_EVENT_WAKE_EARLY,1,"");
 		pr_info("%s ntf uci screen on -early\n",__func__);
 		if (!screen_on || screen_off_early) {
-			wake_by_user = kad_wake?false:true; //first_unblank || last_input_event_diff < 1400; // TODO to identify wake by ambient display, this callback is not sufficient. for now setting wake by user all the time
+			wake_by_user = kad_wake?false:(last_input_event_diff < 1400); // TODO to identify wake by ambient display, this callback is not sufficient. for now setting wake by user all the time
 			// ...as after motion launch or Always on there's no screen on event again when pressing an input... so this is not called at that time
 			kad_wake = false;
 			pr_info("[cleanslate] ntf uci screen on , wake_by_user = %d last input diff %d \n", wake_by_user, (int)last_input_event_diff);
