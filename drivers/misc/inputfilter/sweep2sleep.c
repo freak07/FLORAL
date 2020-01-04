@@ -353,7 +353,7 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 					unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
 					int delta_x = last_tap_coord_x - touch_x;
 					int delta_y = last_tap_coord_y - touch_y;
-					//pr_info("%d doubletap check, Time: %u X: %d Y: %d\n",last_tap_time_diff,delta_x,delta_y);
+					pr_info("%d doubletap check, Time: %u X: %d Y: %d\n",last_tap_time_diff,delta_x,delta_y);
 					if (last_tap_time_diff < 150) { // previous first touch time and coordinate comparision to detect double tap...
 						if (delta_x < 60 && delta_x > -60 && delta_y < 60 && delta_y > -60) {
 							touch_down_called = false;
@@ -394,6 +394,7 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
 
 
 static int input_dev_filter(struct input_dev *dev) {
+	pr_info("%s sweep2sleep device filter check. Device: %s\n",__func__,dev->name);
 	if (strstr(dev->name, "synaptics,s3320")) {
 		return 0;
 	} else
