@@ -50,6 +50,7 @@ static int s2s_switch = 0;
 static int s2s_filter_mode = 0; // 0 input filter NO, 1 YES RIGHT HANDED MODE, 2 YES LEFT HANDED MODE
 static int s2s_doubletap_mode = 0; // 0 - off, 1 - powerOff, 2 - signal thru UCI
 static int s2s_height = 130;
+static int s2s_doubletap_height = 70; // where doubletap Y coordinates are registered
 static int s2s_height_above = 20;
 static int s2s_width = 70;
 static int s2s_from_corner = 0;
@@ -84,6 +85,9 @@ static int get_s2s_doubletap_mode(void) {
 static int get_s2s_height(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_height", s2s_height, 50, 350);
 }
+static int get_s2s_doubletap_height(void) {
+	return uci_get_user_property_int_mm("sweep2sleep_doubletap_height", s2s_doubletap_height, 50, 350);
+}
 static int get_s2s_height_above(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_height_above", s2s_height_above, 0, 150);
 }
@@ -104,6 +108,9 @@ static int get_s2s_continuous_vib(void) {
 }
 static int get_s2s_y_limit(void) {
 	return S2S_Y_MAX - get_s2s_height();
+}
+static int get_s2s_y_limit_doubletap(void) {
+	return S2S_Y_MAX - get_s2s_doubletap_height();
 }
 static int get_s2s_y_above(void) {
 	return S2S_Y_MAX - get_s2s_height_above();
@@ -341,6 +348,7 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 			// in touch area...
 			if (get_s2s_filter_mode()>0 && !filter_coords_status) { // filtered input mode, and first touch point registered without lifting finger...
 				first_touch_detection = true; // this is the firt touch so far without lifting finger...
+				if (touch_y > get_s2s_y_limit_doubletap()) // only check doubletaps if Y is at the right part
 				if (get_s2s_doubletap_mode()>0) {
 					unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
 					int delta_x = last_tap_coord_x - touch_x;
