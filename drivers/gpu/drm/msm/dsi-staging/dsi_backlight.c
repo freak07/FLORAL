@@ -728,7 +728,8 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 #ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
 	if (power_mode==5 || power_mode==1) { // 5 - fully off / 1 - AOD
 		ntf_screen_off();
-	} else if (power_mode==0 && bd->props.state!=2) { // 0 ON (state!= 0x02 it's a transient state while getting out of pocket, ON's 'state' value will be 0x80000)
+	} else if (power_mode==0) { // && bd->props.state!=2) { // 0 ON (state!= 0x02 it's a transient state while getting out of pocket, ON's 'state' value will be 0x80000). 
+				    // Without AOD props state can be 2 as well. Check user inputs instead
 		ntf_screen_on();
 	}
 #endif
