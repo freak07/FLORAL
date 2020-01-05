@@ -213,7 +213,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		    (y > s2s_y_limit && y < s2s_y_above))) {
 			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
 				if (exec_count) {
-					if (barrier[1] == true) { vib_power = 50; } else { vib_power = 1; }
+					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
 					schedule_work(&sweep2sleep_vib_work);
 				}
 				first_event = false;
@@ -249,7 +249,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		    (y > s2s_y_limit && y < s2s_y_above))) {
 			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
 				if (exec_count) {
-					if (barrier[1] == true) { vib_power = 50; } else { vib_power = 1; }
+					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
 					schedule_work(&sweep2sleep_vib_work);
 				}
 				first_event = false;
@@ -288,6 +288,7 @@ static void s2s_input_callback(struct work_struct *unused) {
 static int last_tap_coord_x = 0;
 static int last_tap_coord_y = 0;
 static unsigned long last_tap_jiffies = 0;
+static bool last_tap_starts_in_dt_area = false;
 
 #ifdef CONFIG_DEBUG_S2S
 static int log_throttling_count = 0;
@@ -313,6 +314,7 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_down_called = true;
 		touch_x_called = false;
 		touch_y_called = false;
+		last_tap_starts_in_dt_area = false; // reset boolean
 		sweep2sleep_reset();
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s first touch...\n",__func__);
@@ -324,6 +326,14 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_down_called = false;
 		touch_x_called = false;
 		touch_y_called = false;
+		if (last_tap_starts_in_dt_area) {
+			unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
+			if (last_tap_time_diff < 50) { // first touch time is very close... finishing that touch with leaving the area..vibrate
+				vib_power = 60;
+				schedule_work(&sweep2sleep_vib_work);
+			}
+		}
+		last_tap_starts_in_dt_area = false; // reset boolean
 		sweep2sleep_reset();
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s untouch...\n",__func__);
@@ -405,6 +415,8 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 							last_tap_jiffies = 0;
 							return false; // break out here, don't filter
 						}
+					} else {
+						last_tap_starts_in_dt_area = true;
 					}
 					last_tap_coord_x = touch_x;
 					last_tap_coord_y = touch_y;
