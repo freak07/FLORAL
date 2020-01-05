@@ -18,6 +18,10 @@
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
 
+#ifdef CONFIG_UCI
+#include <linux/notification/notification.h>
+#endif
+
 static int cam_flash_prepare(struct cam_flash_ctrl *flash_ctrl,
 	bool regulator_enable)
 {
@@ -490,6 +494,9 @@ int cam_flash_off(struct cam_flash_ctrl *flash_ctrl)
 			(enum led_brightness)LED_SWITCH_OFF);
 
 	flash_ctrl->flash_state = CAM_FLASH_STATE_START;
+#if CONFIG_UCI
+	ntf_set_cam_flashlight(false);
+#endif
 	return 0;
 }
 
@@ -515,6 +522,9 @@ static int cam_flash_low(
 	if (rc)
 		CAM_ERR(CAM_FLASH, "Fire Torch failed: %d", rc);
 
+#if CONFIG_UCI
+	ntf_set_cam_flashlight(true);
+#endif
 	return rc;
 }
 
@@ -540,6 +550,9 @@ static int cam_flash_high(
 	if (rc)
 		CAM_ERR(CAM_FLASH, "Fire Flash Failed: %d", rc);
 
+#if CONFIG_UCI
+	ntf_set_cam_flashlight(true);
+#endif
 	return rc;
 }
 
