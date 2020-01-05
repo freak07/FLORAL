@@ -98,7 +98,7 @@ static int get_s2s_width_cutoff(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_width_cutoff", 60, 0, 80);
 }
 static int get_s2s_corner_width(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_corner_width", 150, 100, 250);
+	return uci_get_user_property_int_mm("sweep2sleep_corner_width", 150, 100, 350);
 }
 static int get_s2s_from_corner(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_from_corner", s2s_from_corner, 0, 1);
@@ -380,7 +380,16 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s touch x/y gathered.\n",__func__);
 #endif
-		if (touch_y > s2s_y_above || touch_y < s2s_y_limit || (touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff()) || (get_s2s_filter_mode() == 1 && (touch_x < (S2S_X_MAX * 0.60))) || (get_s2s_filter_mode() == 2 && (touch_x > (S2S_X_MAX * 0.40)))) { // TODO left to right mode?
+		if (
+			// if ... first touch was not registered (filter_coords_status = false) && register only in corner area, and X is outside cordner area,
+			(!filter_coords_status && get_s2s_from_corner() && (touch_x < S2S_X_MAX - get_s2s_corner_width() && touch_x > get_s2s_corner_width())) ||
+			// or if... y is not in the touch area or x is not in the whole area,
+			touch_y > s2s_y_above || touch_y < s2s_y_limit || (touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff()) ||
+			// or if in filtering mode (left right handed separately checked) and X is not in the 40% of the possible width...
+			(get_s2s_filter_mode() == 1 && (touch_x < (S2S_X_MAX * 0.60))) ||
+			(get_s2s_filter_mode() == 2 && (touch_x > (S2S_X_MAX * 0.40)))
+			)
+		{	// cancel now...
 			touch_down_called = false;
 			sweep2sleep_reset();
 		} else {
