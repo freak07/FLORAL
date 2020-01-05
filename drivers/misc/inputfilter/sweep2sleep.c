@@ -193,10 +193,6 @@ static void detect_sweep2sleep(int x, int y, bool st)
 	int x_threshold_1 = X_DIFF_THRESHOLD_1 + get_s2s_width();
         bool single_touch = st;
 
-	if (!setup_done) {
-		setup_done = true;
-		s2s_setup_values();
-	}
 
 	if (firstx == 0) {
 		firstx = x;
@@ -293,15 +289,34 @@ static int last_tap_coord_x = 0;
 static int last_tap_coord_y = 0;
 static unsigned long last_tap_jiffies = 0;
 
+#ifdef CONFIG_DEBUG_S2S
+static int log_throttling_count = 0;
+#endif
+
 static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
 	bool first_touch_detection = false;
+
+	if (!setup_done) {
+		setup_done = true;
+		s2s_setup_values();
+	}
+
+#ifdef CONFIG_DEBUG_S2S
+	if ((log_throttling_count++)%50>40) {
+		pr_info("%s type: %d code: %d value: %d -- max y = %d\n",__func__,type,code,value,S2S_Y_MAX);
+	}
+	if (log_throttling_count%50==49) log_throttling_count = 0;
+#endif
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
 		touch_down_called = true;
 		touch_x_called = false;
 		touch_y_called = false;
 		sweep2sleep_reset();
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s first touch...\n",__func__);
+#endif
 		return false;
 	}
 
@@ -310,12 +325,18 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_x_called = false;
 		touch_y_called = false;
 		sweep2sleep_reset();
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s untouch...\n",__func__);
+#endif
 		return false;
 	}
 
 	if (code == ABS_MT_SLOT) {
 		touch_x_called = false;
 		touch_y_called = false;
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s reset based on slot...\n",__func__);
+#endif
 		sweep2sleep_reset();
 		return false;
 	}
@@ -325,6 +346,9 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_x_called = false;
 		touch_y_called = false;
 		sweep2sleep_reset();
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s untouch based on tracking id...\n",__func__);
+#endif
 		return false;
 	}
 
@@ -343,6 +367,9 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		int s2s_y_above = get_s2s_y_above();
 		touch_x_called = false;
 		touch_y_called = false;
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s touch x/y gathered.\n",__func__);
+#endif
 		if (touch_y > s2s_y_above || touch_y < s2s_y_limit || (touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff()) || (get_s2s_filter_mode() == 1 && (touch_x < (S2S_X_MAX * 0.60))) || (get_s2s_filter_mode() == 2 && (touch_x > (S2S_X_MAX * 0.40)))) { // TODO left to right mode?
 			touch_down_called = false;
 			sweep2sleep_reset();
@@ -355,7 +382,9 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 					unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
 					int delta_x = last_tap_coord_x - touch_x;
 					int delta_y = last_tap_coord_y - touch_y;
+#ifdef CONFIG_DEBUG_S2S
 					pr_info("%d doubletap check, Time: %u X: %d Y: %d\n",last_tap_time_diff,delta_x,delta_y);
+#endif
 					if (last_tap_time_diff < 150) { // previous first touch time and coordinate comparision to detect double tap...
 						if (delta_x < 60 && delta_x > -60 && delta_y < 60 && delta_y > -60) {
 							touch_down_called = false;
