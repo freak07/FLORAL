@@ -133,12 +133,14 @@ static void s2s_setup_values() {
 	}
 }
 
-
+static bool pause_before_pwr_off = false;
 /* PowerKey work func */
 static void sweep2sleep_presspwr(struct work_struct * sweep2sleep_presspwr_work) {
 
 	if (!mutex_trylock(&pwrkeyworklock))
                 return;
+	if (pause_before_pwr_off) msleep(300);
+	pause_before_pwr_off = false;
 	input_event(sweep2sleep_pwrdev, EV_KEY, KEY_POWER, 1);
 	input_event(sweep2sleep_pwrdev, EV_SYN, 0, 0);
 	msleep(S2S_PWRKEY_DUR);
@@ -359,6 +361,10 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 							touch_down_called = false;
 							sweep2sleep_reset();
 							if (get_s2s_doubletap_mode()==1) { // power button mode
+								// wait a bit before actually emulate pwr button press in the trigger, to avoid wake screen on lockscreen touch
+								if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
+									pause_before_pwr_off = true;
+								}
 								sweep2sleep_pwrtrigger();
 							} else { // mode 2
 								vib_power = 60;
