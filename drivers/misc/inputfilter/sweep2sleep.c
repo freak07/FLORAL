@@ -210,7 +210,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		if ((barrier[0] == true) ||
 		   ((x > prevx) &&
 		    (x < nextx) &&
-		    (y > s2s_y_limit && y < s2s_y_above))) {
+		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
 			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
 				if (exec_count) {
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
@@ -224,11 +224,11 @@ static void detect_sweep2sleep(int x, int y, bool st)
 			if ((barrier[1] == true) ||
 			   ((x > prevx) &&
 			    (x < nextx) &&
-			    (y > s2s_y_limit && y < s2s_y_above))) {
+			    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
 				prevx = nextx;
 				barrier[1] = true;
 				if ((x > prevx) &&
-				    (y > s2s_y_limit && y < s2s_y_above)) {
+				    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) ) {
 					if (x > (nextx + x_threshold_1)) {
 						if (exec_count) {
 							sweep2sleep_pwrtrigger();
@@ -246,7 +246,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		if ((barrier[0] == true) ||
 		   ((x < prevx) &&
 		    (x > nextx) &&
-		    (y > s2s_y_limit && y < s2s_y_above))) {
+		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
 			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
 				if (exec_count) {
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
@@ -260,11 +260,11 @@ static void detect_sweep2sleep(int x, int y, bool st)
 			if ((barrier[1] == true) ||
 			   ((x < prevx) &&
 			    (x > nextx) &&
-			    (y > s2s_y_limit && y < s2s_y_above))) {
+			    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
 				prevx = nextx;
 				barrier[1] = true;
 				if ((x < prevx) &&
-				    (y > s2s_y_limit && y < s2s_y_above)) {
+				    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) ) {
 					if (x < (nextx - x_threshold_1)) {
 						if (exec_count) {
 							sweep2sleep_pwrtrigger();
@@ -384,10 +384,13 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 			// if ... first touch was not registered (filter_coords_status = false) && register only in corner area, and X is outside cordner area,
 			(!filter_coords_status && get_s2s_from_corner() && (touch_x < S2S_X_MAX - get_s2s_corner_width() && touch_x > get_s2s_corner_width())) ||
 			// or if... y is not in the touch area or x is not in the whole area,
-			touch_y > s2s_y_above || touch_y < s2s_y_limit || (touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff()) ||
-			// or if in filtering mode (left right handed separately checked) and X is not in the 40% of the possible width...
-			(get_s2s_filter_mode() == 1 && (touch_x < (S2S_X_MAX * 0.60))) ||
-			(get_s2s_filter_mode() == 2 && (touch_x > (S2S_X_MAX * 0.40)))
+			(get_s2s_filter_mode() && (!filter_coords_status && (touch_y > s2s_y_above || touch_y < s2s_y_limit))) || // TODO still add some Y limit even if in filtered mode, to block to vertical gestures
+				// TODO, think about adding vertical gesture BACK!
+			(!get_s2s_filter_mode() && (touch_y > s2s_y_above || touch_y < s2s_y_limit)) || 
+			(touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff()) ||
+			// or if in filtering mode (left right handed separately checked) and X is not in the 40% of the possible width, and this is still the first touch (!filter_coords_status)...
+			(get_s2s_filter_mode() == 1 && !filter_coords_status && (touch_x < (S2S_X_MAX * 0.60))) ||
+			(get_s2s_filter_mode() == 2 && !filter_coords_status && (touch_x > (S2S_X_MAX * 0.40)))
 			)
 		{	// cancel now...
 			touch_down_called = false;
