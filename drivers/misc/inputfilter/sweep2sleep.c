@@ -76,8 +76,8 @@ extern char* init_get_saved_command_line(void);
 static int get_s2s_switch(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_mode", s2s_switch, 0, 3);
 }
-static int get_s2s_filter_mode(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_filter_mode", s2s_filter_mode, 0, 2);
+static int get_s2s_filter_mode(void) { // 0 off, 1 right handed, 2 left handed, 3 both
+	return uci_get_user_property_int_mm("sweep2sleep_filter_mode", s2s_filter_mode, 0, 3);
 }
 static int get_s2s_doubletap_mode(void) {
 	return uci_get_user_property_int_mm("sweep2sleep_doubletap_mode", s2s_doubletap_mode, 0, 2);
@@ -211,7 +211,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		   ((x > prevx) &&
 		    (x < nextx) &&
 		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
-			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
+			if (((x > firstx + (15 + get_s2s_width()*0.3)) && first_event) || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously. Only start when at least X coordinate moved a little bit from first touch X (~20px)
 				if (exec_count) {
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
 					schedule_work(&sweep2sleep_vib_work);
@@ -247,7 +247,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		   ((x < prevx) &&
 		    (x > nextx) &&
 		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
-			if (first_event || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously
+			if (((x < firstx - (15 + get_s2s_width()*0.3)) && first_event) || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously. Only start when at least X coordinate moved a little bit from first touch X (~20px)
 				if (exec_count) {
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
 					schedule_work(&sweep2sleep_vib_work);
@@ -290,6 +290,17 @@ static int last_tap_coord_y = 0;
 static unsigned long last_tap_jiffies = 0;
 static bool last_tap_starts_in_dt_area = false;
 
+static void reset_doubletap_tracking(void) {
+	last_tap_coord_x = 0;
+	last_tap_coord_y = 0;
+	last_tap_jiffies = 0;
+}
+static void store_doubletap_touch(void) {
+	last_tap_coord_x = touch_x;
+	last_tap_coord_y = touch_y;
+	last_tap_jiffies = jiffies;
+}
+
 #ifdef CONFIG_DEBUG_S2S
 static int log_throttling_count = 0;
 #endif
@@ -327,10 +338,21 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_x_called = false;
 		touch_y_called = false;
 		if (last_tap_starts_in_dt_area) {
-			unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
-			if (last_tap_time_diff < 50) { // first touch time is very close... finishing that touch with leaving the area..vibrate
-				vib_power = 60;
-				schedule_work(&sweep2sleep_vib_work);
+			int delta_x = last_tap_coord_x - touch_x;
+			int delta_y = last_tap_coord_y - touch_y;
+#ifdef CONFIG_DEBUG_S2S
+			pr_info("%s doubletap check at btn leave, Time: %u X: %d Y: %d\n",__func__,last_tap_time_diff,delta_x,delta_y);
+#endif
+			if (delta_x < 20 && delta_x > -20 && delta_y < 20 && delta_y > -20) {
+				unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
+				// first touch time is very close and didn't move more than 20px before leaving screen... finishing that touch within the area? vibrate...
+				if (last_tap_time_diff < 50) { 
+					vib_power = 60;
+					schedule_work(&sweep2sleep_vib_work);
+				}
+			} else {
+				// finger leaving screen too far from the original touch point... cancel DT tracking data of first touch..
+				reset_doubletap_tracking();
 			}
 		}
 		last_tap_starts_in_dt_area = false; // reset boolean
@@ -389,8 +411,9 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 			(!get_s2s_filter_mode() && (touch_y > s2s_y_above || touch_y < s2s_y_limit)) || 
 			(touch_x < get_s2s_width_cutoff()) || (touch_x > S2S_X_MAX - get_s2s_width_cutoff()) ||
 			// or if in filtering mode (left right handed separately checked) and X is not in the 40% of the possible width, and this is still the first touch (!filter_coords_status)...
-			(get_s2s_filter_mode() == 1 && !filter_coords_status && (touch_x < (S2S_X_MAX * 0.60))) ||
-			(get_s2s_filter_mode() == 2 && !filter_coords_status && (touch_x > (S2S_X_MAX * 0.40)))
+			(get_s2s_filter_mode() == 1 && !filter_coords_status && (touch_x < (S2S_X_MAX * 0.60))) || // right handed, on the left side tapped shouldn't filter...
+			(get_s2s_filter_mode() == 2 && !filter_coords_status && (touch_x > (S2S_X_MAX * 0.40))) || // left handed, on the right side tapped...
+			(get_s2s_filter_mode() == 3 && !filter_coords_status && (touch_x < (S2S_X_MAX * 0.60) && touch_x > (S2S_X_MAX * 0.40))) // both handed, in the middle region
 			)
 		{	// cancel now...
 			touch_down_called = false;
@@ -422,17 +445,13 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 								schedule_work(&sweep2sleep_vib_work);
 								write_uci_out("fp_touch");
 							}
-							last_tap_coord_x = 0;
-							last_tap_coord_y = 0;
-							last_tap_jiffies = 0;
+							reset_doubletap_tracking();
 							return false; // break out here, don't filter
 						}
 					} else {
 						last_tap_starts_in_dt_area = true;
 					}
-					last_tap_coord_x = touch_x;
-					last_tap_coord_y = touch_y;
-					last_tap_jiffies = jiffies;
+					store_doubletap_touch();
 				}
 			}
 			// in touch area, set filter status True...
