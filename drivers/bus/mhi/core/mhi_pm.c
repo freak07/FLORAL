@@ -165,8 +165,8 @@ void mhi_set_mhi_state(struct mhi_controller *mhi_cntrl,
 		mhi_write_reg_field(mhi_cntrl, mhi_cntrl->regs, MHICTRL,
 				    MHICTRL_RESET_MASK, MHICTRL_RESET_SHIFT, 1);
 	} else {
-		mhi_write_reg_field(mhi_cntrl, mhi_cntrl->regs, MHICTRL,
-			MHICTRL_MHISTATE_MASK, MHICTRL_MHISTATE_SHIFT, state);
+		mhi_cntrl->write_reg(mhi_cntrl, mhi_cntrl->regs, MHICTRL,
+			 (state << MHICTRL_MHISTATE_SHIFT));
 	}
 }
 
@@ -217,7 +217,8 @@ void mhi_deassert_dev_wake(struct mhi_controller *mhi_cntrl, bool override)
 {
 	unsigned long flags;
 
-	MHI_ASSERT(atomic_read(&mhi_cntrl->dev_wake) == 0, "dev_wake == 0");
+	MHI_ASSERT((mhi_is_active(mhi_cntrl->mhi_dev) &&
+		   atomic_read(&mhi_cntrl->dev_wake) == 0), "dev_wake == 0");
 
 	/* resources not dropping to 0, decrement and exit */
 	if (likely(atomic_add_unless(&mhi_cntrl->dev_wake, -1, 1)))
@@ -466,6 +467,12 @@ static int mhi_pm_mission_mode_transition(struct mhi_controller *mhi_cntrl)
 
 	wake_up_all(&mhi_cntrl->state_event);
 
+	/* offload register write if supported */
+	if (mhi_cntrl->offload_wq) {
+		mhi_reset_reg_write_q(mhi_cntrl);
+		mhi_cntrl->write_reg = mhi_write_reg_offload;
+	}
+
 	/* force MHI to be in M0 state before continuing */
 	ret = __mhi_device_get_sync(mhi_cntrl);
 	if (ret)
@@ -543,6 +550,12 @@ static void mhi_pm_disable_transition(struct mhi_controller *mhi_cntrl,
 		TO_MHI_STATE_STR(mhi_cntrl->dev_state),
 		to_mhi_pm_state_str(transition_state));
 
+	/* restore async write call back */
+	mhi_cntrl->write_reg = mhi_write_reg;
+
+	if (mhi_cntrl->offload_wq)
+		mhi_reset_reg_write_q(mhi_cntrl);
+
 	/* We must notify MHI control driver so it can clean up first */
 	if (transition_state == MHI_PM_SYS_ERR_PROCESS) {
 		/*
@@ -567,6 +580,8 @@ static void mhi_pm_disable_transition(struct mhi_controller *mhi_cntrl,
 		mhi_cntrl->ee = MHI_EE_DISABLE_TRANSITION;
 		mhi_cntrl->dev_state = MHI_STATE_RESET;
 	}
+	/* notify controller of power down regardless of state transitions */
+	mhi_cntrl->power_down = true;
 	write_unlock_irq(&mhi_cntrl->pm_lock);
 
 	/* wake up any threads waiting for state transitions */
@@ -605,7 +620,7 @@ static void mhi_pm_disable_transition(struct mhi_controller *mhi_cntrl,
 		 * device cleares INTVEC as part of RESET processing,
 		 * re-program it
 		 */
-		mhi_write_reg(mhi_cntrl, mhi_cntrl->bhi, BHI_INTVEC, 0);
+		mhi_cntrl->write_reg(mhi_cntrl, mhi_cntrl->bhi, BHI_INTVEC, 0);
 	}
 
 	MHI_LOG("Waiting for all pending event ring processing to complete\n");
@@ -849,6 +864,7 @@ int mhi_async_power_up(struct mhi_controller *mhi_cntrl)
 	u32 val;
 	enum mhi_ee current_ee;
 	enum MHI_ST_TRANSITION next_state;
+	struct mhi_device *mhi_dev = mhi_cntrl->mhi_dev;
 
 	MHI_LOG("Requested to power on\n");
 
@@ -863,6 +879,10 @@ int mhi_async_power_up(struct mhi_controller *mhi_cntrl)
 		mhi_cntrl->wake_toggle = (mhi_cntrl->db_access & MHI_PM_M2) ?
 			mhi_toggle_dev_wake_nop : mhi_toggle_dev_wake;
 	}
+
+	/* clear votes before proceeding for power up */
+	atomic_set(&mhi_dev->dev_vote, 0);
+	atomic_set(&mhi_dev->bus_vote, 0);
 
 	mutex_lock(&mhi_cntrl->pm_mutex);
 	mhi_cntrl->pm_state = MHI_PM_DISABLE;
@@ -905,7 +925,7 @@ int mhi_async_power_up(struct mhi_controller *mhi_cntrl)
 		mhi_cntrl->bhie = mhi_cntrl->regs + val;
 	}
 
-	mhi_write_reg(mhi_cntrl, mhi_cntrl->bhi, BHI_INTVEC, 0);
+	mhi_cntrl->write_reg(mhi_cntrl, mhi_cntrl->bhi, BHI_INTVEC, 0);
 	mhi_cntrl->pm_state = MHI_PM_POR;
 	mhi_cntrl->ee = MHI_EE_MAX;
 	current_ee = mhi_get_exec_env(mhi_cntrl);
@@ -976,6 +996,8 @@ void mhi_control_error(struct mhi_controller *mhi_cntrl)
 			to_mhi_pm_state_str(cur_state));
 		goto exit_control_error;
 	}
+
+	mhi_cntrl->dev_state = MHI_STATE_SYS_ERR;
 
 	/* notify waiters to bail out early since MHI has entered ERROR state */
 	wake_up_all(&mhi_cntrl->state_event);
@@ -1418,6 +1440,9 @@ int __mhi_device_get_sync(struct mhi_controller *mhi_cntrl)
 	if (MHI_PM_IN_SUSPEND_STATE(mhi_cntrl->pm_state))
 		mhi_trigger_resume(mhi_cntrl);
 	read_unlock_bh(&mhi_cntrl->pm_lock);
+
+	/* for offload write make sure wake DB is set before any MHI reg read */
+	mhi_force_reg_write(mhi_cntrl);
 
 	ret = wait_event_timeout(mhi_cntrl->state_event,
 				 mhi_cntrl->pm_state == MHI_PM_M0 ||
