@@ -172,6 +172,9 @@ static bool in_pocket = false;
 int uci_get_boost_only_in_pocket(void) {
     return uci_get_user_property_int_mm("boost_only_in_pocket", boost_only_in_pocket, 0, 1);
 }
+int uci_get_notification_booster_overdrive_perc(void) {
+    return uci_get_user_property_int_mm("notification_booster_overdrive_perc", 95, 50, 100);
+}
 
 // register sys uci listener
 static void uci_sys_listener(void) {
@@ -275,6 +278,13 @@ static ssize_t cs40l2x_cp_trigger_index_store(struct device *dev,
 		return -EINVAL;
 
 	mutex_lock(&cs40l2x->lock);
+#ifdef CONFIG_UCI_NOTIFICATIONS
+	pr_info("%s [booster] val %d\n",__func__,index);
+	// if in pocket and should boost, dig scale should always be set to 0, even when framework is playing with fluctuating scale level at calls
+	if (should_boost()) {
+		if (index == CS40L2X_INDEX_VIBE) index = CS40L2X_INDEX_CONT_MIN + 3; // don't use VIBE in pocket boost, use CONT, much more powerful
+	}
+#endif
 
 	switch (index) {
 	case CS40L2X_INDEX_QEST:
@@ -403,6 +413,11 @@ static ssize_t cs40l2x_cp_trigger_queue_store(struct device *dev,
 	strlcpy(pbq_str, buf, count);
 
 	pbq_str_tok = strsep(&pbq_str, ",");
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#if 0
+	pr_info("%s [booster] val %s\n",__func__,pbq_str);
+#endif
+#endif
 
 	while (pbq_str_tok) {
 		pbq_seg = pbq_seg_alloc;
@@ -442,6 +457,11 @@ static ssize_t cs40l2x_cp_trigger_queue_store(struct device *dev,
 				goto err_mutex;
 			}
 			cs40l2x->pbq_pairs[pbq_depth++].mag = val;
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#if 0
+			pr_info("%s [booster] waveform %d\n",__func__,val);
+#endif
+#endif
 
 		/* repetition specifier */
 		} else if (strnchr(pbq_seg, CS40L2X_PBQ_SEG_LEN_MAX, '!')) {
@@ -507,6 +527,11 @@ static ssize_t cs40l2x_cp_trigger_queue_store(struct device *dev,
 				ret = -EINVAL;
 				goto err_mutex;
 			}
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#if 0
+			pr_info("%s [booster] repetition %d\n",__func__,val);
+#endif
+#endif
 
 		/* loop specifier */
 		} else if (strnchr(pbq_seg, CS40L2X_PBQ_SEG_LEN_MAX, '~')) {
@@ -531,6 +556,11 @@ static ssize_t cs40l2x_cp_trigger_queue_store(struct device *dev,
 				goto err_mutex;
 			}
 			cs40l2x->pbq_pairs[pbq_depth++].mag = val;
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#if 0
+			pr_info("%s [booster] duration %d\n",__func__,val);
+#endif
+#endif
 		}
 
 		if (pbq_depth == CS40L2X_PBQ_DEPTH_MAX) {
@@ -2430,6 +2460,14 @@ static ssize_t cs40l2x_dig_scale_store(struct device *dev,
 		return -EINVAL;
 
 	mutex_lock(&cs40l2x->lock);
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#if 0
+	pr_info("%s [booster] val %d\n",__func__,dig_scale);
+#endif
+	if (should_boost()) {
+		dig_scale = 100 - uci_get_notification_booster_overdrive_perc();
+	}
+#endif
 	/*
 	 * this operation calls cs40l2x_wseq_replace which checks the variable
 	 * firmware ID and must therefore be performed within mutex protection
@@ -3096,10 +3134,12 @@ static ssize_t cs40l2x_cp_dig_scale_store(struct device *dev,
 
 	mutex_lock(&cs40l2x->lock);
 #ifdef CONFIG_UCI_NOTIFICATIONS
+#if 0
+	pr_info("%s [booster] val %d\n",__func__,dig_scale);
+#endif
 	// if in pocket and should boost, dig scale should always be set to 0, even when framework is playing with fluctuating scale level at calls
 	if (should_boost()) {
-		// TODO what else to set to be more powerful. internal set_vibrate_boosted has a much stronger pattern...
-		dig_scale = 0;
+		dig_scale = 100 - uci_get_notification_booster_overdrive_perc();
 	}
 #endif
 	ret = cs40l2x_cp_dig_scale_set(cs40l2x, dig_scale);
@@ -5246,9 +5286,9 @@ Click - long
 void set_vibrate_2(int time_ms, int boost_power)
 {
 	if (time_ms<=20) { // set fast hz mode to haptic feedback...
-		cs40l2x_g->cp_trigger_index = 2; // set trigger index for played pattern to be a click...
+		cs40l2x_g->cp_trigger_index = CS40L2X_INDEX_CLICK_MIN + 1; // set trigger index for played pattern to be a click...
 	} else {
-		cs40l2x_g->cp_trigger_index = 32771; // set trigger index for played pattern to be a long vibe...
+		cs40l2x_g->cp_trigger_index = CS40L2X_INDEX_CONT_MIN + 3; // set trigger index for played pattern to be a long vibe...
 	}
 
 	if (boost_power>=1 && boost_power<=100) {
