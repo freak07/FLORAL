@@ -47,6 +47,10 @@
 #include "codecs/bolero/wsa-macro.h"
 #include "codecs/wcd937x/wcd937x.h"
 
+#if IS_ENABLED(CONFIG_SND_SOC_CODEC_DETECT)
+#include <linux/codec-misc.h>
+#endif
+
 #define DRV_NAME "sm6150-asoc-snd"
 
 #define __CHIPSET__ "SM6150 "
@@ -9477,6 +9481,13 @@ static int msm_audio_ssr_register(struct device *dev)
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_SND_SOC_CODEC_DETECT)
+int codec_state(void)
+{
+	return CODEC_STATE_ONLINE;
+}
+#endif
+
 static int msm_asoc_machine_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card;
@@ -9688,6 +9699,11 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	if (ret)
 		pr_err("%s: Registration with SND event FWK failed ret = %d\n",
 			__func__, ret);
+
+#if IS_ENABLED(CONFIG_SND_SOC_CODEC_DETECT)
+	if(!ret)
+		codec_detect_hs_state_callback(codec_state);
+#endif
 
 err:
 	return ret;
