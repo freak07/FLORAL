@@ -122,7 +122,7 @@ static int vd6281_read_data(
 
 static int vd6281_power_up(struct rainbow_ctrl_t *ctrl)
 {
-	int rc;
+	int rc = 0;
 
 	if (!ctrl->is_power_up[REGULATOR_VDD]) {
 		rc = regulator_set_voltage(ctrl->vdd,

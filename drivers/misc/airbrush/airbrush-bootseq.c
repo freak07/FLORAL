@@ -91,7 +91,7 @@ int ab_bootsequence(struct ab_state_context *ab_ctx, enum chip_state prev_state)
 	struct platform_device *plat_dev = ab_ctx->pdev;
 	unsigned long timeout;
 	uint32_t dummy[3] = { 0 };
-	enum ab_chip_id saved_chip_id, raw_chip_id;
+	enum ab_chip_id saved_chip_id = 0, raw_chip_id;
 
 	if (!ab_ctx)
 		return -EINVAL;

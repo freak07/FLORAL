@@ -1356,7 +1356,7 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 	if (is_lp_mode(state)) {
 		rc = dsi_backlight_update_regulator(bl, state);
 		if (rc)
-			pr_warn("Error updating regulator state: 0x%x (%d)\n",
+			pr_warn("Error updating regulator state: 0x%lx (%d)\n",
 				state, rc);
 	}
 	mutex_unlock(&bl->state_lock);
@@ -1381,7 +1381,7 @@ int dsi_backlight_late_dpms(struct dsi_backlight_config *bl, int power_mode)
 		const int rc = dsi_backlight_update_regulator(bl, state);
 
 		if (rc)
-			pr_warn("Error updating regulator state: 0x%x (%d)\n",
+			pr_warn("Error updating regulator state: 0x%lx (%d)\n",
 				state, rc);
 	}
 

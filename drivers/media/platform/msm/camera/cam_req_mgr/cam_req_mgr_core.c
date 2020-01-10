@@ -943,7 +943,7 @@ static int __cam_req_mgr_check_sync_req_is_ready(
 {
 	int64_t req_id = 0;
 	int sync_slot_idx = 0, sync_rd_idx = 0, rc = 0, i;
-	struct cam_req_mgr_core_link *sync_link;
+	struct cam_req_mgr_core_link *sync_link = {0};
 	int32_t sync_num_slots = 0;
 
 	if (link->sync_links_num == 0) {

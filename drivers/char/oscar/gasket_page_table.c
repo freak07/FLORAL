@@ -1199,7 +1199,7 @@ static int gasket_map_extended_pages(struct gasket_page_table *pg_tbl,
 	if (ret) {
 		dev_addr_end = dev_addr + (num_pages / PAGE_SIZE) - 1;
 		dev_err(pg_tbl->gasket_dev->dev,
-			"page table slots (%lu,%lu) (@ 0x%lx) to (%lu,%lu) are "
+			"page table slots (%u,%u) (@ 0x%lx) to (%lu,%lu) are "
 			"not available\n",
 			lvl0_idx, lvl1_idx, dev_addr,
 			gasket_extended_lvl0_page_idx(pg_tbl, dev_addr_end),
@@ -1647,7 +1647,7 @@ struct mmu_dump_stats {
 /* Dump the current accumulated range of mappings. */
 static void dump_range(struct seq_file *s, struct mmu_dump_range *range)
 {
-	seq_printf(s, "0x%016llx: 0x%016llx", range->dev_addr_start,
+	seq_printf(s, "0x%016lx: 0x%016llx", range->dev_addr_start,
 		   range->dma_addr_start);
 	if (range->phys_addr_start)
 		seq_printf(s, " 0x%016llx", range->phys_addr_start);

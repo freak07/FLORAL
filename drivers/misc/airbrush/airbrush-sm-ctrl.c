@@ -2176,7 +2176,11 @@ static long ab_sm_async_notify(struct ab_sm_misc_session *sess,
 		reinit_completion(&sc->notify_comp);
 	}
 
-	kfifo_out(sc->async_entries, &chip_state, sizeof(chip_state));
+	ret = kfifo_out(sc->async_entries, &chip_state, sizeof(chip_state));
+	if (!ret) {
+		mutex_unlock(&sc->async_fifo_lock);
+		return -EFAULT;
+	}
 
 	if (copy_to_user((void __user *)arg,
 				&chip_state, sizeof(chip_state))) {
@@ -2195,19 +2199,27 @@ static int ab_sm_misc_open(struct inode *ip, struct file *fp)
 	struct miscdevice *misc_dev = fp->private_data;
 	struct ab_state_context *sc =
 		container_of(misc_dev, struct ab_state_context, misc_dev);
+	int ret = 0;
 
 	sess = kzalloc(sizeof(struct ab_sm_misc_session), GFP_KERNEL);
-	if (!sess)
-		return -ENOMEM;
+	if (!sess) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	sess->sc = sc;
 	sess->first_entry = true;
-	kfifo_alloc(&sess->async_entries,
+	ret = kfifo_alloc(&sess->async_entries,
 		AB_KFIFO_ENTRY_SIZE * sizeof(int), GFP_KERNEL);
+	if (ret) {
+		kfree(sess);
+		goto out;
+	}
 
 	fp->private_data = sess;
 
-	return 0;
+out:
+	return ret;
 }
 
 static int ab_sm_misc_release(struct inode *ip, struct file *fp)
@@ -2484,7 +2496,7 @@ static void ab_sm_thermal_throttle_state_updated(
 static long ab_sm_misc_ioctl_debug(struct file *fp, unsigned int cmd,
 		unsigned long arg)
 {
-	long ret;
+	long ret = 0;
 	struct ab_sm_misc_session *sess = fp->private_data;
 	struct ab_state_context *sc = sess->sc;
 	struct new_block_props props;
@@ -2824,7 +2836,7 @@ static void ab_sm_thermal_throttle_state_updated(
 		mutex_unlock(&sc->throttle_ready_lock);
 	}
 
-	dev_info(sc->dev, "Throttle state updated to %lu", throttle_state_id);
+	dev_info(sc->dev, "Throttle state updated to %u", throttle_state_id);
 
 	if (!sc->cold_boot)
 		complete_all(&sc->request_state_change_comp);
@@ -2905,8 +2917,9 @@ int ab_sm_init(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
+	u32 id;
 	int error;
-	int ret;
+	int ret = 0;
 
 	ab_sm_ctx = devm_kzalloc(dev, sizeof(struct ab_state_context),
 							GFP_KERNEL);
@@ -2963,8 +2976,10 @@ int ab_sm_init(struct platform_device *pdev)
 		goto fail_ab_ready;
 	}
 
-	if (of_property_read_u32(np, "chip-id", &ab_sm_ctx->chip_id))
+	if (of_property_read_u32(np, "chip-id", &id))
 		ab_sm_ctx->chip_id = CHIP_ID_B0; /* Assume B0 if unspecified */
+	else
+		ab_sm_ctx->chip_id = id;
 
 	if (of_property_read_u32(np, "ddrcke-iso-clamp-wr",
 				 &ab_sm_ctx->ddrcke_iso_clamp_wr))
@@ -3033,8 +3048,10 @@ int ab_sm_init(struct platform_device *pdev)
 	init_completion(&ab_sm_ctx->transition_comp);
 	init_completion(&ab_sm_ctx->notify_comp);
 	init_completion(&ab_sm_ctx->shutdown_comp);
-	kfifo_alloc(&ab_sm_ctx->state_change_reqs,
+	ret = kfifo_alloc(&ab_sm_ctx->state_change_reqs,
 		AB_KFIFO_ENTRY_SIZE * sizeof(struct ab_change_req), GFP_KERNEL);
+	if (ret)
+		goto fail_pmic_resources;
 
 	ab_sm_ctx->cold_boot = true;
 	ab_sm_ctx->el2_mode = 0;

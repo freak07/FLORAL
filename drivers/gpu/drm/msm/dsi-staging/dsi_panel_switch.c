@@ -748,16 +748,21 @@ static int panel_switch_data_init(struct dsi_panel *panel,
 		.sched_priority = 16,
 	};
 	const struct dsi_display *display;
+	int ret = 0;
 
 	display = dsi_panel_to_display(panel);
-	if (unlikely(!display))
-		return -ENOENT;
+	if (unlikely(!display)) {
+		ret = -ENOENT;
+		goto out;
+	}
 
 	kthread_init_work(&pdata->switch_work, panel_switch_worker);
 	kthread_init_worker(&pdata->worker);
 	pdata->thread = kthread_run(kthread_worker_fn, &pdata->worker, "panel");
-	if (IS_ERR_OR_NULL(pdata->thread))
-		return -EFAULT;
+	if (IS_ERR_OR_NULL(pdata->thread)) {
+		ret = -EFAULT;
+		goto out;
+	}
 
 	pdata->panel = panel;
 	pdata->te_listener.handler = panel_handle_te;
@@ -779,10 +784,11 @@ static int panel_switch_data_init(struct dsi_panel *panel,
 	debugfs_create_atomic_t("te_counter", 0600, pdata->debug_root,
 				&pdata->te_counter);
 
-	sysfs_create_group(&panel->parent->kobj,
+	ret = sysfs_create_group(&panel->parent->kobj,
 			   &panel_switch_sysfs_attrs_group);
 
-	return 0;
+out:
+	return ret;
 }
 
 static void panel_switch_data_deinit(struct panel_switch_data *pdata)

@@ -1668,7 +1668,7 @@ int abc_reg_notifier_callback(struct notifier_block *nb)
 
 	ret = atomic_notifier_chain_register(&abc_dev->intnc_notifier, nb);
 	if (ret < 0)
-		pr_err("%s: Could not register notifier, ret\n", __func__, ret);
+		pr_err("%s: Could not register notifier, %d\n", __func__, ret);
 
 	return ret;
 }
@@ -1744,8 +1744,8 @@ static irqreturn_t abc_pcie_dma_irq_handler(int irq, void *ptr)
 	u32 override_val;
 	u32 override_set_val;
 	u32 dma_chan;
-	u32 dma_rd_stat;
-	u32 dma_wr_stat;
+	u32 dma_rd_stat = 0;
+	u32 dma_wr_stat = 0;
 	struct abc_pcie_dma_irq_data *dma_irq_data = ptr;
 	irq_dma_cb_t dma_cb;
 

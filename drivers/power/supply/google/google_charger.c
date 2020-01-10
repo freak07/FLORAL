@@ -1198,7 +1198,7 @@ static void chg_work(struct work_struct *work)
 	struct power_supply *bat_psy = chg_drv->bat_psy;
 	union gbms_ce_adapter_details ad = { .v = 0 };
 	union gbms_charger_state chg_state = { .v = 0 };
-	int soc, disable_charging = 0, disable_pwrsrc = 0;
+	int soc = 0, disable_charging = 0, disable_pwrsrc = 0;
 	int usb_online, wlc_online = 0;
 	int update_interval = -1;
 	bool chg_done = false;
@@ -1771,7 +1771,7 @@ static int chg_set_update_interval(void *data, u64 val)
 	/* can also set POWER_SUPPLY_PROP_CHARGE_DISABLE to charger */
 	rc = vote(chg_drv->msc_interval_votable, USER_VOTER, val, 0);
 	if (rc < 0) {
-		dev_err(chg_drv->device, "Couldn't vote %d to update_interval rc=%d\n",
+		dev_err(chg_drv->device, "Couldn't vote %lld to update_interval rc=%d\n",
 			val, rc);
 		return rc;
 	}
@@ -1863,7 +1863,7 @@ static int debug_set_pps_cc_tolerance(void *data, u64 val)
 
 DEFINE_SIMPLE_ATTRIBUTE(debug_pps_cc_tolerance_fops,
 					debug_get_pps_cc_tolerance,
-					debug_set_pps_cc_tolerance, "%u\n");
+					debug_set_pps_cc_tolerance, "%llu\n");
 
 static int chg_get_fv_uv(void *data, u64 *val)
 {
@@ -1890,7 +1890,7 @@ static int chg_set_fv_uv(void *data, u64 val)
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(fv_uv_fops, chg_get_fv_uv,
-				     chg_set_fv_uv, "%d\n");
+				     chg_set_fv_uv, "%lld\n");
 
 static int chg_get_cc_max(void *data, u64 *val)
 {
@@ -1917,7 +1917,7 @@ static int chg_set_cc_max(void *data, u64 val)
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(cc_max_fops, chg_get_cc_max,
-				     chg_set_cc_max, "%d\n");
+				     chg_set_cc_max, "%lld\n");
 
 
 static int chg_get_interval(void *data, u64 *val)
@@ -1943,7 +1943,7 @@ static int chg_set_interval(void *data, u64 val)
 
 DEFINE_SIMPLE_ATTRIBUTE(chg_interval_fops,
 				chg_get_interval,
-				chg_set_interval, "%d\n");
+				chg_set_interval, "%lld\n");
 
 
 static int chg_reschedule_work(void *data, u64 val)
@@ -1955,7 +1955,7 @@ static int chg_reschedule_work(void *data, u64 val)
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(chg_reschedule_work_fops,
-					NULL, chg_reschedule_work, "%d\n");
+					NULL, chg_reschedule_work, "%lld\n");
 
 
 
@@ -2135,12 +2135,6 @@ static int pps_policy(struct chg_drv *chg_drv, int fv_uv, int cc_max)
 	/* TODO: should we compensate for the round down here? */
 	exp_mw = (unsigned long)vbatt * (unsigned long)cc_max * 1.1 /
 		 1000000000;
-
-	logbuffer_log(pps->log,
-		"ibatt %d, vbatt %d, vbatt*cc_max*1.1 %lu mw, adapter %ld, keep_alive_cnt %d",
-		ibatt, vbatt, exp_mw,
-		(long)pps->out_uv * (long)pps->op_ua / 1000000000,
-		pps->keep_alive_cnt);
 
 	if (ibatt >= 0)
 		return 0;
@@ -2534,7 +2528,7 @@ static int chg_set_dc_in_charge_cntl_limit(struct thermal_cooling_device *tcd,
 			dc_icl);
 
 	if (ret < 0 || changed)
-		pr_info("MSC_THERM_DC lvl=%d dc_icl=%d (%d)\n",
+		pr_info("MSC_THERM_DC lvl=%lu dc_icl=%d (%d)\n",
 			lvl, dc_icl, ret);
 
 	/* make sure that fcc is reset to max when charging from WLC*/
@@ -2548,7 +2542,7 @@ int chg_tdev_init(struct chg_thermal_device *tdev,
 		  const char *name,
 		  struct chg_drv *chg_drv)
 {
-	int rc, byte_len;
+	int rc = 0, byte_len;
 
 	if (!of_find_property(chg_drv->device->of_node, name, &byte_len)) {
 		dev_err(chg_drv->device,

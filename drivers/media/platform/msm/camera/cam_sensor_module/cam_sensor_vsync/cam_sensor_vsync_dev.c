@@ -441,7 +441,7 @@ static void cam_vsync_qmi_work(struct work_struct *work)
 	struct qmi_handle *qmi;
 	struct cam_req_mgr_message *msg;
 	struct cam_sensor_vsync_packet packet;
-	uint32_t cam_id;
+	uint32_t cam_id = 0;
 	int rc;
 
 	if (!work) {

@@ -6245,19 +6245,19 @@ static int cs40l2x_coeff_file_parse(struct cs40l2x_private *cs40l2x,
 			const struct firmware *fw)
 {
 	struct device *dev = cs40l2x->dev;
-	struct cs40l2x_dblk_desc dblk, *dblk_base;
+	struct cs40l2x_dblk_desc dblk, *dblk_base = NULL;
 	struct cs40l2x_dblk_desc pre_dblks[CS40L2X_MAX_A2H_LEVELS];
 	struct cs40l2x_dblk_desc a2h_dblks[CS40L2X_MAX_A2H_LEVELS];
 	char wt_date[CS40L2X_WT_FILE_DATE_LEN_MAX];
 	bool wt_found = false;
-	unsigned int *dblk_index;
+	unsigned int *dblk_index = NULL;
 	unsigned int pre_index = 0;
 	unsigned int a2h_index = 0;
 	unsigned int pos = CS40L2X_WT_FILE_HEADER_SIZE;
 	unsigned int block_offset, block_type, block_length;
 	unsigned int algo_id, algo_rev, reg;
 	int ret = -EINVAL;
-	int i;
+	int i = 0;
 
 	*wt_date = '\0';
 

@@ -1086,7 +1086,7 @@ static int debugfs_dump_info_read(struct seq_file *seq, void *data)
 			display->config.video_timing.h_active,
 			display->config.video_timing.v_active,
 			display->config.video_timing.refresh_rate);
-	seq_printf(seq, "\tclk rate = %d\n",
+	seq_printf(seq, "\tclk rate = %lld\n",
 		   display->config.video_timing.clk_rate_hz);
 
 	display_for_each_ctrl(i, display) {
@@ -2130,7 +2130,7 @@ static void dsi_display_parse_cmdline_topology(struct dsi_display *display,
 			pr_err("invalid config index override: %s\n", boot_str);
 			goto end;
 		}
-		pr_debug("parsed command line topology: %d\n",
+		pr_debug("parsed command line topology: %ld\n",
 			 cmdline_topology);
 	}
 
@@ -2142,7 +2142,7 @@ static void dsi_display_parse_cmdline_topology(struct dsi_display *display,
 			cmdline_topology = NO_OVERRIDE;
 			goto end;
 		}
-		pr_debug("parsed command line timing: %d\n", cmdline_timing);
+		pr_debug("parsed command line timing: %ld\n", cmdline_timing);
 	}
 end:
 	display->cmdline_topology = cmdline_topology;

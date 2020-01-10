@@ -1334,7 +1334,7 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 		csl_packet->header.request_id <= fctrl->last_flush_req
 		&& fctrl->last_flush_req != 0) {
 		CAM_WARN(CAM_FLASH,
-			"reject request %lld, last request to flush %lld",
+			"reject request %lld, last request to flush %d",
 			csl_packet->header.request_id, fctrl->last_flush_req);
 		rc = -EINVAL;
 		goto rel_pkt_buf;
@@ -1441,7 +1441,7 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 		}
 
 		if (cam_mem_put_cpu_buf(cmd_desc->mem_handle))
-			CAM_WARN(CAM_FLASH, "Fail in put buffer: %pK",
+			CAM_WARN(CAM_FLASH, "Fail in put buffer: %dK",
 				cmd_desc->mem_handle);
 		break;
 	}
@@ -1746,7 +1746,7 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 	}
 
 	if (cam_mem_put_cpu_buf(config.packet_handle))
-		CAM_WARN(CAM_FLASH, "Failed in put the buffer: 0x%x ",
+		CAM_WARN(CAM_FLASH, "Failed in put the buffer: 0x%llx ",
 			config.packet_handle);
 
 	return 0;
@@ -1757,7 +1757,7 @@ rel_cmd_buf:
 			cmd_desc->mem_handle);
 rel_pkt_buf:
 	if (cam_mem_put_cpu_buf(config.packet_handle))
-		CAM_WARN(CAM_FLASH, "Failed in put the buffer: 0x%x ",
+		CAM_WARN(CAM_FLASH, "Failed in put the buffer: 0x%llx ",
 			config.packet_handle);
 
 	return rc;
