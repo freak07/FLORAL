@@ -183,6 +183,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 {
         int prevx = 0, nextx = 0;
 #ifdef CONFIG_UCI
+	static unsigned long last_scheduled_vib_time = 0;
 	int s2s_y_limit = get_s2s_y_limit();
 	int s2s_y_above = get_s2s_y_above();
 #else
@@ -213,8 +214,12 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
 			if (((x > firstx + (15 + get_s2s_width()*0.3)) && first_event) || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously. Only start when at least X coordinate moved a little bit from first touch X (~20px)
 				if (exec_count) {
+					unsigned int last_vib_diff = jiffies - last_scheduled_vib_time;
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
-					schedule_work(&sweep2sleep_vib_work);
+					if (last_vib_diff > 15) {
+						schedule_work(&sweep2sleep_vib_work);
+						last_scheduled_vib_time = jiffies;
+					}
 				}
 				first_event = false;
 			}
@@ -249,8 +254,12 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
 			if (((x < firstx - (15 + get_s2s_width()*0.3)) && first_event) || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously. Only start when at least X coordinate moved a little bit from first touch X (~20px)
 				if (exec_count) {
+					unsigned int last_vib_diff = jiffies - last_scheduled_vib_time;
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
-					schedule_work(&sweep2sleep_vib_work);
+					if (last_vib_diff > 15) {
+						schedule_work(&sweep2sleep_vib_work);
+						last_scheduled_vib_time = jiffies;
+					}
 				}
 				first_event = false;
 			}
