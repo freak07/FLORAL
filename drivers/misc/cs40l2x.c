@@ -200,10 +200,12 @@ static int smart_get_boost_on(void) {
 }
 #endif
 
+static bool last_ext_set_index_is_non_click = false;
+
 static int should_boost(void) {
     int l_boost_only_in_pocket = uci_get_boost_only_in_pocket();
     //if (ntf_is_screen_on() && ntf_wake_by_user()) return 0;
-    if (l_boost_only_in_pocket && in_pocket) return 1;
+    if (l_boost_only_in_pocket && in_pocket) return last_ext_set_index_is_non_click?1:0;
     return 0;
 }
 
@@ -281,6 +283,7 @@ static ssize_t cs40l2x_cp_trigger_index_store(struct device *dev,
 #ifdef CONFIG_UCI_NOTIFICATIONS
 	pr_info("%s [booster] val %d\n",__func__,index);
 	// if in pocket and should boost, dig scale should always be set to 0, even when framework is playing with fluctuating scale level at calls
+	last_ext_set_index_is_non_click = (index == CS40L2X_INDEX_VIBE) || (index >= CS40L2X_INDEX_CONT_MIN); // store if last set index is VIBE type, as otherwise no boost is needed
 	if (should_boost()) {
 		if (index == CS40L2X_INDEX_VIBE) index = CS40L2X_INDEX_CONT_MIN + 3; // don't use VIBE in pocket boost, use CONT, much more powerful
 	}
