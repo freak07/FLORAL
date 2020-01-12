@@ -14,6 +14,7 @@
 #include <linux/alarmtimer.h>
 #include <linux/notification/notification.h>
 #include <linux/uci/uci.h>
+#include <linux/inputfilter/inputfilter.h>
 
 #define DRIVER_AUTHOR "illes pal <illespal@gmail.com>"
 #define DRIVER_DESCRIPTION "inputfilter driver"
@@ -49,6 +50,7 @@ MODULE_LICENSE("GPL");
 #define IFILTER_KEY_NOTIFICATION 2
 
 extern void set_vibrate(int value);
+extern void set_vibrate_2(int value, int boost_level);
 extern void set_vibrate_boosted(int value);
 
 static int ifilter_switch = IFILTER_SWITCH_STOCK;
@@ -1265,6 +1267,7 @@ static bool ifilter_input_filter(struct input_handle *handle,
 // wakelock method code
 static int squeeze_wake = 0;
 static int squeeze_sleep = 0;
+static int squeeze_sleep_on_long = 0;
 static int squeeze_peek = 0;
 static int squeeze_peek_halfseconds = 4;
 
@@ -1273,6 +1276,9 @@ static int get_squeeze_wake(void) {
 }
 static int get_squeeze_sleep(void) {
 	return uci_get_user_property_int_mm("squeeze_sleep", squeeze_sleep, 0, 1);
+}
+static int get_squeeze_sleep_on_long(void) {
+	return uci_get_user_property_int_mm("squeeze_sleep_on_long", squeeze_sleep_on_long, 0, 1);
 }
 static int get_squeeze_peek(void) {
 	return uci_get_user_property_int_mm("squeeze_peek", squeeze_peek, 0, 1);
@@ -1345,7 +1351,7 @@ void register_squeeze_power_threshold_change(int power) {
 EXPORT_SYMBOL(register_squeeze_power_threshold_change);
 
 static void squeeze_vib(void) {
-	set_vibrate(35); // a bit stronger vibration to allow user releasing it
+	set_vibrate_2(15,5); // a bit weaker click on pixel4
 }
 
 
@@ -1362,6 +1368,9 @@ static int get_squeeze_swipe(void) {
 }
 static int get_squeeze_swipe_vibration(void) {
 	return uci_get_user_property_int_mm("squeeze_swipe_vibration", squeeze_swipe_vibration, 0, 1);
+}
+static int get_squeeze_long_vibration(void) {
+	return uci_get_user_property_int_mm("squeeze_long_vibration", 0, 0, 1);
 }
 
 // members...
@@ -1392,7 +1401,7 @@ static void swipe_longcount(struct work_struct * swipe_longcount_work) {
 			swipe_longcount_finished = 1;
 			if (get_squeeze_swipe_vibration() && screen_on && get_squeeze_sleep()) {
 				//set_vibrate(20);
-				set_vibrate(300000); // clickety vibration special value on u12+
+				set_vibrate(25); // clickety vibration special value on u12+
 			}
 			return;
 		}
@@ -1981,7 +1990,9 @@ static void squeeze_longcount(struct work_struct * squeeze_longcount_work) {
 		if (jiffies - longcount_start > MAX_SQUEEZE_TIME) {
 			pr_info("%s squeeze call || longcount VIBRATION !! \n",__func__);
 			longcount_finished = 1;
-			squeeze_vib();
+			if (get_squeeze_long_vibration() && screen_on) {
+				squeeze_vib();
+			}
 			return;
 		}
 		msleep(7);
@@ -2139,13 +2150,22 @@ static unsigned long last_nanohub_spurious_squeeze_timestamp = 0;
 #define STAGE_VIB 2
 static int stage = STAGE_INIT;
 
+static unsigned long ts_panel_finger_up_time = 0;
+static int ts_panel_finger_down = 0;
 
-void register_squeeze(unsigned long timestamp, int vibration) {
+bool recent_touch(void) {
+	unsigned int diff = jiffies - ts_panel_finger_up_time;
+	if (ts_panel_finger_down>0) return true;
+	if (diff<70) return true;
+	return false;
+}
+
+void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_param) {
 	// time passing since screen on/off state changed - to avoid collision of detections
 	unsigned int diff = jiffies - last_screen_event_timestamp;
 	// time passed since last nanohub driver based spurious squeeze wake event detection
 	unsigned int nanohub_diff = jiffies - last_nanohub_spurious_squeeze_timestamp;
-	pr_info("%s squeeze call ts %u diff %u nh_diff %u vibration %d\n", __func__, (unsigned int)timestamp,diff,nanohub_diff,vibration);
+	pr_info("%s squeeze call ts %u diff %u nh_diff %u vibration %d num_param %d \n", __func__, (unsigned int)timestamp,diff,nanohub_diff,vibration, num_param);
 	if (!squeeze_kernel_handled) return;
 
 	if (!get_squeeze_wake() && !get_squeeze_sleep() && !get_squeeze_swipe() && !get_squeeze_peek()) return;
@@ -2202,7 +2222,18 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 			// skip to wakelock stage right now
 			stage = STAGE_FIRST_WL;
 			last_squeeze_timestamp = jiffies;
-		} else {
+		} else
+#endif
+#if 1
+// pixel 4, vibration when screen is on
+		// also check for interrupting touch events! if touch going on, vibrations can happen without squeeze
+		if (screen_on && vibration && num_param == IF_EVENT_SQUEEZE_VIB_START && !recent_touch()) {
+			pr_info("%s squeeze call -- pixel 4 | vibration in INIT phase, skipping to next stage, setting last squeeze timestamp... : %d\n",__func__,stage);
+			// skip to wakelock stage right now
+			stage = STAGE_FIRST_WL;
+			last_squeeze_timestamp = jiffies;
+		} else 
+		{
 #endif
 		pr_info("%s squeeze call -- END STAGE : %d\n",__func__,stage);
 		return;
@@ -2281,7 +2312,13 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 		stage = STAGE_INIT;
 		// interrupt longcount
 		interrupt_longcount = 1;
+#if 1
+// pixel 4
+		if (vibration && num_param!=IF_EVENT_SQUEEZE_VIB_END && !recent_touch()) { // not proper end vibration time
+		// ...also check for interrupting touch events!
+#elif
 		if (vibration) {
+#endif
 			pr_info("%s squeeze call -- exiting because vibration endstage: %d\n",__func__,stage);
 			return;
 		} else if ( (diff<=MAX_SQUEEZE_TIME) || (screen_on && !longcount_finished) ) {
@@ -2309,7 +2346,9 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 					squeeze_swipe_trigger();
 				} else {
 					last_screen_event_timestamp = jiffies;
-					ifilter_pwrtrigger(0,__func__); // SCREEN ON
+					if (!screen_on || !get_squeeze_sleep_on_long()) {
+						ifilter_pwrtrigger(0,__func__); // SCREEN ON if not already or OFF if screen is on and NOT squeeze sleep on long only...
+					}
 				}
 			}
 		} else if (!screen_on && diff>MAX_SQUEEZE_TIME && diff<=MAX_SQUEEZE_TIME_LONG && get_squeeze_peek()) {
@@ -2321,12 +2360,12 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 			register_input_event(__func__);
 			ifilter_pwrtrigger(0,__func__); // POWER ON FULLY, NON PEEK
 			stop_kad_running(true,__func__);
-		} else if (screen_on && diff>MAX_SQUEEZE_TIME && diff<=MAX_SQUEEZE_TIME_LONG && get_squeeze_swipe()) {
+		} else if (screen_on && diff>MAX_SQUEEZE_TIME && diff<=MAX_SQUEEZE_TIME_LONG && (get_squeeze_swipe()||get_squeeze_sleep_on_long())) {
 			if (get_squeeze_sleep()) {
 				//unsigned int last_scroll_time_diff = jiffies - last_scroll_emulate_timestamp;
 				wait_for_squeeze_power = 1; // pwr trigger should be canceled if right after squeeze happens a power setting
 				// ..that would mean user is on the settings screen and calibrating.
-				if (!swipe_longcount_finished) {
+				if (!swipe_longcount_finished && get_squeeze_swipe()) {
 				// if quickly squeezing before last squeeze swipe ended, turn direction, instead of power off
 					// turn direction as NO squeeze sleep is set on
 					longcount_squeeze_swipe_dir_change = 1;
@@ -2337,13 +2376,15 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 					register_input_event(__func__);
 					return; // exit with turning...
 				}
-				// if swipe mode is on, and between long squeeze and short squeeze, power off
-				pr_info("%s squeeze call -- power onoff endstage SWIPE - full sleep - swipe mode middle long gesture! %d\n",__func__,stage);
-				last_screen_event_timestamp = jiffies;
-				ifilter_pwrtrigger(0,__func__); // POWER OFF
-				stop_kad_running(true,__func__);
+				// if swipe mode is on or long squeeze sleep, and between long squeeze max time and short squeeze, power off...
+				if (get_squeeze_swipe()||get_squeeze_sleep_on_long()) {
+					pr_info("%s squeeze call (after swipe or sleep_on_long -- power onoff endstage SWIPE - full sleep - swipe mode middle long gesture! %d\n",__func__,stage);
+					last_screen_event_timestamp = jiffies;
+					ifilter_pwrtrigger(0,__func__); // POWER OFF
+					stop_kad_running(true,__func__);
+				}
 				return;
-			} else {
+			} else if (get_squeeze_swipe()) {
 				register_input_event(__func__);
 				// turn direction as NO squeeze sleep is set on
 				longcount_squeeze_swipe_dir_change = 1;
@@ -2361,7 +2402,8 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 	}
 
 }
-EXPORT_SYMBOL(register_squeeze);
+EXPORT_SYMBOL(if_report_squeeze_event);
+
 
 
 static unsigned long kad_first_one_finger_touch_time = 0;
@@ -2456,7 +2498,7 @@ static unsigned long last_timestamp = 0;
 
 static int last_event = 0;
 
-void register_squeeze_wake(int nanohub_flag, int vibrator_flag, unsigned long timestamp, int init_event_flag)
+void if_report_squeeze_wake_event(int nanohub_flag, int vibrator_flag, unsigned long timestamp, int init_event_flag)
 {
 	unsigned int diff = timestamp - last_timestamp;
 	int event = nanohub_flag?(init_event_flag?SQUEEZE_EVENT_TYPE_NANOHUB_INIT:SQUEEZE_EVENT_TYPE_NANOHUB):SQUEEZE_EVENT_TYPE_VIBRATOR;
@@ -2487,7 +2529,7 @@ void register_squeeze_wake(int nanohub_flag, int vibrator_flag, unsigned long ti
 			// in some cases this is necessary, as userspace WL can delay too much,
 			// while this nanohub call happening earlier...
 			last_nanohub_spurious_squeeze_timestamp = 0;
-			register_squeeze(timestamp,0);
+			if_report_squeeze_event(timestamp,false,0);
 		}
 
 	}
@@ -2506,7 +2548,7 @@ void register_squeeze_wake(int nanohub_flag, int vibrator_flag, unsigned long ti
 	last_event = event;
 	pr_info("%s latest nanohub/vib event processed. diff: %u\n",__func__,diff);
 }
-EXPORT_SYMBOL(register_squeeze_wake);
+EXPORT_SYMBOL(if_report_squeeze_wake_event);
 
 
 // ==================================
@@ -2584,6 +2626,7 @@ static bool ts_is_touchscreen_key_event(int type, int code) {
 		code == 158 || code == 580);
 }
 
+
 static bool filter_next_power_key_up = false;
 static bool ts_input_filter(struct input_handle *handle,
                                     unsigned int type, unsigned int code,
@@ -2599,6 +2642,16 @@ static bool ts_input_filter(struct input_handle *handle,
 	}
 
 	//pr_info("%s ts input filter called t %d c %d v %d\n",__func__, type,code,value);
+	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
+		// touch down
+		ts_panel_finger_down++;
+	}
+	if (type == EV_KEY && code == BTN_TOUCH && value == 0) {
+		// touch up
+		ts_panel_finger_up_time = jiffies;
+		ts_panel_finger_down--;
+	}
+
 
 	if (type == EV_KEY) {
 //#ifdef LOG_INPUT_EVENTS
