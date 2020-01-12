@@ -31,7 +31,8 @@ dtb-$(CONFIG_ARCH_QCS405) += qcs405-iot-sku1.dtb \
 		qcs405-iot-sku13.dtb \
 		qcs407-iot-sku13.dtb \
 		sa2150p-ccard-emmc.dtb \
-		sa2150p-ccard-nand.dtb
+		sa2150p-ccard-nand.dtb \
+		qcs405-iot-robot-reference-board.dtb
 
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 	dtbo-$(CONFIG_ARCH_SM8150) += \
@@ -333,6 +334,7 @@ dtb-$(CONFIG_ARCH_SDXPRAIRIE) += sdxprairie-rumi.dtb \
 
 endif #ifneq ($(CONFIG_BOARD_FLORAL),y)
 
+dtb-$(CONFIG_ARCH_MDM9607) += mdm9607-mtp.dtb
 ifeq ($(CONFIG_ARM64),y)
 always		:= $(dtb-y)
 subdir-y	:= $(dts-dirs)

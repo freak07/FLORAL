@@ -1868,6 +1868,7 @@ int ipa3_table_dma_cmd(
 	int i;
 	struct ipahal_reg_valmask valmask;
 	struct ipahal_imm_cmd_register_write reg_write_coal_close;
+	int max_dma_table_cmds = IPA_MAX_NUM_OF_TABLE_DMA_CMD_DESC;
 
 	IPADBG("In\n");
 
@@ -1893,9 +1894,18 @@ int ipa3_table_dma_cmd(
 
 	IPADBG("nmi(%s)\n", ipa3_nat_mem_in_as_str(dma->mem_type));
 
-	if (!dma->entries || dma->entries > IPA_MAX_NUM_OF_TABLE_DMA_CMD_DESC) {
+	/**
+	 * We use a descriptor for closing coalsceing endpoint
+	 * by immediate command. So, DMA entries should be less than
+	 * IPA_MAX_NUM_OF_TABLE_DMA_CMD_DESC - 1 to overcome
+	 * buffer overflow of ipa3_desc array.
+	 */
+	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1)
+		max_dma_table_cmds -= 1;
+
+	if (!dma->entries || dma->entries > (max_dma_table_cmds - 1)) {
 		IPAERR_RL("Invalid number of entries %d\n",
-				  dma->entries);
+			dma->entries);
 		result = -EPERM;
 		goto bail;
 	}
@@ -1912,7 +1922,9 @@ int ipa3_table_dma_cmd(
 		}
 	}
 
-	/* IC to close the coal frame before HPS Clear if coal is enabled */
+	/*
+	 * IC to close the coal frame before HPS Clear if coal is enabled
+	 */
 	if (ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS) != -1) {
 		i = ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_COAL_CONS);
 		reg_write_coal_close.skip_pipeline_clear = false;

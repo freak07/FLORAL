@@ -103,3 +103,7 @@
 		status = "disabled";
 	};
 };
+
+&sdx_ext_ipc {
+	status = "ok";
+};
