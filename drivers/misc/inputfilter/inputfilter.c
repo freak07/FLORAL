@@ -72,7 +72,13 @@ static struct workqueue_struct *ts_input_wq;
 static struct work_struct ts_input_work;
 static struct input_dev *ts_device = NULL;
 
-static unsigned long last_screen_event_timestamp = 0;
+#if 0
+static unsigned long last_screen_event_timestamp = 0;// zero to wait for first screen off
+#endif
+#if 1
+static unsigned long last_screen_event_timestamp = 1; // start with 1 to let it work after boot. Pixel4
+#endif
+
 static unsigned int last_screen_off_seconds = 0;
 static unsigned int last_screen_on_seconds = 0;
 
@@ -1975,8 +1981,10 @@ static void squeeze_swipe_short_trigger(void) {
 
 
 
-#define MAX_SQUEEZE_TIME 35 * JIFFY_MUL // U12 change 35->38
-#define MAX_SQUEEZE_TIME_LONG 69 * JIFFY_MUL
+//#define MAX_SQUEEZE_TIME 35 * JIFFY_MUL // U12 change 35->38
+#define MAX_SQUEEZE_TIME 39 * JIFFY_MUL // pixel 4
+//#define MAX_SQUEEZE_TIME_LONG 69 * JIFFY_MUL
+#define MAX_SQUEEZE_TIME_LONG 72 * JIFFY_MUL // pixel 4
 #define MAX_NANOHUB_EVENT_TIME 4 * JIFFY_MUL
 static unsigned long longcount_start = 0;
 static int interrupt_longcount = 0;
