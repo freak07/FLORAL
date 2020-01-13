@@ -216,7 +216,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 				if (exec_count) {
 					unsigned int last_vib_diff = jiffies - last_scheduled_vib_time;
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
-					if (last_vib_diff > 15) {
+					if (last_vib_diff > 12) {
 						schedule_work(&sweep2sleep_vib_work);
 						last_scheduled_vib_time = jiffies;
 					}
@@ -256,7 +256,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 				if (exec_count) {
 					unsigned int last_vib_diff = jiffies - last_scheduled_vib_time;
 					if (barrier[1] == true) { vib_power = 50; } else { vib_power = get_s2s_continuous_vib()?1:60; }
-					if (last_vib_diff > 15) {
+					if (last_vib_diff > 12) {
 						schedule_work(&sweep2sleep_vib_work);
 						last_scheduled_vib_time = jiffies;
 					}
