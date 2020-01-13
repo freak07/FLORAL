@@ -1827,6 +1827,7 @@ struct ipa3_app_clock_vote {
  * @gsi_info: channel/protocol info for GSI offloading uC stats
  * @app_vote: holds userspace application clock vote count
  * IPA context - holds all relevant info about IPA driver and its state
+ * @coal_cmd_pyld: holds the coslescing close frame command payload
  */
 struct ipa3_context {
 	struct ipa3_char_device_context cdev;
@@ -1999,6 +2000,7 @@ struct ipa3_context {
 	bool ipa_mhi_proxy;
 	bool ipa_wan_skb_page;
 	struct ipa3_app_clock_vote app_clock_vote;
+	struct ipahal_imm_cmd_pyld *coal_cmd_pyld;
 };
 
 struct ipa3_plat_drv_res {
@@ -3022,7 +3024,8 @@ int ipa3_create_wdi_mapping(u32 num_buffers, struct ipa_wdi_buffer_info *info);
 int ipa3_set_flt_tuple_mask(int pipe_idx, struct ipahal_reg_hash_tuple *tuple);
 int ipa3_set_rt_tuple_mask(int tbl_idx, struct ipahal_reg_hash_tuple *tuple);
 void ipa3_set_resorce_groups_min_max_limits(void);
-void ipa3_suspend_apps_pipes(bool suspend);
+int ipa3_suspend_apps_pipes(bool suspend);
+void ipa3_force_close_coal(void);
 int ipa3_flt_read_tbl_from_hw(u32 pipe_idx,
 	enum ipa_ip_type ip_type,
 	bool hashable,
@@ -3067,6 +3070,8 @@ void ipa3_disable_prefetch(enum ipa_client_type client);
 int ipa3_alloc_common_event_ring(void);
 int ipa3_allocate_dma_task_for_gsi(void);
 void ipa3_free_dma_task_for_gsi(void);
+int ipa3_allocate_coal_close_frame(void);
+void ipa3_free_coal_close_frame(void);
 int ipa3_set_clock_plan_from_pm(int idx);
 void __ipa_gsi_irq_rx_scedule_poll(struct ipa3_sys_context *sys);
 int ipa3_tz_unlock_reg(struct ipa_tz_unlock_reg_info *reg_info, u16 num_regs);

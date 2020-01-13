@@ -24,6 +24,8 @@ struct mhi_sfr_info;
 
 #define REG_WRITE_QUEUE_LEN 1024
 
+#define REG_WRITE_QUEUE_LEN 1024
+
 /**
  * enum MHI_CB - MHI callback
  * @MHI_CB_IDLE: MHI entered idle state
