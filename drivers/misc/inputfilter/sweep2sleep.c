@@ -382,6 +382,9 @@ static void detect_sweep2sleep(int x, int y, bool st)
 				    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) ) {
 					if (x > (nextx + x_threshold_1)) {
 						if (exec_count) {
+							if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
+								pause_before_pwr_off = true;
+							}
 							sweep2sleep_pwrtrigger();
 							exec_count = false;
 						}
@@ -426,6 +429,9 @@ static void detect_sweep2sleep(int x, int y, bool st)
 				    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) ) {
 					if (x < (nextx - x_threshold_1)) {
 						if (exec_count) {
+							if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
+								pause_before_pwr_off = true;
+							}
 							sweep2sleep_pwrtrigger();
 							exec_count = false;
 						}
@@ -463,7 +469,9 @@ bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
 	if (get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status) {
 		*x = frozen_x + (frozen_rand)%2; // make some random variance so input report will actually get it through
 		*y = frozen_y + (frozen_rand++)%2;
+#ifdef CONFIG_DEBUG_S2S
 		pr_info("%s frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
+#endif
 		return true;
 	}
 	return false;
@@ -681,7 +689,9 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
 	bool ret = __s2s_input_filter(handle,type,code,value);
+#ifdef CONFIG_DEBUG_S2S
 	pr_info("%s [FILTER] fresult=%s , type: %d code: %d value: %d\n",__func__,ret?"TRUE":"FALSE",type,code,value);
+#endif
 	return ret;
 
 }
