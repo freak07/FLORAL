@@ -450,7 +450,27 @@ static void s2s_input_callback(struct work_struct *unused) {
 static int log_throttling_count = 0;
 #endif
 
-static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
+static int frozen_x = 0; // fake x/y for the user land
+static int frozen_y = 0;
+static int real_x = 0; // reported thru s2s_freeze_cords by touchscreen driver
+static int real_y = 0;
+
+
+static int frozen_rand = 0;
+bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
+	real_x = r_x;
+	real_y = r_y;
+	if (get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status) {
+		*x = frozen_x + (frozen_rand)%2; // make some random variance so input report will actually get it through
+		*y = frozen_y + (frozen_rand++)%2;
+		pr_info("%s frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
+		return true;
+	}
+	return false;
+}
+EXPORT_SYMBOL(s2s_freeze_coords);
+
+static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
 	bool first_touch_detection = false;
 
@@ -473,6 +493,14 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 	}
 	if (log_throttling_count%50==49) log_throttling_count = 0;
 #endif
+
+
+	if (type == EV_SYN) return false;
+	if (type == EV_MSC) return false;
+	if (type == EV_ABS && code == ABS_MT_PRESSURE) return false;
+	if (type == EV_ABS && code == ABS_MT_TOUCH_MAJOR) return false;
+	if (type == EV_ABS && code == ABS_MT_TOUCH_MINOR) return false;
+
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
 		finger_counter++;
@@ -543,11 +571,17 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 	}
 
 	if (code == ABS_MT_POSITION_X && touch_down_called) {
+		if (get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status) {
+			touch_x = real_x;
+		} else
 		touch_x = value;
 		touch_x_called = true;
 	}
 
 	if (code == ABS_MT_POSITION_Y && touch_down_called) {
+		if (get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status) {
+			touch_y = real_y;
+		} else
 		touch_y = value;
 		touch_y_called = true;
 	}
@@ -618,6 +652,11 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 				}
 			}
 			// in touch area, set filter status True...
+			if (!filter_coords_status) {
+				frozen_x = touch_x;
+				frozen_y = touch_y;
+				frozen_rand = 0;
+			}
 			filter_coords_status = true;
 
 			if (get_s2s_switch()==0 || (get_s2s_filter_mode() && get_s2s_doubletap_mode() && get_s2s_longtap_switch()==2)) { 
@@ -628,10 +667,23 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 			}
 		}
 	}
+
+#if 0
 	// filter if filter mode active and in sweep touch area, and...
 	// ...this is not right the first touch detection and so the Y coordinate 
 	//    which should NOT be filtered, or it will cause touch positioning issues...
-	return get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status && !first_touch_detection; 
+	return get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status && !first_touch_detection;
+#endif
+#if 1
+	return false; // touch driver should use s2s_freeze_cords, here we let all event through
+#endif
+}
+static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
+				unsigned int code, int value) {
+	bool ret = __s2s_input_filter(handle,type,code,value);
+	pr_info("%s [FILTER] fresult=%s , type: %d code: %d value: %d\n",__func__,ret?"TRUE":"FALSE",type,code,value);
+	return ret;
+
 }
 
 static void s2s_input_event(struct input_handle *handle, unsigned int type,
