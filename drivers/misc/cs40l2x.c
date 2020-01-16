@@ -3125,8 +3125,8 @@ err_mutex:
 }
 
 #ifdef CONFIG_UCI_NOTIFICATIONS
-#define SQUEEZE_START_SCALE_VAL 23
-#define SQUEEZE_END_SCALE_VAL 37
+#define SQUEEZE_START_SCALE_VAL 29
+#define SQUEEZE_END_SCALE_VAL 44
 static unsigned int last_cp_dig_scale = 0;
 #endif
 
