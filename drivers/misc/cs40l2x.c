@@ -206,7 +206,7 @@ static bool last_ext_set_index_is_non_click = false;
 static int should_boost(void) {
     int l_boost_only_in_pocket = uci_get_boost_only_in_pocket();
     //if (ntf_is_screen_on() && ntf_wake_by_user()) return 0;
-    if (l_boost_only_in_pocket && in_pocket) return last_ext_set_index_is_non_click?1:0;
+    if (l_boost_only_in_pocket && in_pocket) return (last_ext_set_index_is_non_click||!ntf_is_screen_on())?1:0;
     return 0;
 }
 
