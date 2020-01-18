@@ -12,6 +12,7 @@
 
 #ifdef CONFIG_UCI
 #include <linux/uci/uci.h>
+#include <linux/notification/notification.h>
 #endif
 
 #define DRIVER_AUTHOR "flar2 (asegaert at gmail.com)"
@@ -67,6 +68,9 @@ extern void set_vibrate_2(int value, int boost_power);
 static int vib_strength = VIB_STRENGTH;
 static bool first_event = false;
 static bool setup_done = false;
+
+// set to true if screen off was executed after the s2s gesture
+static bool screen_off_after_gesture = true;
 
 static bool filter_coords_status = false;
 
@@ -157,23 +161,23 @@ static void sweep2sleep_presspwr(struct work_struct * sweep2sleep_presspwr_work)
 
 	if (!check_no_finger(100)) {
 		set_vibrate_2(10,60);
+		screen_off_after_gesture = true;
 		goto exit_mutex;
 	}
+
+	screen_off_after_gesture = false;
 
 	if (pause_before_pwr_off) msleep(300);
 	pause_before_pwr_off = false;
-
-	if (!check_no_finger(200)) {
-		set_vibrate_2(10,60);
-		goto exit_mutex;
-	}
 
 	msleep(S2S_PWRKEY_DUR);
 
 	if (!check_no_finger(1)) {
 		set_vibrate_2(10,60);
+		screen_off_after_gesture = true;
 		goto exit_mutex;
 	}
+
 
 	input_event(sweep2sleep_pwrdev, EV_KEY, KEY_POWER, 1);
 	input_event(sweep2sleep_pwrdev, EV_SYN, 0, 0);
@@ -197,6 +201,7 @@ static DECLARE_WORK(sweep2sleep_vib_work, sweep2sleep_vib);
 /* PowerKey trigger */
 static void sweep2sleep_pwrtrigger(void) {
 	set_vibrate_2(vib_strength,100);
+	// should indicate gesture cannot be done again till full screen off or unlocked
 	schedule_work(&sweep2sleep_presspwr_work);
         return;
 }
@@ -358,6 +363,8 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		s2s_setup_values();
 	}
 
+	if (!screen_off_after_gesture) return false;
+
 #ifdef CONFIG_DEBUG_S2S
 	if ((log_throttling_count++)%50>40) {
 		pr_info("%s type: %d code: %d value: %d -- max y = %d\n",__func__,type,code,value,S2S_Y_MAX);
@@ -516,6 +523,24 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
                                 unsigned int code, int value) {
 }
 
+static void uci_sys_listener(void) {
+	if (!!uci_get_sys_property_int_mm("locked", 0, 0, 1)==false) {
+		// unlocking also should indicate gesture can be done again...
+		screen_off_after_gesture = true;
+	}
+
+}
+static void ntf_listener(char* event, int num_param, char* str_param) {
+        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
+                pr_info("%s ifilter ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
+        }
+
+        if (!strcmp(event,NTF_EVENT_SLEEP)) {
+		// screen off also should indicate gesture can be done again...
+		screen_off_after_gesture = true;
+        }
+
+}
 
 static int input_dev_filter(struct input_dev *dev) {
 	pr_info("%s sweep2sleep device filter check. Device: %s\n",__func__,dev->name);
@@ -648,6 +673,9 @@ static int __init sweep2sleep_init(void)
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for sweep2sleep\n", __func__);
 #endif
+
+        uci_add_sys_listener(uci_sys_listener);
+        ntf_add_listener(ntf_listener);
 
 err_input_dev:
 	input_free_device(sweep2sleep_pwrdev);
