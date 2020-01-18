@@ -165,14 +165,10 @@ static const unsigned int cs40l2x_event_masks[] = {
 
 #ifdef CONFIG_UCI_NOTIFICATIONS
 
-static int boost_only_in_pocket = 1;
 static bool face_down_hr = false;
 static bool proximity = false;
 static bool in_pocket = false;
 
-int uci_get_boost_only_in_pocket(void) {
-    return uci_get_user_property_int_mm("boost_only_in_pocket", boost_only_in_pocket, 0, 1);
-}
 int uci_get_notification_booster_overdrive_perc(void) {
     return uci_get_user_property_int_mm("notification_booster_overdrive_perc", 95, 50, 100);
 }
@@ -187,6 +183,21 @@ static void uci_sys_listener(void) {
     // check if perfectly horizontal facedown is not true, and in proximity 
     // ...(so it's supposedly not on table, but in pocket) then in_pocket = true
     in_pocket = !face_down_hr && proximity;
+}
+
+static int boost__only_in_pocket = false;
+
+#define SQUEEZE_START_SCALE_VAL 23
+#define SQUEEZE_END_SCALE_VAL 37
+static bool vib_sq_cal = false;
+static int squeeze_start_scale_val = SQUEEZE_START_SCALE_VAL;
+static int squeeze_end_scale_val = SQUEEZE_END_SCALE_VAL;
+static void uci_user_listener(void) {
+    //pr_info("%s [VIB] uci user parse happened...\n",__func__);
+    vib_sq_cal = !!uci_get_user_property_int_mm("squeeze_vib_calibration", 0,0,1);
+    boost__only_in_pocket = !!uci_get_user_property_int_mm("boost_only_in_pocket", 0, 0, 1);
+    squeeze_start_scale_val = uci_get_user_property_int_mm("squeeze_start_scale_val", squeeze_start_scale_val, 0, 200);
+    squeeze_end_scale_val = uci_get_user_property_int_mm("squeeze_end_scale_val", squeeze_end_scale_val, 0, 200);
 }
 
 #if 0
@@ -204,9 +215,8 @@ static int smart_get_boost_on(void) {
 static bool last_ext_set_index_is_non_click = false;
 
 static int should_boost(void) {
-    int l_boost_only_in_pocket = uci_get_boost_only_in_pocket();
     //if (ntf_is_screen_on() && ntf_wake_by_user()) return 0;
-    if (l_boost_only_in_pocket && in_pocket) return (last_ext_set_index_is_non_click||!ntf_is_screen_on())?1:0;
+    if (boost__only_in_pocket && in_pocket) return (last_ext_set_index_is_non_click||!ntf_is_screen_on())?1:0;
     return 0;
 }
 
@@ -3125,8 +3135,6 @@ err_mutex:
 }
 
 #ifdef CONFIG_UCI_NOTIFICATIONS
-#define SQUEEZE_START_SCALE_VAL 29
-#define SQUEEZE_END_SCALE_VAL 44
 static unsigned int last_cp_dig_scale = 0;
 #endif
 
@@ -3150,14 +3158,21 @@ static ssize_t cs40l2x_cp_dig_scale_store(struct device *dev,
 #ifdef VIB_DEBUG
 	pr_info("%s [booster] val %d\n",__func__,dig_scale);
 #endif
-	// squeeze helping reports based on scale value set...
-	if (dig_scale == SQUEEZE_START_SCALE_VAL) {
-		if_report_squeeze_event(jiffies,true,IF_EVENT_SQUEEZE_VIB_START);
-	} else
-	if (dig_scale == SQUEEZE_END_SCALE_VAL && last_cp_dig_scale == SQUEEZE_START_SCALE_VAL) {
-		if_report_squeeze_event(jiffies,true,IF_EVENT_SQUEEZE_VIB_END);
+	// calibration for squeeze vib power
+	if (vib_sq_cal) {
+		char output[20];
+		snprintf(output, sizeof(output), "cal_sq_vib %d\n", dig_scale);
+		write_uci_out(output);
+	} else {
+		// squeeze helping reports based on scale value set...
+		if (dig_scale == squeeze_start_scale_val) {
+			if_report_squeeze_event(jiffies,true,IF_EVENT_SQUEEZE_VIB_START);
+		} else
+		if (dig_scale == squeeze_end_scale_val && last_cp_dig_scale == squeeze_start_scale_val) {
+			if_report_squeeze_event(jiffies,true,IF_EVENT_SQUEEZE_VIB_END);
+		}
+		last_cp_dig_scale = dig_scale;
 	}
-	last_cp_dig_scale = dig_scale;
 
 	// if in pocket and should boost, dig scale should always be set to 0, even when framework is playing with fluctuating scale level at calls
 	if (should_boost()) {
@@ -8460,7 +8475,7 @@ static int cs40l2x_i2c_probe(struct i2c_client *i2c_client,
 	cs40l2x_g = cs40l2x;
 
 #ifdef CONFIG_UCI
-	//uci_add_user_listener(uci_user_listener);
+	uci_add_user_listener(uci_user_listener);
 	uci_add_sys_listener(uci_sys_listener);
 #endif
 	return 0;
