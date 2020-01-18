@@ -133,20 +133,55 @@ static void s2s_setup_values() {
 	}
 }
 
+static int finger_counter = 0;
 static bool pause_before_pwr_off = false;
+
+static bool check_no_finger(int timeout) {
+	int timeout_count = 0;
+	while (1) {
+		if (finger_counter==0) break;
+		msleep(2);
+		timeout_count++;
+		if (timeout_count>timeout)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 /* PowerKey work func */
 static void sweep2sleep_presspwr(struct work_struct * sweep2sleep_presspwr_work) {
-
 	if (!mutex_trylock(&pwrkeyworklock))
                 return;
+
+	if (!check_no_finger(100)) {
+		set_vibrate_2(10,60);
+		goto exit_mutex;
+	}
+
 	if (pause_before_pwr_off) msleep(300);
 	pause_before_pwr_off = false;
+
+	if (!check_no_finger(200)) {
+		set_vibrate_2(10,60);
+		goto exit_mutex;
+	}
+
+	msleep(S2S_PWRKEY_DUR);
+
+	if (!check_no_finger(1)) {
+		set_vibrate_2(10,60);
+		goto exit_mutex;
+	}
+
 	input_event(sweep2sleep_pwrdev, EV_KEY, KEY_POWER, 1);
 	input_event(sweep2sleep_pwrdev, EV_SYN, 0, 0);
 	msleep(S2S_PWRKEY_DUR);
 	input_event(sweep2sleep_pwrdev, EV_KEY, KEY_POWER, 0);
 	input_event(sweep2sleep_pwrdev, EV_SYN, 0, 0);
 	msleep(S2S_PWRKEY_DUR);
+exit_mutex:
         mutex_unlock(&pwrkeyworklock);
 	return;
 }
@@ -331,6 +366,7 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 #endif
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
+		finger_counter++;
 		touch_down_called = true;
 		touch_x_called = false;
 		touch_y_called = false;
@@ -343,6 +379,7 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 	}
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 0) {
+		finger_counter--;
 		touch_down_called = false;
 		touch_x_called = false;
 		touch_y_called = false;
