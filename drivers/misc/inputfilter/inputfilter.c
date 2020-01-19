@@ -2252,6 +2252,16 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 	diff = jiffies - last_squeeze_timestamp;
 	pr_info("%s squeeze call ++ squeeze diff : %u\n",__func__,diff);
 
+#if 1
+// pixel4
+	if (stage == STAGE_VIB && screen_on && vibration && num_param==IF_EVENT_SQUEEZE_VIB_START && !recent_touch()) {
+		pr_info("%s squeeze call -- pixel 4 | vibration in VIB phase, skipping back to WL stage, setting last squeeze timestamp... : %d\n",__func__,stage);
+		stage = STAGE_FIRST_WL;
+		last_squeeze_timestamp = jiffies;
+		diff = 0;
+	}
+#endif // pixel4
+
 	if (stage == STAGE_FIRST_WL) {
 		if (vibration && diff <= 15 * JIFFY_MUL) { // changing 5 -> 15 on u12+, wake can be slower before vibration is actually done after wakelock...
 
