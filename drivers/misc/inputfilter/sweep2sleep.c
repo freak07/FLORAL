@@ -55,6 +55,12 @@ static int s2s_doubletap_height = 70; // where doubletap Y coordinates are regis
 static int s2s_height_above = 20;
 static int s2s_width = 70;
 static int s2s_from_corner = 0;
+static int s2s_width_cutoff = 60;
+static int s2s_corner_width = 150;
+static int s2s_continuous_vib = 0;
+static int s2s_wait_for_finger_leave = 1;
+static int s2s_reenable_after_screen_off = 1;
+
 static int touch_x = 0, touch_y = 0, firstx = 0;
 static bool touch_x_called = false, touch_y_called = false, touch_down_called = false;
 static bool scr_on_touch = false, barrier[2] = {false, false};
@@ -78,38 +84,45 @@ extern char* init_get_saved_command_line(void);
 
 #ifdef CONFIG_UCI
 static int get_s2s_switch(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_mode", s2s_switch, 0, 3);
+	return s2s_switch;
 }
 static int get_s2s_filter_mode(void) { // 0 off, 1 right handed, 2 left handed, 3 both
-	return uci_get_user_property_int_mm("sweep2sleep_filter_mode", s2s_filter_mode, 0, 3);
+	return s2s_filter_mode;
 }
 static int get_s2s_doubletap_mode(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_doubletap_mode", s2s_doubletap_mode, 0, 2);
+	return s2s_doubletap_mode;
 }
 static int get_s2s_height(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_height", s2s_height, 50, 350);
+	return s2s_height;
 }
 static int get_s2s_doubletap_height(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_doubletap_height", s2s_doubletap_height, 50, 350);
+	return s2s_doubletap_height;
 }
 static int get_s2s_height_above(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_height_above", s2s_height_above, 0, 150);
+	return s2s_height_above;
 }
 static int get_s2s_width(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_width", s2s_width, 0, 150);
+	return s2s_width;
 }
 static int get_s2s_width_cutoff(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_width_cutoff", 60, 0, 80);
+	return s2s_width_cutoff;
 }
 static int get_s2s_corner_width(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_corner_width", 150, 100, 350);
+	return s2s_corner_width;
 }
 static int get_s2s_from_corner(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_from_corner", s2s_from_corner, 0, 1);
+	return s2s_from_corner;
 }
 static int get_s2s_continuous_vib(void) {
-	return uci_get_user_property_int_mm("sweep2sleep_continuous_vib", 0, 0, 1);
+	return s2s_continuous_vib;
 }
+static int get_s2s_wait_for_finger_leave(void) {
+	return s2s_wait_for_finger_leave;
+}
+static int get_s2s_reenable_after_screen_off(void) {
+	return s2s_reenable_after_screen_off;
+}
+
 static int get_s2s_y_limit(void) {
 	return S2S_Y_MAX - get_s2s_height();
 }
@@ -142,6 +155,7 @@ static bool pause_before_pwr_off = false;
 
 static bool check_no_finger(int timeout) {
 	int timeout_count = 0;
+	if (!get_s2s_wait_for_finger_leave()) return true;
 	while (1) {
 		if (finger_counter==0) break;
 		msleep(2);
@@ -363,7 +377,8 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 		s2s_setup_values();
 	}
 
-	if (!screen_off_after_gesture) return false;
+	// if only reenable after a full sreen off is set, and the screen off not yet happened, s2s gesture shouldn't be available, return false here...
+	if (get_s2s_reenable_after_screen_off() && !screen_off_after_gesture) return false;
 
 #ifdef CONFIG_DEBUG_S2S
 	if ((log_throttling_count++)%50>40) {
@@ -530,6 +545,22 @@ static void uci_sys_listener(void) {
 	}
 
 }
+static void uci_user_listener(void) {
+	s2s_switch = uci_get_user_property_int_mm("sweep2sleep_mode", s2s_switch, 0, 3);
+	s2s_filter_mode = uci_get_user_property_int_mm("sweep2sleep_filter_mode", s2s_filter_mode, 0, 3);
+	s2s_doubletap_mode = uci_get_user_property_int_mm("sweep2sleep_doubletap_mode", s2s_doubletap_mode, 0, 2);
+	s2s_height = uci_get_user_property_int_mm("sweep2sleep_height", s2s_height, 50, 350);
+	s2s_doubletap_height = uci_get_user_property_int_mm("sweep2sleep_doubletap_height", s2s_doubletap_height, 50, 350);
+	s2s_height_above = uci_get_user_property_int_mm("sweep2sleep_height_above", s2s_height_above, 0, 150);
+	s2s_width = uci_get_user_property_int_mm("sweep2sleep_width", s2s_width, 0, 150);
+	s2s_from_corner = uci_get_user_property_int_mm("sweep2sleep_from_corner", s2s_from_corner, 0, 1);
+	s2s_width_cutoff = uci_get_user_property_int_mm("sweep2sleep_width_cutoff", 60, 0, 80);
+	s2s_corner_width = uci_get_user_property_int_mm("sweep2sleep_corner_width", 150, 100, 350);
+	s2s_continuous_vib = uci_get_user_property_int_mm("sweep2sleep_continuous_vib", 0, 0, 1);
+	s2s_wait_for_finger_leave = uci_get_user_property_int_mm("sweep2sleep_wait_for_finger_leave", s2s_wait_for_finger_leave, 0, 1);
+	s2s_reenable_after_screen_off = uci_get_user_property_int_mm("sweep2sleep_reenable_after_screen_off", s2s_reenable_after_screen_off, 0, 1);
+}
+
 static void ntf_listener(char* event, int num_param, char* str_param) {
         if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
                 pr_info("%s ifilter ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
@@ -539,7 +570,6 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		// screen off also should indicate gesture can be done again...
 		screen_off_after_gesture = true;
         }
-
 }
 
 static int input_dev_filter(struct input_dev *dev) {
@@ -674,6 +704,7 @@ static int __init sweep2sleep_init(void)
 		pr_err("%s: sysfs_create_file failed for sweep2sleep\n", __func__);
 #endif
 
+        uci_add_user_listener(uci_user_listener);
         uci_add_sys_listener(uci_sys_listener);
         ntf_add_listener(ntf_listener);
 
