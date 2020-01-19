@@ -46,6 +46,8 @@ static int S2S_X_RIGHT_CORNER_START = 1290; // 1440-150
 #define X_DIFF_THRESHOLD_0 70 // 200
 #define X_DIFF_THRESHOLD_1 70 // 180
 
+// 0 on, 1 off
+static int s2s_onoff = 0;
 // 1=sweep right, 2=sweep left, 3=both
 static int s2s_switch = 0;
 static int s2s_filter_mode = 0; // 0 input filter NO, 1 YES RIGHT HANDED MODE, 2 YES LEFT HANDED MODE
@@ -84,7 +86,7 @@ extern char* init_get_saved_command_line(void);
 
 #ifdef CONFIG_UCI
 static int get_s2s_switch(void) {
-	return s2s_switch;
+	return s2s_onoff?s2s_switch:0;
 }
 static int get_s2s_filter_mode(void) { // 0 off, 1 right handed, 2 left handed, 3 both
 	return s2s_filter_mode;
@@ -546,6 +548,7 @@ static void uci_sys_listener(void) {
 
 }
 static void uci_user_listener(void) {
+	s2s_onoff = uci_get_user_property_int_mm("sweep2sleep_switch", s2s_onoff, 0, 1);
 	s2s_switch = uci_get_user_property_int_mm("sweep2sleep_mode", s2s_switch, 0, 3);
 	s2s_filter_mode = uci_get_user_property_int_mm("sweep2sleep_filter_mode", s2s_filter_mode, 0, 3);
 	s2s_doubletap_mode = uci_get_user_property_int_mm("sweep2sleep_doubletap_mode", s2s_doubletap_mode, 0, 2);
