@@ -2760,7 +2760,6 @@ static void sde_encoder_virt_mode_set(struct drm_encoder *drm_enc,
 	struct sde_rm_hw_request request_hw;
 	bool is_cmd_mode = false;
 	int i = 0, ret;
-	struct msm_mode_info mode_info;
 
 	if (!drm_enc) {
 		SDE_ERROR("invalid encoder\n");
