@@ -305,14 +305,16 @@ static DECLARE_WORK(sweep2sleep_longtap_count_work, sweep2sleep_longtap_count);
 
 
 /* reset on finger release */
-static void sweep2sleep_reset(void) {
+static void sweep2sleep_reset(bool reset_filter_coords) {
 	exec_count = true;
 	barrier[0] = false;
 	barrier[1] = false;
 	firstx = 0;
 	first_event = false;
 	scr_on_touch = false;
-	filter_coords_status = false;
+	if (reset_filter_coords) {
+		filter_coords_status = false;
+	}
 }
 
 
@@ -534,7 +536,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 	}
 
 	if (get_s2s_switch()==0) {
-		sweep2sleep_reset();
+		sweep2sleep_reset(true);
 		return false;
 	}
 
@@ -548,14 +550,6 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 	if (log_throttling_count%50==49) log_throttling_count = 0;
 #endif
 
-
-//	if (type == EV_SYN) return false;
-//	if (type == EV_MSC) return false;
-//	if (type == EV_ABS && code == ABS_MT_PRESSURE) return false;
-//	if (type == EV_ABS && code == ABS_MT_TOUCH_MAJOR) return false;
-//	if (type == EV_ABS && code == ABS_MT_TOUCH_MINOR) return false;
-
-
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
 #ifdef FULL_FILTER
 		if (filtering_on()) {
@@ -568,7 +562,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_x_called = false;
 		touch_y_called = false;
 		last_tap_starts_in_dt_area = false; // reset boolean
-		sweep2sleep_reset();
+		sweep2sleep_reset(true);
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s first touch...\n",__func__);
 #endif
@@ -616,7 +610,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 			}
 		}
 		last_tap_starts_in_dt_area = false; // reset boolean
-		sweep2sleep_reset();
+		sweep2sleep_reset(true);
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s untouch...\n",__func__);
 #endif
@@ -629,7 +623,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s reset based on slot...\n",__func__);
 #endif
-		sweep2sleep_reset();
+		sweep2sleep_reset(false);
 #ifdef FULL_FILTER
 		return filtering_on();
 #else
@@ -641,7 +635,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_down_called = false;
 		touch_x_called = false;
 		touch_y_called = false;
-		sweep2sleep_reset();
+		sweep2sleep_reset(false);
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s untouch based on tracking id...\n",__func__);
 #endif
@@ -692,7 +686,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		{	// cancel now...
 			touch_down_called = false;
 			freeze_touch_area_detected = false;
-			sweep2sleep_reset();
+			sweep2sleep_reset(true);
 		} else {
 			// in touch area...
 			if (get_s2s_filter_mode()>0 && !filter_coords_status) { // filtered input mode, and first touch point registered without lifting finger...
@@ -708,7 +702,8 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 					if (last_tap_time_diff < 150) { // previous first touch time and coordinate comparision to detect double tap...
 						if (delta_x < 60 && delta_x > -60 && delta_y < 60 && delta_y > -60) {
 							touch_down_called = false;
-							sweep2sleep_reset();
+							sweep2sleep_reset(false); // do not let coordinate freezing yet off, finger is on screen and gesture is still on => (false)
+							filter_coords_status = true; // set filtering on...
 							if (get_s2s_doubletap_mode()==1) { // power button mode
 								// wait a bit before actually emulate pwr button press in the trigger, to avoid wake screen on lockscreen touch
 								if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
