@@ -465,7 +465,6 @@ static int real_y = 0;
 #ifdef FULL_FILTER
 static int in_gesture_finger_counter = 0;
 #endif
-static int finger_counter = 0;
 static int frozen_rand = 0;
 static bool freeze_touch_area_detected = false;
 
@@ -573,7 +572,11 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s first touch...\n",__func__);
 #endif
+#ifdef FULL_FILTER
 		return filtering_on();
+#else
+		return false;
+#endif
 	}
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 0) {
@@ -627,7 +630,11 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		pr_info("%s reset based on slot...\n",__func__);
 #endif
 		sweep2sleep_reset();
+#ifdef FULL_FILTER
 		return filtering_on();
+#else
+		return false;
+#endif
 	}
 
 	if (code == ABS_MT_TRACKING_ID && value == -1) {
@@ -638,7 +645,11 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s untouch based on tracking id...\n",__func__);
 #endif
+#ifdef FULL_FILTER
 		return filtering_on();
+#else
+		return false;
+#endif
 	}
 
 	if (code == ABS_MT_POSITION_X && touch_down_called) {
@@ -710,7 +721,11 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 								write_uci_out("fp_touch");
 							}
 							reset_doubletap_tracking();
-							return filtering_on(); // break out here, don't filter
+#ifdef FULL_FILTER
+							return filtering_on();
+#else
+							return false; // break out here, don't filter
+#endif
 						}
 					} else {
 						last_tap_starts_in_dt_area = true;
