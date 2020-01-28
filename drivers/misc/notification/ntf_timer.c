@@ -88,6 +88,9 @@ static int uci_get_flash_blink_bright(void) {
 static int uci_get_flash_blink_bright_number(void) {
 	return uci_get_user_property_int_mm("flash_blink_bright_number", flash_blink_bright_number, 1, 10);
 }
+static int uci_get_flash_blink_bright_strong(void) {
+	return uci_get_user_property_int_mm("flash_blink_bright_strong", 0, 0, 1);
+}
 static int uci_get_flash_blink_number(void) {
 	return uci_get_user_property_int_mm("flash_blink_number", flash_blink_number, 0, 50);
 }
@@ -119,129 +122,9 @@ static int uci_get_flash_dim_start_hour(void) {
 static int uci_get_flash_dim_end_hour(void) {
 	return uci_get_user_property_int_mm("flash_dim_end_hour", dim_end_hour, 0, 23);
 }
-
-
-void set_flash_blink_on(int value) {
-	flash_blink_on = !!value;
-}
-EXPORT_SYMBOL(set_flash_blink_on);
-int get_flash_blink_on(void) {
-	return flash_blink_on;
-}
-EXPORT_SYMBOL(get_flash_blink_on);
-
-void set_flash_only_face_down(int value) {
-	flash_only_face_down = !!value;
-}
-EXPORT_SYMBOL(set_flash_only_face_down);
-int get_flash_only_face_down(void) {
-	return flash_only_face_down;
-}
-EXPORT_SYMBOL(get_flash_only_face_down);
-
-void set_flash_blink_number(int value) {
-	flash_blink_number = value%51; // max 50
-}
-EXPORT_SYMBOL(set_flash_blink_number);
-int get_flash_blink_number(void) {
-	return flash_blink_number;
-}
-EXPORT_SYMBOL(get_flash_blink_number);
-
-void set_flash_blink_bright(int value) {
-	flash_blink_bright = !!value;
-}
-EXPORT_SYMBOL(set_flash_blink_bright);
-int get_flash_blink_bright(void) {
-	return flash_blink_bright;
-}
-EXPORT_SYMBOL(get_flash_blink_bright);
-
-void set_flash_blink_bright_number(int value) {
-	flash_blink_bright_number = max(1,value%11); // min 1, max 10
-}
-EXPORT_SYMBOL(set_flash_blink_bright_number);
-int get_flash_blink_bright_number(void) {
-	return flash_blink_bright_number;
-}
-EXPORT_SYMBOL(get_flash_blink_bright_number);
-
-
-void set_flash_blink_wait_sec(int value) {
-	flash_blink_wait_sec = max(1,value%11); // min 1/max 10
-}
-EXPORT_SYMBOL(set_flash_blink_wait_sec);
-int get_flash_blink_wait_sec(void) {
-	return flash_blink_wait_sec;
-}
-EXPORT_SYMBOL(get_flash_blink_wait_sec);
-
-void set_flash_blink_wait_inc(int value) {
-	flash_blink_wait_inc = !!value;
-}
-EXPORT_SYMBOL(set_flash_blink_wait_inc);
-int get_flash_blink_wait_inc(void) {
-	return flash_blink_wait_inc;
-}
-EXPORT_SYMBOL(get_flash_blink_wait_inc);
-
-void set_flash_blink_wait_inc_max(int value) {
-	flash_blink_wait_inc_max = max(1,value%9); // min 1/max 8
-}
-EXPORT_SYMBOL(set_flash_blink_wait_inc_max);
-int get_flash_blink_wait_inc_max(void) {
-	return flash_blink_wait_inc_max;
-}
-EXPORT_SYMBOL(get_flash_blink_wait_inc_max);
-
-
-void set_flash_haptic_mode(int value) {
-	haptic_mode = !!value;
-}
-EXPORT_SYMBOL(set_flash_haptic_mode);
-int get_flash_haptic_mode(void) {
-	return haptic_mode;
-}
-EXPORT_SYMBOL(get_flash_haptic_mode);
-
-void set_flash_dim_mode(int value) {
-	dim_mode = value%3; // 0/1/2
-}
-EXPORT_SYMBOL(set_flash_dim_mode);
-int get_flash_dim_mode(void) {
-	return dim_mode;
-}
-EXPORT_SYMBOL(get_flash_dim_mode);
-
-void set_flash_dim_use_period(int value) {
-	dim_use_period = !!value;
-}
-EXPORT_SYMBOL(set_flash_dim_use_period);
-int get_flash_dim_use_period(void) {
-	return dim_use_period;
-}
-EXPORT_SYMBOL(get_flash_dim_use_period);
-
-void set_flash_dim_period_hours(int startValue, int endValue) {
-	dim_start_hour = startValue;
-	dim_end_hour = endValue;
-}
-EXPORT_SYMBOL(set_flash_dim_period_hours);
-void get_flash_dim_period_hours(int *r) {
-	r[0] = dim_start_hour;
-	r[1] = dim_end_hour;
-}
-EXPORT_SYMBOL(get_flash_dim_period_hours);
-
-
 static int uci_get_flash_only_face_down(void) {
 	return uci_get_user_property_int_mm("flash_only_face_down", flash_only_face_down, 0, 1);
 }
-
-//static bool face_down = false;
-//static bool proximity = false;
-//static bool silent = false;
-//static bool ringing = false;
 
 extern bool ntf_face_down;
 extern bool ntf_proximity;
@@ -468,14 +351,22 @@ void do_flash_blink(void) {
 #if 0
 			qpnp_torch_main(150*(bright+1),0);  // [o] [ ]
 #endif
-			precise_delay(520 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
-			qpnp_torch_main(0,0);	// [ ] [ ]
-			udelay(15000);
-
-			//if (!dim) 
-			{
-				qpnp_torch_main(0,150*(bright+1));  // [ ] [o]
+			if (uci_get_flash_blink_bright_strong()) {
+				precise_delay(1120 -(dim * DIM_USEC) +(bright * (BRIGHT_USEC+100)));
+			} else {
 				precise_delay(520 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
+			}
+			qpnp_torch_main(0,0);	// [ ] [ ]
+			precise_delay(20000);
+
+			if (bright)
+			{
+				qpnp_torch_main(300,0);  // [o] [ ]
+				if (uci_get_flash_blink_bright_strong()) {
+					precise_delay(1120 -(dim * DIM_USEC) +(bright * (BRIGHT_USEC+100)));
+				} else {
+					precise_delay(520 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
+				}
 				qpnp_torch_main(0,0);	// [ ] [ ]
 				udelay(15000);
 			}
