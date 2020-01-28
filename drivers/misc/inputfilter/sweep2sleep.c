@@ -474,8 +474,8 @@ bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
 	real_x = r_x;
 	real_y = r_y;
 	if (get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status) {
-		*x = S2S_X_MAX/2 + (frozen_rand)%2; // make some random variance so input report will actually get it through
-		*y = S2S_Y_MAX + 100 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
+		*x = frozen_x + (frozen_rand)%2; // make some random variance so input report will actually get it through
+		*y = S2S_Y_MAX + 3 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
 
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
@@ -503,8 +503,8 @@ bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
 			)
 			)
 			{
-				*x = S2S_X_MAX/2 + (frozen_rand)%2; // make some random variance so input report will actually get it through
-				*y = S2S_Y_MAX + 100 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
+				*x = r_x + (frozen_rand)%2; // make some random variance so input report will actually get it through
+				*y = S2S_Y_MAX + 3 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
 #ifdef CONFIG_DEBUG_S2S
 				pr_info("%s first touch --- frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
 #endif
@@ -793,7 +793,7 @@ static void uci_user_listener(void) {
 	s2s_height_above = uci_get_user_property_int_mm("sweep2sleep_height_above", s2s_height_above, 0, 150);
 	s2s_width = uci_get_user_property_int_mm("sweep2sleep_width", s2s_width, 0, 150);
 	s2s_from_corner = uci_get_user_property_int_mm("sweep2sleep_from_corner", s2s_from_corner, 0, 1);
-	s2s_width_cutoff = uci_get_user_property_int_mm("sweep2sleep_width_cutoff", 60, 0, 80);
+	s2s_width_cutoff = uci_get_user_property_int_mm("sweep2sleep_width_cutoff", 60, 0, 120);
 	s2s_corner_width = uci_get_user_property_int_mm("sweep2sleep_corner_width", 150, 100, 350);
 	s2s_continuous_vib = uci_get_user_property_int_mm("sweep2sleep_continuous_vib", 0, 0, 1);
 	s2s_wait_for_finger_leave = uci_get_user_property_int_mm("sweep2sleep_wait_for_finger_leave", s2s_wait_for_finger_leave, 0, 1);
