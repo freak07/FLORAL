@@ -1157,7 +1157,7 @@ static void sde_kms_commit(struct msm_kms *kms,
 	SDE_ATRACE_END("sde_kms_commit");
 }
 
-void sde_kms_release_splash_resource(struct sde_kms *sde_kms,
+static void _sde_kms_release_splash_resource(struct sde_kms *sde_kms,
 		struct drm_crtc *crtc)
 {
 	struct msm_drm_private *priv;
@@ -1220,8 +1220,6 @@ static void sde_kms_complete_commit(struct msm_kms *kms,
 	struct drm_crtc_state *old_crtc_state;
 	struct drm_connector *connector;
 	struct drm_connector_state *old_conn_state;
-	struct msm_display_conn_params params;
-
 	int i, rc = 0;
 
 	if (!kms || !old_state)
@@ -1253,18 +1251,7 @@ static void sde_kms_complete_commit(struct msm_kms *kms,
 		c_conn = to_sde_connector(connector);
 		if (!c_conn->ops.post_kickoff)
 			continue;
-
-		memset(&params, 0, sizeof(params));
-
-		if (c_conn->qsync_updated &&
-			(c_conn->qsync_mode == SDE_RM_QSYNC_ONE_SHOT_MODE)) {
-			/* Reset qsync states if mode is one shot */
-			params.qsync_mode = c_conn->qsync_mode = 0;
-			params.qsync_update = true;
-			SDE_EVT32(connector->base.id, c_conn->qsync_mode);
-		}
-
-		rc = c_conn->ops.post_kickoff(connector, &params);
+		rc = c_conn->ops.post_kickoff(connector);
 		if (rc) {
 			pr_err("Connector Post kickoff failed rc=%d\n",
 					 rc);
@@ -1276,7 +1263,7 @@ static void sde_kms_complete_commit(struct msm_kms *kms,
 	sde_power_resource_enable(&priv->phandle, sde_kms->core_client, false);
 
 	for_each_crtc_in_state(old_state, crtc, old_crtc_state, i)
-		sde_kms_release_splash_resource(sde_kms, crtc);
+		_sde_kms_release_splash_resource(sde_kms, crtc);
 
 	SDE_EVT32_VERBOSE(SDE_EVTLOG_FUNC_EXIT);
 	SDE_ATRACE_END("sde_kms_complete_commit");
@@ -1651,7 +1638,6 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		.cmd_transfer = dsi_display_cmd_transfer,
 		.cont_splash_config = dsi_display_cont_splash_config,
 		.get_panel_vfp = dsi_display_get_panel_vfp,
-		.prepare_commit = dsi_conn_prepare_commit,
 		.set_idle_hint = dsi_display_set_idle_hint,
 	};
 	static const struct sde_connector_ops wb_ops = {
