@@ -81,10 +81,6 @@
 #include <linux/inputfilter/sweep2sleep.h>
 #endif
 
-#if 1
-#define CONFIG_SKIP_HEATMAP
-#endif
-
 /* Touch simulation MT slot */
 #define TOUCHSIM_SLOT_ID		0
 #define TOUCHSIM_TIMER_INTERVAL_NS	8333333
@@ -1540,9 +1536,7 @@ static void touchsim_work(struct work_struct *work)
 
 	input_sync(info->input_dev);
 
-#ifndef CONFIG_SKIP_HEATMAP
 	heatmap_read(&info->v4l2, timestamp_ns);
-#endif
 
 	pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 }
@@ -2683,9 +2677,6 @@ static ssize_t fts_heatmap_mode_store(struct device *dev,
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_SKIP_HEATMAP
-	val = FTS_HEATMAP_OFF;
-#endif
 	info->heatmap_mode = val;
 	return count;
 }
@@ -3955,10 +3946,8 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	}
 	input_sync(info->input_dev);
 
-#ifndef CONFIG_SKIP_HEATMAP
         if (processed_pointer_event)
 		heatmap_read(&info->v4l2, info->timestamp);
-#endif
 
 	/* Disable the firmware motion filter during single touch */
 	update_motion_filter(info);
@@ -4623,9 +4612,7 @@ static int fts_init_sensing(struct fts_ts_info *info)
 		pr_err("%s Init after Probe error (ERROR = %08X)\n",
 			__func__, error);
 
-#ifndef CONFIG_SKIP_HEATMAP
 	heatmap_enable();
-#endif
 
 	return error;
 }
@@ -4867,10 +4854,8 @@ static void fts_resume_work(struct work_struct *work)
 
 	info->sensor_sleep = false;
 
-#ifndef CONFIG_SKIP_HEATMAP
 	/* heatmap must be enabled after every chip reset (fts_system_reset) */
 	heatmap_enable();
-#endif
 
 	fts_enableInterrupt(true);
 
@@ -5599,7 +5584,6 @@ static int fts_probe(struct spi_device *client)
 	info->resume_bit = 1;
 	info->notifier = fts_noti_block;
 
-#ifndef CONFIG_SKIP_HEATMAP
 	/* Set initial heatmap mode based on the device tree configuration.
 	 * Default is partial heatmap mode.
 	 */
@@ -5607,7 +5591,6 @@ static int fts_probe(struct spi_device *client)
 		info->heatmap_mode = FTS_HEATMAP_FULL;
 	else
 		info->heatmap_mode = FTS_HEATMAP_PARTIAL;
-#endif
 
 	/* init motion filter mode */
 	info->use_default_mf = false;
@@ -5648,11 +5631,9 @@ static int fts_probe(struct spi_device *client)
 	/* 120 Hz operation */
 	info->v4l2.timeperframe.numerator = 1;
 	info->v4l2.timeperframe.denominator = 120;
-#ifndef CONFIG_SKIP_HEATMAP
 	error = heatmap_probe(&info->v4l2);
 	if (error < OK)
 		goto ProbeErrorExit_6;
-#endif
 
 #if defined(FW_UPDATE_ON_PROBE) && defined(FW_H_FILE)
 	pr_info("FW Update and Sensing Initialization:\n");
@@ -5714,9 +5695,7 @@ ProbeErrorExit_7:
 
 	msm_drm_unregister_client(&info->notifier);
 
-#ifndef CONFIG_SKIP_HEATMAP
 	heatmap_remove(&info->v4l2);
-#endif
 
 ProbeErrorExit_6:
 	pm_qos_remove_request(&info->pm_qos_req);
@@ -5780,9 +5759,7 @@ static int fts_remove(struct spi_device *client)
 	/* remove interrupt and event handlers */
 	fts_interrupt_uninstall(info);
 
-#ifndef CONFIG_SKIP_HEATMAP
 	heatmap_remove(&info->v4l2);
-#endif
 
 	pm_qos_remove_request(&info->pm_qos_req);
 
