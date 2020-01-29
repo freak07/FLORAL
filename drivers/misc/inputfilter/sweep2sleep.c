@@ -25,7 +25,7 @@ MODULE_VERSION(DRIVER_VERSION);
 MODULE_LICENSE("GPL");
 
 //sweep2sleep
-#define S2S_PWRKEY_DUR         60
+#define S2S_PWRKEY_DUR         20
 #if 1
 // 3040x1440
 static int S2S_Y_MAX = 3040;
@@ -50,8 +50,10 @@ static int S2S_X_RIGHT_CORNER_START = 1290; // 1440-150
 static int s2s_onoff = 0;
 // 1=sweep right, 2=sweep left, 3=both
 static int s2s_switch = 0;
-static int s2s_filter_mode = 0; // 0 input filter NO, 1 YES RIGHT HANDED MODE, 2 YES LEFT HANDED MODE
+static int s2s_filter_mode = 0; // 0 input filter NO, 1 YES RIGHT HANDED MODE, 2 YES LEFT HANDED MODE, 3 BOTH HANDS
 static int s2s_doubletap_mode = 0; // 0 - off, 1 - powerOff, 2 - signal thru UCI
+static int s2s_longtap_switch = 1; // 0 - off, 1 - on, 2 - on/disable swipe gesture
+static int s2s_longtap_min_holdtime = 100; // 60 - 300 jiffies
 static int s2s_height = 130;
 static int s2s_doubletap_height = 70; // where doubletap Y coordinates are registered
 static int s2s_height_above = 20;
@@ -69,6 +71,7 @@ static bool scr_on_touch = false, barrier[2] = {false, false};
 static bool exec_count = true;
 static struct input_dev * sweep2sleep_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
+static DEFINE_MUTEX(longtapworklock);
 static struct workqueue_struct *s2s_input_wq;
 static struct work_struct s2s_input_work;
 //extern void set_vibrate(int value);
@@ -93,6 +96,9 @@ static int get_s2s_filter_mode(void) { // 0 off, 1 right handed, 2 left handed, 
 }
 static int get_s2s_doubletap_mode(void) {
 	return s2s_doubletap_mode;
+}
+static int get_s2s_longtap_switch(void) {
+	return s2s_longtap_switch;
 }
 static int get_s2s_height(void) {
 	return s2s_height;
@@ -181,12 +187,12 @@ static void sweep2sleep_presspwr(struct work_struct * sweep2sleep_presspwr_work)
 		goto exit_mutex;
 	}
 
+	// should indicate gesture cannot be done again till full screen off or unlocked
 	screen_off_after_gesture = false;
-
-	if (pause_before_pwr_off) msleep(300);
+	if (pause_before_pwr_off) msleep(260);
 	pause_before_pwr_off = false;
 
-	msleep(S2S_PWRKEY_DUR);
+	msleep(S2S_PWRKEY_DUR-20);
 
 	if (!check_no_finger(1)) {
 		set_vibrate_2(10,60);
@@ -216,21 +222,99 @@ static DECLARE_WORK(sweep2sleep_vib_work, sweep2sleep_vib);
 
 /* PowerKey trigger */
 static void sweep2sleep_pwrtrigger(void) {
-	set_vibrate_2(vib_strength,100);
-	// should indicate gesture cannot be done again till full screen off or unlocked
+	vib_power = 100;
+	schedule_work(&sweep2sleep_vib_work);
 	schedule_work(&sweep2sleep_presspwr_work);
         return;
 }
 
+static int last_tap_coord_x = 0;
+static int last_tap_coord_y = 0;
+static unsigned long last_tap_jiffies = 0;
+static bool last_tap_starts_in_dt_area = false;
+
+static int last_tap_for_longtap_coord_x = 0;
+static int last_tap_for_longtap_coord_y = 0;
+static unsigned long last_tap_for_longtap_jiffies = 0;
+
+static void reset_longtap_tracking(void) {
+	last_tap_for_longtap_coord_x = -1000;
+	last_tap_for_longtap_coord_y = -1000;
+	last_tap_for_longtap_jiffies = 0;
+}
+static void store_longtap_touch(void) {
+	last_tap_for_longtap_coord_x = touch_x;
+	last_tap_for_longtap_coord_y = touch_y;
+	last_tap_for_longtap_jiffies = jiffies;
+}
+
+static void reset_doubletap_tracking(void) {
+	last_tap_coord_x = 0;
+	last_tap_coord_y = 0;
+	last_tap_jiffies = 0;
+}
+static void store_doubletap_touch(void) {
+	last_tap_coord_x = touch_x;
+	last_tap_coord_y = touch_y;
+	last_tap_jiffies = jiffies;
+}
+
+static void sweep2sleep_longtap_count(struct work_struct * sweep2sleep_longtap_count_work) {
+	unsigned int last_tap_time_diff = 0;
+	mutex_lock(&longtapworklock);
+	store_longtap_touch();
+	while (true) {
+		mdelay(10);
+		if (last_tap_for_longtap_jiffies == 0) { // doubletap/longtap tracking was reset, when finger pulled off
+			break;
+		}
+		last_tap_time_diff = jiffies - last_tap_for_longtap_jiffies;
+		{
+			int delta_x = last_tap_for_longtap_coord_x - touch_x;
+			int delta_y = last_tap_for_longtap_coord_y - touch_y;
+#ifdef CONFIG_DEBUG_S2S
+			pr_info("%s longtap check at finger mvmnt, Time: %u X: %d Y: %d\n",__func__,last_tap_time_diff,delta_x,delta_y);
+#endif
+			if (delta_x > 60 || delta_x < -60 || delta_y > 60 || delta_y < -60) {
+				goto exit_mutex;
+			}
+		}
+		// first touch time is past enough (100)
+		if (last_tap_time_diff > s2s_longtap_min_holdtime) {
+			reset_doubletap_tracking();
+			reset_longtap_tracking();
+			if (get_s2s_doubletap_mode()==1) { // power button mode - long tap -> notif down
+				vib_power = 100;
+				schedule_work(&sweep2sleep_vib_work);
+				write_uci_out("fp_touch");
+			} else { // dt notif down mode -> long tap => power off
+				// wait a bit before actually emulate pwr button press in the trigger, to avoid wake screen on lockscreen touch
+				if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
+					pause_before_pwr_off = true;
+				}
+				sweep2sleep_pwrtrigger();
+			}
+			goto exit_mutex;
+		}
+	}
+exit_mutex:
+        mutex_unlock(&longtapworklock);
+	return;
+}
+static DECLARE_WORK(sweep2sleep_longtap_count_work, sweep2sleep_longtap_count);
+
+
 /* reset on finger release */
-static void sweep2sleep_reset(void) {
+static void sweep2sleep_reset(bool reset_filter_coords) {
 	exec_count = true;
 	barrier[0] = false;
 	barrier[1] = false;
 	firstx = 0;
 	first_event = false;
 	scr_on_touch = false;
-	filter_coords_status = false;
+	if (reset_filter_coords) {
+		filter_coords_status = false;
+	}
 }
 
 
@@ -259,6 +343,10 @@ static void detect_sweep2sleep(int x, int y, bool st)
 	if (get_s2s_switch() > 3)
 		s2s_switch = 3;
 
+	if (get_s2s_switch()==0 || (get_s2s_filter_mode() && get_s2s_doubletap_mode() && get_s2s_longtap_switch()==2)) { // swipe is not disabled with longtap / dt only mode (switch == 2)
+		return;
+	}
+
 	//left->right
 	if (single_touch && ((firstx < (S2S_X_RIGHT_CORNER_START-40) && firstx < (S2S_X_MAX/2) && !get_s2s_from_corner()) || ((firstx > get_s2s_width_cutoff()) && firstx < get_s2s_corner_width())) && (get_s2s_switch() & SWEEP_RIGHT)) {
 		scr_on_touch=true;
@@ -268,6 +356,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		   ((x > prevx) &&
 		    (x < nextx) &&
 		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
+			if (get_s2s_filter_mode() && get_s2s_doubletap_mode() && get_s2s_longtap_switch()) { first_event = false; } // don't vibrate when longtap is on...
 			if (((x > firstx + (15 + get_s2s_width()*0.3)) && first_event) || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously. Only start when at least X coordinate moved a little bit from first touch X (~20px)
 				if (exec_count) {
 					unsigned int last_vib_diff = jiffies - last_scheduled_vib_time;
@@ -282,6 +371,9 @@ static void detect_sweep2sleep(int x, int y, bool st)
 			prevx = nextx;
 			nextx += x_threshold_0;
 			barrier[0] = true;
+			if (x > firstx + (15 + get_s2s_width()*0.3)) {
+				reset_longtap_tracking();
+			}
 			if ((barrier[1] == true) ||
 			   ((x > prevx) &&
 			    (x < nextx) &&
@@ -292,6 +384,9 @@ static void detect_sweep2sleep(int x, int y, bool st)
 				    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) ) {
 					if (x > (nextx + x_threshold_1)) {
 						if (exec_count) {
+							if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
+								pause_before_pwr_off = true;
+							}
 							sweep2sleep_pwrtrigger();
 							exec_count = false;
 						}
@@ -308,6 +403,7 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		   ((x < prevx) &&
 		    (x > nextx) &&
 		    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) )) {
+			if (get_s2s_filter_mode() && get_s2s_doubletap_mode() && get_s2s_longtap_switch()) { first_event = false; } // don't vibrate when longtap is on...
 			if (((x < firstx - (15 + get_s2s_width()*0.3)) && first_event) || get_s2s_continuous_vib()) { // signal gesture start with vib, or continuously. Only start when at least X coordinate moved a little bit from first touch X (~20px)
 				if (exec_count) {
 					unsigned int last_vib_diff = jiffies - last_scheduled_vib_time;
@@ -322,6 +418,9 @@ static void detect_sweep2sleep(int x, int y, bool st)
 			prevx = nextx;
 			nextx -= x_threshold_0;
 			barrier[0] = true;
+			if (x < firstx - (15 + get_s2s_width()*0.3)) {
+				reset_longtap_tracking();
+			}
 			if ((barrier[1] == true) ||
 			   ((x < prevx) &&
 			    (x > nextx) &&
@@ -332,6 +431,9 @@ static void detect_sweep2sleep(int x, int y, bool st)
 				    ( (y > s2s_y_limit && y < s2s_y_above) || (filter_coords_status && get_s2s_filter_mode()) ) ) {
 					if (x < (nextx - x_threshold_1)) {
 						if (exec_count) {
+							if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
+								pause_before_pwr_off = true;
+							}
 							sweep2sleep_pwrtrigger();
 							exec_count = false;
 						}
@@ -350,33 +452,92 @@ static void s2s_input_callback(struct work_struct *unused) {
 	return;
 }
 
-static int last_tap_coord_x = 0;
-static int last_tap_coord_y = 0;
-static unsigned long last_tap_jiffies = 0;
-static bool last_tap_starts_in_dt_area = false;
 
-static void reset_doubletap_tracking(void) {
-	last_tap_coord_x = 0;
-	last_tap_coord_y = 0;
-	last_tap_jiffies = 0;
-}
-static void store_doubletap_touch(void) {
-	last_tap_coord_x = touch_x;
-	last_tap_coord_y = touch_y;
-	last_tap_jiffies = jiffies;
-}
 
 #ifdef CONFIG_DEBUG_S2S
 static int log_throttling_count = 0;
 #endif
 
-static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
+static int frozen_x = 0; // fake x/y for the user land
+static int frozen_y = 0;
+static int real_x = 0; // reported thru s2s_freeze_cords by touchscreen driver
+static int real_y = 0;
+
+
+#ifdef FULL_FILTER
+static int in_gesture_finger_counter = 0;
+#endif
+static int frozen_rand = 0;
+static bool freeze_touch_area_detected = false;
+
+bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
+	real_x = r_x;
+	real_y = r_y;
+	if (get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status) {
+		*x = S2S_X_MAX/2 + (frozen_rand)%2; // make some random variance so input report will actually get it through
+		*y = S2S_Y_MAX + 100 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
+
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
+#endif
+		return true;
+	}
+	{
+		int s2s_y_limit = get_s2s_y_limit();
+		int s2s_y_above = get_s2s_y_above();
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s touch x/y gathered.\n",__func__);
+#endif
+		if (get_s2s_switch() && get_s2s_filter_mode() && !filter_coords_status && !finger_counter) {
+			if (
+			// if ... first touch was not registered (filter_coords_status = false) && register only in corner area, and X is outside cordner area,
+			(!get_s2s_from_corner() || (get_s2s_from_corner() && (r_x > S2S_X_MAX - get_s2s_corner_width() || r_x < get_s2s_corner_width()))) &&
+			// or if... y is not in the touch area or x is not in the whole area,
+			(r_y < s2s_y_above && r_y > s2s_y_limit) &&
+			(r_x > get_s2s_width_cutoff()) && (r_x < S2S_X_MAX - get_s2s_width_cutoff()) &&
+			// or if in filtering mode (left right handed separately checked) and X is not in the 40% of the possible width, and this is still the first touch (!filter_coords_status)...
+			(
+			(get_s2s_filter_mode() == 1 && (r_x > (S2S_X_MAX * 0.60))) || // right handed, on the left side tapped shouldn't filter...
+			(get_s2s_filter_mode() == 2 && (r_x < (S2S_X_MAX * 0.40))) || // left handed, on the right side tapped...
+			(get_s2s_filter_mode() == 3 && (r_x > (S2S_X_MAX * 0.60) || r_x < (S2S_X_MAX * 0.40))) // both handed, in the middle region
+			)
+			)
+			{
+				*x = S2S_X_MAX/2 + (frozen_rand)%2; // make some random variance so input report will actually get it through
+				*y = S2S_Y_MAX + 100 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
+#ifdef CONFIG_DEBUG_S2S
+				pr_info("%s first touch --- frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
+#endif
+				freeze_touch_area_detected = true;
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(s2s_freeze_coords);
+
+
+
+#ifdef FULL_FILTER
+static bool filtering_on(void) {
+	return get_s2s_switch() && get_s2s_filter_mode() && (((filter_coords_status || freeze_touch_area_detected) && finger_counter<=1) || in_gesture_finger_counter>0);
+}
+#endif
+
+static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
 	bool first_touch_detection = false;
 
 	if (!setup_done) {
 		setup_done = true;
 		s2s_setup_values();
+	}
+
+	if (get_s2s_switch()==0) {
+		sweep2sleep_reset(true);
+		return false;
 	}
 
 	// if only reenable after a full sreen off is set, and the screen off not yet happened, s2s gesture shouldn't be available, return false here...
@@ -390,23 +551,44 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 #endif
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
+#ifdef FULL_FILTER
+		if (filtering_on()) {
+			in_gesture_finger_counter++;
+		}
+#endif
 		finger_counter++;
+
 		touch_down_called = true;
 		touch_x_called = false;
 		touch_y_called = false;
 		last_tap_starts_in_dt_area = false; // reset boolean
-		sweep2sleep_reset();
+		sweep2sleep_reset(true);
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s first touch...\n",__func__);
 #endif
+#ifdef FULL_FILTER
+		return filtering_on();
+#else
 		return false;
+#endif
 	}
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 0) {
+#ifdef FULL_FILTER
+		bool is_filtering_on = filtering_on();
+		if (filtering_on()) {
+			in_gesture_finger_counter--;
+			if (in_gesture_finger_counter<0) in_gesture_finger_counter = 0;
+		}
+#else
+		bool is_filtering_on = false;
+#endif
 		finger_counter--;
+
 		touch_down_called = false;
 		touch_x_called = false;
 		touch_y_called = false;
+		reset_longtap_tracking();
 		if (last_tap_starts_in_dt_area) {
 			int delta_x = last_tap_coord_x - touch_x;
 			int delta_y = last_tap_coord_y - touch_y;
@@ -417,8 +599,10 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int last_tap_time_diff = jiffies - last_tap_jiffies;
 				// first touch time is very close and didn't move more than 20px before leaving screen... finishing that touch within the area? vibrate...
 				if (last_tap_time_diff < 50) { 
-					vib_power = 60;
-					schedule_work(&sweep2sleep_vib_work);
+					if (!get_s2s_longtap_switch()) { // if not in longtap mode, then vibrate here (otherwise first touch already vibrates in other part of driver)
+						vib_power = 60;
+						schedule_work(&sweep2sleep_vib_work);
+					}
 				}
 			} else {
 				// finger leaving screen too far from the original touch point... cancel DT tracking data of first touch..
@@ -426,11 +610,11 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 			}
 		}
 		last_tap_starts_in_dt_area = false; // reset boolean
-		sweep2sleep_reset();
+		sweep2sleep_reset(true);
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s untouch...\n",__func__);
 #endif
-		return false;
+		return is_filtering_on;
 	}
 
 	if (code == ABS_MT_SLOT) {
@@ -439,27 +623,41 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s reset based on slot...\n",__func__);
 #endif
-		sweep2sleep_reset();
+		sweep2sleep_reset(false);
+#ifdef FULL_FILTER
+		return filtering_on();
+#else
 		return false;
+#endif
 	}
 
 	if (code == ABS_MT_TRACKING_ID && value == -1) {
 		touch_down_called = false;
 		touch_x_called = false;
 		touch_y_called = false;
-		sweep2sleep_reset();
+		sweep2sleep_reset(false);
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s untouch based on tracking id...\n",__func__);
 #endif
+#ifdef FULL_FILTER
+		return filtering_on();
+#else
 		return false;
+#endif
 	}
 
 	if (code == ABS_MT_POSITION_X && touch_down_called) {
+		if (get_s2s_switch() && get_s2s_filter_mode() && (filter_coords_status||freeze_touch_area_detected)) {
+			touch_x = real_x;
+		} else
 		touch_x = value;
 		touch_x_called = true;
 	}
 
 	if (code == ABS_MT_POSITION_Y && touch_down_called) {
+		if (get_s2s_switch() && get_s2s_filter_mode() && (filter_coords_status||freeze_touch_area_detected)) {
+			touch_y = real_y;
+		} else
 		touch_y = value;
 		touch_y_called = true;
 	}
@@ -487,7 +685,8 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 			)
 		{	// cancel now...
 			touch_down_called = false;
-			sweep2sleep_reset();
+			freeze_touch_area_detected = false;
+			sweep2sleep_reset(true);
 		} else {
 			// in touch area...
 			if (get_s2s_filter_mode()>0 && !filter_coords_status) { // filtered input mode, and first touch point registered without lifting finger...
@@ -503,7 +702,8 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 					if (last_tap_time_diff < 150) { // previous first touch time and coordinate comparision to detect double tap...
 						if (delta_x < 60 && delta_x > -60 && delta_y < 60 && delta_y > -60) {
 							touch_down_called = false;
-							sweep2sleep_reset();
+							sweep2sleep_reset(false); // do not let coordinate freezing yet off, finger is on screen and gesture is still on => (false)
+							filter_coords_status = true; // set filtering on...
 							if (get_s2s_doubletap_mode()==1) { // power button mode
 								// wait a bit before actually emulate pwr button press in the trigger, to avoid wake screen on lockscreen touch
 								if (uci_get_sys_property_int_mm("locked", 0, 0, 1)) { // if locked...
@@ -516,24 +716,58 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 								write_uci_out("fp_touch");
 							}
 							reset_doubletap_tracking();
+#ifdef FULL_FILTER
+							return filtering_on();
+#else
 							return false; // break out here, don't filter
+#endif
 						}
 					} else {
 						last_tap_starts_in_dt_area = true;
 					}
 					store_doubletap_touch();
+					if (get_s2s_longtap_switch()) {
+						vib_power = 70;
+						schedule_work(&sweep2sleep_vib_work);
+						schedule_work(&sweep2sleep_longtap_count_work);
+					}
 				}
 			}
 			// in touch area, set filter status True...
+			if (!filter_coords_status) {
+				frozen_x = touch_x;
+				frozen_y = touch_y;
+				frozen_rand = 0;
+			}
+			freeze_touch_area_detected = false;
 			filter_coords_status = true;
 
-			queue_work_on(0, s2s_input_wq, &s2s_input_work);
+			if (get_s2s_switch()==0 || (get_s2s_filter_mode() && get_s2s_doubletap_mode() && get_s2s_longtap_switch()==2)) { 
+				// swipe is disabled with longtap / dt only mode (switch == 2)
+			} else
+			{
+				queue_work_on(0, s2s_input_wq, &s2s_input_work);
+			}
 		}
 	}
+
+#ifdef FULL_FILTER
 	// filter if filter mode active and in sweep touch area, and...
 	// ...this is not right the first touch detection and so the Y coordinate 
 	//    which should NOT be filtered, or it will cause touch positioning issues...
-	return get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status && !first_touch_detection; 
+	return filtering_on();
+#else
+	return false; // touch driver should use s2s_freeze_cords, here we let all event through
+#endif
+}
+static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
+				unsigned int code, int value) {
+	bool ret = __s2s_input_filter(handle,type,code,value);
+#ifdef CONFIG_DEBUG_S2S
+	pr_info("%s [FILTER] fresult=%s , type: %d code: %d value: %d\n",__func__,ret?"TRUE":"FALSE",type,code,value);
+#endif
+	return ret;
+
 }
 
 static void s2s_input_event(struct input_handle *handle, unsigned int type,
@@ -552,6 +786,8 @@ static void uci_user_listener(void) {
 	s2s_switch = uci_get_user_property_int_mm("sweep2sleep_mode", s2s_switch, 0, 3);
 	s2s_filter_mode = uci_get_user_property_int_mm("sweep2sleep_filter_mode", s2s_filter_mode, 0, 3);
 	s2s_doubletap_mode = uci_get_user_property_int_mm("sweep2sleep_doubletap_mode", s2s_doubletap_mode, 0, 2);
+	s2s_longtap_switch = uci_get_user_property_int_mm("sweep2sleep_longtap_switch", s2s_longtap_switch, 0, 2);
+	s2s_longtap_min_holdtime = uci_get_user_property_int_mm("sweep2sleep_longtap_min_holdtime", s2s_longtap_min_holdtime, 60, 300); // 0.2 - 1 sec
 	s2s_height = uci_get_user_property_int_mm("sweep2sleep_height", s2s_height, 50, 350);
 	s2s_doubletap_height = uci_get_user_property_int_mm("sweep2sleep_doubletap_height", s2s_doubletap_height, 50, 350);
 	s2s_height_above = uci_get_user_property_int_mm("sweep2sleep_height_above", s2s_height_above, 0, 150);
@@ -577,6 +813,9 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 
 static int input_dev_filter(struct input_dev *dev) {
 	pr_info("%s sweep2sleep device filter check. Device: %s\n",__func__,dev->name);
+	if (strstr(dev->name, "qpnp_pon")) {
+		sweep2sleep_pwrdev = dev;
+	}
 	if (strstr(dev->name, "synaptics,s3320")) {
 		return 0;
 	} else
@@ -669,7 +908,7 @@ static int __init sweep2sleep_init(void)
 {
 	int rc = 0;
 
-	sweep2sleep_pwrdev = input_allocate_device();
+/*	sweep2sleep_pwrdev = input_allocate_device();
 	if (!sweep2sleep_pwrdev) {
 		pr_err("Failed to allocate sweep2sleep_pwrdev\n");
 		goto err_alloc_dev;
@@ -685,7 +924,7 @@ static int __init sweep2sleep_init(void)
 		pr_err("%s: input_register_device err=%d\n", __func__, rc);
 		goto err_input_dev;
 	}
-
+*/
 	s2s_input_wq = create_workqueue("s2s_iwq");
 	if (!s2s_input_wq) {
 		pr_err("%s: Failed to create workqueue\n", __func__);
@@ -711,10 +950,10 @@ static int __init sweep2sleep_init(void)
         uci_add_sys_listener(uci_sys_listener);
         ntf_add_listener(ntf_listener);
 
-err_input_dev:
-	input_free_device(sweep2sleep_pwrdev);
+//err_input_dev:
+//	input_free_device(sweep2sleep_pwrdev);
 
-err_alloc_dev:
+//err_alloc_dev:
 	pr_info("%s done\n", __func__);
 	return 0;
 }
@@ -724,8 +963,8 @@ static void __exit sweep2sleep_exit(void)
 	kobject_del(sweep2sleep_kobj);
 	input_unregister_handler(&s2s_input_handler);
 	destroy_workqueue(s2s_input_wq);
-	input_unregister_device(sweep2sleep_pwrdev);
-	input_free_device(sweep2sleep_pwrdev);
+//	input_unregister_device(sweep2sleep_pwrdev);
+//	input_free_device(sweep2sleep_pwrdev);
 
 	return;
 }
