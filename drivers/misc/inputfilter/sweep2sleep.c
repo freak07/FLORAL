@@ -469,13 +469,14 @@ static int in_gesture_finger_counter = 0;
 #endif
 static int frozen_rand = 0;
 static bool freeze_touch_area_detected = false;
+static unsigned long last_outside_area_touch_time = 0;
 
 bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
 	real_x = r_x;
 	real_y = r_y;
 	if (get_s2s_switch() && get_s2s_filter_mode() && filter_coords_status) {
 		*x = frozen_x + (frozen_rand)%2; // make some random variance so input report will actually get it through
-		*y = -10/*S2S_Y_MAX*/ + 3 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
+		*y = S2S_Y_MAX + 3 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
 
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
@@ -483,12 +484,13 @@ bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
 		return true;
 	}
 	{
+		unsigned int time_diff = last_outside_area_touch_time - jiffies; // to avoid accidental touch down detections after outside coordinates, avoid triggering stock gestures...
 		int s2s_y_limit = get_s2s_y_limit();
 		int s2s_y_above = get_s2s_y_above();
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s touch x/y gathered.\n",__func__);
 #endif
-		if (get_s2s_switch() && get_s2s_filter_mode() && !filter_coords_status && !finger_counter) {
+		if (get_s2s_switch() && get_s2s_filter_mode() && !filter_coords_status && !finger_counter && time_diff>15) {
 			if (
 			// if ... first touch was not registered (filter_coords_status = false) && register only in corner area, and X is outside cordner area,
 			(!get_s2s_from_corner() || (get_s2s_from_corner() && (r_x > S2S_X_MAX - get_s2s_corner_width() || r_x < get_s2s_corner_width()))) &&
@@ -504,7 +506,7 @@ bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
 			)
 			{
 				*x = r_x + (frozen_rand)%2; // make some random variance so input report will actually get it through
-				*y = -10/*S2S_Y_MAX*/ + 3 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
+				*y = S2S_Y_MAX + 3 + (frozen_rand++)%2; // don't let real Y get thru, it crashes the framework occasionally
 #ifdef CONFIG_DEBUG_S2S
 				pr_info("%s first touch --- frozen coords used filtered mode: %d %d\n",__func__,*x,*y);
 #endif
@@ -513,7 +515,8 @@ bool s2s_freeze_coords(int *x, int *y, int r_x, int r_y) {
 			}
 		}
 	}
-
+	freeze_touch_area_detected = false;
+	last_outside_area_touch_time = jiffies;
 	return false;
 }
 EXPORT_SYMBOL(s2s_freeze_coords);
@@ -559,7 +562,11 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		finger_counter++;
 
 		if (!get_s2s_filter_mode() || (get_s2s_filter_mode() && freeze_touch_area_detected)) { // not in filtered mode, or freeze touch area detected...start touch down...
-			touch_down_called = true;
+			if (finger_counter == 1) {
+				touch_down_called = true;
+			}
+		} else {
+			touch_down_called = false;
 		}
 		touch_x_called = false;
 		touch_y_called = false;
@@ -651,16 +658,18 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 	if (code == ABS_MT_POSITION_X && touch_down_called) {
 		if (get_s2s_switch() && get_s2s_filter_mode() && (filter_coords_status||freeze_touch_area_detected)) {
 			touch_x = real_x;
-		} else
-		touch_x = value;
+		} else {
+			touch_x = value;
+		}
 		touch_x_called = true;
 	}
 
 	if (code == ABS_MT_POSITION_Y && touch_down_called) {
 		if (get_s2s_switch() && get_s2s_filter_mode() && (filter_coords_status||freeze_touch_area_detected)) {
 			touch_y = real_y;
-		} else
-		touch_y = value;
+		} else {
+			touch_y = value;
+		}
 		touch_y_called = true;
 	}
 
