@@ -48,8 +48,7 @@ static void dp_hpd_isr(struct dp_hpd *dp_hpd)
 }
 
 struct dp_hpd *dp_hpd_get(struct device *dev, struct dp_parser *parser,
-		struct dp_catalog_hpd *catalog, struct usbpd *pd,
-		struct dp_hpd_cb *cb)
+		struct dp_catalog_hpd *catalog, struct dp_hpd_cb *cb)
 {
 	struct dp_hpd *dp_hpd;
 
@@ -68,7 +67,7 @@ struct dp_hpd *dp_hpd_get(struct device *dev, struct dp_parser *parser,
 		}
 		dp_hpd->type = DP_HPD_GPIO;
 	} else {
-		dp_hpd = dp_usbpd_init(dev, pd, cb);
+		dp_hpd = dp_usbpd_get(dev, cb);
 		if (IS_ERR(dp_hpd)) {
 			pr_err("failed to get usbpd\n");
 			goto out;
@@ -94,7 +93,7 @@ void dp_hpd_put(struct dp_hpd *dp_hpd)
 
 	switch (dp_hpd->type) {
 	case DP_HPD_USBPD:
-		dp_usbpd_deinit(dp_hpd);
+		dp_usbpd_put(dp_hpd);
 		break;
 	case DP_HPD_GPIO:
 		dp_gpio_hpd_put(dp_hpd);
