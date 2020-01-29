@@ -105,7 +105,7 @@ static void dp_ctrl_video_ready(struct dp_ctrl_private *ctrl)
 	complete(&ctrl->video_comp);
 }
 
-static void dp_ctrl_abort(struct dp_ctrl *dp_ctrl, bool reset)
+static void dp_ctrl_abort(struct dp_ctrl *dp_ctrl)
 {
 	struct dp_ctrl_private *ctrl;
 
@@ -116,7 +116,7 @@ static void dp_ctrl_abort(struct dp_ctrl *dp_ctrl, bool reset)
 
 	ctrl = container_of(dp_ctrl, struct dp_ctrl_private, dp_ctrl);
 
-	atomic_set(&ctrl->aborted, !reset);
+	atomic_set(&ctrl->aborted, 1);
 }
 
 static void dp_ctrl_state_ctrl(struct dp_ctrl_private *ctrl, u32 state)
