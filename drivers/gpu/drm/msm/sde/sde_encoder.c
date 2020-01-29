@@ -863,16 +863,12 @@ void sde_encoder_helper_split_config(
 	struct sde_hw_mdp *hw_mdptop;
 	enum sde_rm_topology_name topology;
 	struct msm_display_info *disp_info;
-	struct msm_mode_info mode_info;
-	struct drm_encoder *drm_enc;
-	int ret;
 
 	if (!phys_enc || !phys_enc->hw_mdptop || !phys_enc->parent) {
 		SDE_ERROR("invalid arg(s), encoder %d\n", phys_enc != 0);
 		return;
 	}
 
-	drm_enc = phys_enc->parent;
 	sde_enc = to_sde_encoder_virt(phys_enc->parent);
 	hw_mdptop = phys_enc->hw_mdptop;
 	disp_info = &sde_enc->disp_info;
@@ -907,21 +903,11 @@ void sde_encoder_helper_split_config(
 			phys_enc->ops.needs_single_flush(phys_enc))
 		cfg->split_flush_en = true;
 
-	cfg->pp_split_slave = INTF_MAX;
 	topology = sde_connector_get_topology_name(phys_enc->connector);
-	if (topology == SDE_RM_TOPOLOGY_PPSPLIT) {
+	if (topology == SDE_RM_TOPOLOGY_PPSPLIT)
 		cfg->pp_split_slave = cfg->intf;
-		ret = _sde_encoder_get_mode_info(drm_enc, &mode_info);
-		if (ret) {
-			SDE_ERROR_ENC(sde_enc, "failed to get mode info\n");
-			return;
-		}
-		cfg->overlap_pixel_width = mode_info.overlap_pixels;
-	}
-
-	if (topology == SDE_RM_TOPOLOGY_PPSPLIT
-			&& phys_enc->split_role == ENC_ROLE_SLAVE)
-		cfg->pp_slave_intf = true;
+	else
+		cfg->pp_split_slave = INTF_MAX;
 
 	if (phys_enc->split_role == ENC_ROLE_MASTER) {
 		SDE_DEBUG_ENC(sde_enc, "enable %d\n", cfg->en);
@@ -963,24 +949,6 @@ bool sde_encoder_in_clone_mode(struct drm_encoder *drm_enc)
 	}
 
 	return false;
-}
-
-bool sde_encoder_is_topology_ppsplit(struct drm_encoder *drm_enc)
-{
-	struct sde_encoder_virt *sde_enc;
-	struct sde_encoder_phys *master;
-
-	if (!drm_enc)
-		return false;
-
-	sde_enc = to_sde_encoder_virt(drm_enc);
-	master = sde_enc->cur_master;
-
-	if (!master || !master->connector)
-		return false;
-
-	return  (sde_connector_get_topology_name(master->connector)
-			== SDE_RM_TOPOLOGY_PPSPLIT);
 }
 
 static inline bool is_lp_mode(int mode)
