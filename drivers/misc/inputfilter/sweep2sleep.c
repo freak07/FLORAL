@@ -543,9 +543,6 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		return false;
 	}
 
-	// if only reenable after a full sreen off is set, and the screen off not yet happened, s2s gesture shouldn't be available, return false here...
-	if (get_s2s_reenable_after_screen_off() && !screen_off_after_gesture) return false;
-
 #ifdef CONFIG_DEBUG_S2S
 	if ((log_throttling_count++)%50>40) {
 		pr_info("%s type: %d code: %d value: %d -- max y = %d\n",__func__,type,code,value,S2S_Y_MAX);
@@ -625,6 +622,9 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 #endif
 		return is_filtering_on;
 	}
+
+	// if only reenable after a full sreen off is set, and the screen off not yet happened, s2s gesture shouldn't be available, return false here...
+	if (get_s2s_reenable_after_screen_off() && !screen_off_after_gesture) return false;
 
 	if (code == ABS_MT_SLOT) {
 		touch_x_called = false;
