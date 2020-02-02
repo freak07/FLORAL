@@ -226,12 +226,6 @@ static int get_face_down_screen_off(void) {
 bool should_screen_off_face_down(int screen_timeout_sec, int face_down);
 static void ifilter_pwrtrigger(int vibration, const char caller[]);
 
-
-// register input event alarm timer
-static void register_input_event(const char* caller) { 
-	ntf_input_event(caller,"");
-}
-
 void stop_kernel_ambient_display(bool interrupt_ongoing);
 
 int stored_lock_state = 0;
@@ -278,11 +272,11 @@ void ifilter_uci_sys_listener(void) {
 		last_face_down = face_down;
 	}
 	if (!locked&&stored_lock_state!=locked) {
-		register_input_event(__func__);
+		ntf_input_event(__func__,"");
 		stop_kernel_ambient_display(true);
 	} else
 	if (ifilter_ringing || ifilter_screen_waking_app) {
-		register_input_event(__func__);
+		ntf_input_event(__func__,"");
 		stop_kernel_ambient_display(true);
 	}
 	if (!screen_on && kad_should_start_on_uci_sys_change) {
@@ -584,7 +578,7 @@ static struct alarm register_input_rtc;
 static enum alarmtimer_restart register_input_rtc_callback(struct alarm *al, ktime_t now)
 {
 	pr_info("%s kad\n",__func__);
-	register_input_event(__func__);
+	ntf_input_event(__func__,"");
 	return ALARMTIMER_NORESTART;
 }
 
@@ -1074,7 +1068,7 @@ static bool ifilter_input_filter(struct input_handle *handle,
 	if (type != EV_KEY)
 		return false;
 
-	register_input_event(__func__);
+	ntf_input_event(__func__,"");
 	if (screen_on_full && !screen_off_early) {
 		squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
 		if (kad_running || kad_running_for_kcal_only) { 
@@ -2109,7 +2103,7 @@ static enum alarmtimer_restart check_single_fp_vib_rtc_callback(struct alarm *al
 	if (init_done) {
 		alarm_cancel(&kad_repeat_rtc);
 	}
-	register_input_event(__func__); // this is unlocking screen, register it as intentional input event...
+	ntf_input_event(__func__,""); // this is unlocking screen, register it as intentional input event...
 	check_single_fp_running = 0;
 	return ALARMTIMER_NORESTART;
 }
@@ -2124,12 +2118,12 @@ int register_fp_vibration(void) {
 		if (poke) {
 			ts_poke();
 		}
-		register_input_event(__func__);
+		ntf_input_event(__func__,"");
 	} else {
 		if (check_single_fp_running) {
 			if (((!kad_running || !get_kad_disable_fp_input()) && screen_on) || (kad_running_for_kcal_only && screen_on)) {
 				stop_kad_running(true,__func__);
-				register_input_event(__func__); // KAD is not running or shouldnt block fp input, (for KAD a double FP vib means no stopping if kad fp input disabled, 
+				ntf_input_event(__func__,""); // KAD is not running or shouldnt block fp input, (for KAD a double FP vib means no stopping if kad fp input disabled, 
 				// ...so might be pocket touch, do not register!)
 				// ...so it's either for a screen on state, or for Squeeze peek KCAL only, so registering user activity to cancel smart timing is ok.
 			}
@@ -2200,7 +2194,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 			last_nanohub_spurious_squeeze_timestamp = 0;
 			wait_for_squeeze_power = 1; // pwr trigger should be canceled if right after squeeze happens a power setting
 			// ..that would mean user is on the settings screen and calibrating.
-			register_input_event(__func__);
+			ntf_input_event(__func__,"");
 			if (!screen_on && get_squeeze_peek()) {
 				last_screen_event_timestamp = jiffies;
 				start_kad_running(KAD_FOR_SQUEEZE);
@@ -2275,7 +2269,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 				last_nanohub_spurious_squeeze_timestamp = 0;
 				wait_for_squeeze_power = 1; // pwr trigger should be canceled if right after squeeze happens a power setting
 				// ..that would mean user is on the settings screen and calibrating.
-				register_input_event(__func__);
+				ntf_input_event(__func__,"");
 				if (!screen_on && get_squeeze_peek()) {
 					last_screen_event_timestamp = jiffies;
 					start_kad_running(KAD_FOR_SQUEEZE);
@@ -2344,7 +2338,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 			wait_for_squeeze_power = 1; // pwr trigger should be canceled if right after squeeze happens a power setting
 			// ..that would mean user is on the settings screen and calibrating.
 			// also...
-			register_input_event(__func__);
+			ntf_input_event(__func__,"");
 			// if peek mode is on, and between long squeeze and short squeeze, peek
 			if (!screen_on && get_squeeze_peek()) {
 				pr_info("%s squeeze call -- power onoff - PEEK MODE - PEEK wake: %d\n",__func__,stage);
@@ -2375,7 +2369,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 			last_screen_event_timestamp = jiffies;
 			wait_for_squeeze_power = 1; // pwr trigger should be canceled if right after squeeze happens a power setting
 			// ..that would mean user is on the settings screen and calibrating.
-			register_input_event(__func__);
+			ntf_input_event(__func__,"");
 			ifilter_pwrtrigger(0,__func__); // POWER ON FULLY, NON PEEK
 			stop_kad_running(true,__func__);
 		} else if (screen_on && diff>MAX_SQUEEZE_TIME && diff<=MAX_SQUEEZE_TIME_LONG && (get_squeeze_swipe()||get_squeeze_sleep_on_long())) {
@@ -2391,7 +2385,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 					// call a bit of scrolling to show which direction it will go (full param = 0)
 					squeeze_swipe_short_trigger();
 					pr_info("%s squeeze TURN SWIPE DIRECTION -- END STAGE : %d\n",__func__,stage);
-					register_input_event(__func__);
+					ntf_input_event(__func__,"");
 					return; // exit with turning...
 				}
 				// if swipe mode is on or long squeeze sleep, and between long squeeze max time and short squeeze, power off...
@@ -2403,7 +2397,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 				}
 				return;
 			} else if (get_squeeze_swipe()) {
-				register_input_event(__func__);
+				ntf_input_event(__func__,"");
 				// turn direction as NO squeeze sleep is set on
 				longcount_squeeze_swipe_dir_change = 1;
 				squeeze_swipe_dir = !squeeze_swipe_dir;
@@ -2656,7 +2650,13 @@ static bool ts_input_filter(struct input_handle *handle,
 	if (kad_running && !kad_running_for_kcal_only && get_kad_disable_touch_input() && (type!=EV_KEY || ts_is_touchscreen_key_event(type,code))) {
 		// do nothing, don't stop stuff in led driver like flashlight etc...
 	} else {
-		register_input_event(__func__);
+#if 0
+		pr_info("%s event: %s t %d c %d v %d\n",__func__, handle->dev->name, type,code,value);
+#endif
+		if ( (strcmp("fts",handle->dev->name) && strcmp("sec_touchscreen",handle->dev->name)) || (type != EV_SYN && type != EV_MSC)) {
+			// from touchscreen SYNC and MSC events are not necessarily user inputs! only signal input if not such..
+			ntf_input_event(__func__,"");
+		}
 	}
 
 	//pr_info("%s ts input filter called t %d c %d v %d\n",__func__, type,code,value);
@@ -2689,7 +2689,7 @@ static bool ts_input_filter(struct input_handle *handle,
 					filter_next_power_key_up = true;
 					last_screen_event_timestamp = jiffies;
 					stop_kad_running(true,__func__);
-					register_input_event(__func__);
+					ntf_input_event(__func__,"");
 					ts_poke();
 					return true;
 				} else {
@@ -2890,14 +2890,14 @@ skip_ts:
 								// make timeout for kad
 								pr_info("%s kad first_one done == 1 DOUBLE TAP, interrupt kad and vibrate \n",__func__);
 								interrupt_kad_peekmode_wait = 1; // signal interruption for kad squeeze_peekmode work...
-								register_input_event(__func__); // stop flashlight...
+								ntf_input_event(__func__,""); // stop flashlight...
 								set_vibrate(20); 
 							} 
 #if 0
 							else {
 								last_screen_event_timestamp = jiffies;
 								stop_kad_running(true,__func__);
-								register_input_event(__func__);
+								ntf_input_event(__func__,"");
 								ts_poke();
 							}
 #endif
@@ -3149,7 +3149,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 				if (init_done) {
 					alarm_cancel(&kad_repeat_rtc);
 				}
-				register_input_event(__func__); // this is unlocking screen, register it as intentional input event... to stop other stuff in other drivers like flashlight
+				ntf_input_event(__func__,""); // this is unlocking screen, register it as intentional input event... to stop other stuff in other drivers like flashlight
 			//	register_fp_vibration();
 			}
 		}
