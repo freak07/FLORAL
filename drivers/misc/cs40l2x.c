@@ -5289,6 +5289,9 @@ static int cs40l2x_create_timed_output(struct cs40l2x_private *cs40l2x)
 	return 0;
 }
 #else
+#ifdef CONFIG_UCI_NOTIFICATIONS
+unsigned long last_vib_on_time = 0;
+#endif
 /* vibration callback for LED device */
 static void cs40l2x_vibe_brightness_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
@@ -5303,9 +5306,23 @@ static void cs40l2x_vibe_brightness_set(struct led_classdev *led_cdev,
 	switch (brightness) {
 	case LED_OFF:
 		queue_work(cs40l2x->vibe_workqueue, &cs40l2x->vibe_stop_work);
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		if (last_ext_set_index_is_non_click && last_vib_on_time>0) { // && !ntf_is_screen_on()) {
+			unsigned int time_diff = jiffies - last_vib_on_time;
+			last_vib_on_time = 0;
+			ntf_vibration(jiffies_to_msecs(time_diff));
+		}
+#endif
 		break;
 	default:
 		queue_work(cs40l2x->vibe_workqueue, &cs40l2x->vibe_start_work);
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		if (last_ext_set_index_is_non_click) { // && !ntf_is_screen_on()) {
+			last_vib_on_time = jiffies;
+		} else {
+			last_vib_on_time = 0;
+		}
+#endif
 	}
 }
 
