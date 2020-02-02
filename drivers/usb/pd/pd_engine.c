@@ -40,6 +40,10 @@
 #include <../../power/supply/google/logbuffer.h>
 #include <../../power/supply/qcom/smb5-reg.h>
 
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#include <linux/notification/notification.h>
+#endif
+
 #define LOG_BUFFER_ENTRIES	1024
 #define LOG_BUFFER_ENTRY_SIZE	256
 
@@ -897,6 +901,22 @@ static void psy_changed_handler(struct work_struct *work)
 	wireless_online = val.intval ? true : false;
 
 	parse_cc_status(typec_mode, typec_cc_orientation, &cc1, &cc2);
+#ifdef CONFIG_UCI_NOTIFICATIONS
+	switch (typec_mode) {
+		/* Disconnect */
+		case POWER_SUPPLY_TYPEC_NONE:
+			ntf_set_charge_state(false);
+		break;
+		/* Sink states */
+		case POWER_SUPPLY_TYPEC_SOURCE_DEFAULT:
+		case POWER_SUPPLY_TYPEC_SOURCE_MEDIUM:
+		case POWER_SUPPLY_TYPEC_SOURCE_HIGH:
+			ntf_set_charge_state(true);
+		break;
+		default:
+		break;
+	}
+#endif
 
 	logbuffer_log(pd->log,
 		      "type [%s], pe_start [%s], vbus_present [%s], mode [%s], orientation [%s], cc1 [%s], cc2 [%s], external_vbus_update [%s], wireless_online [%s]",
