@@ -639,10 +639,13 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 			flash_stop_blink();
 		}
 	}
-	if (!strcmp(event,NTF_EVENT_WAKE_BY_USER)) {
+	if (!strcmp(event,NTF_EVENT_WAKE_BY_USER)) { // SCREEN ON BY USER
 		flash_stop_blink();
 	}
-	if (!strcmp(event,NTF_EVENT_INPUT)) {
+	if (!strcmp(event,NTF_EVENT_LOCKED) && !num_param) { // UNLOCKED / faceunlock
+		flash_stop_blink();
+	}
+	if (!strcmp(event,NTF_EVENT_INPUT)) { // INPUT
 		if (ntf_wake_by_user()) {
 			flash_stop_blink();
 		}

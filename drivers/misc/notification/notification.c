@@ -98,7 +98,7 @@ void ntf_add_listener(void (*f)(char* event, int num_param, char* str_param)) {
 }
 EXPORT_SYMBOL(ntf_add_listener);
 
-static bool screen_on = false, screen_on_early = false, screen_off_early = false;
+static bool screen_on = true, screen_on_early = false, screen_off_early = false;
 static long last_input_event = 0;
 
 // ======= SCREEN ON/OFF
@@ -389,13 +389,10 @@ bool ntf_wake_by_user(void) {
 }
 EXPORT_SYMBOL(ntf_wake_by_user);
 
-void set_last_input_event(const char * caller) {
-        //I("%s caller %s",__func__,caller);
-        last_input_event = get_global_mseconds();
-}
 void ntf_input_event(const char* caller, const char *param) {
 	// input event happened, stop stuff, store timesamp, set wake_by_user
-	set_last_input_event(__func__);
+	//pr_info("%s called by %s",__func__,caller);
+	last_input_event = get_global_mseconds();
 	wake_by_user = true;
 	smart_set_last_user_activity_time();
 	ntf_notify_listeners(NTF_EVENT_INPUT,1,(char *)param);
@@ -417,9 +414,9 @@ void ntf_vibration(int length) {
 			ntf_notify_listeners(NTF_EVENT_NOTIFICATION, 1, NTF_EVENT_NOTIFICATION_ARG_HAPTIC);
 		}
 	}
-#if 1
+#if 0
 // htc u12
-//	if (length==TD_VALUE_HTC_U12_FINGERPRINT) register_fp_vibration();//ntf_input_event(__func__,"fp");
+	if (length==TD_VALUE_HTC_U12_FINGERPRINT) register_fp_vibration();//ntf_input_event(__func__,"fp");
 #endif
 }
 EXPORT_SYMBOL(ntf_vibration);
