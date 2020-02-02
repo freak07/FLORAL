@@ -132,6 +132,7 @@ bool ntf_is_charging(void) {
 EXPORT_SYMBOL(ntf_is_charging);
 
 bool charge_state_changed = true;
+unsigned long last_charge_state_change_time = 0;
 void ntf_set_charge_state(bool on) {
 #ifdef NTF_D_LOG
 	pr_info("%s [cleanslate] charge state = %d\n",__func__,on);
@@ -142,6 +143,7 @@ void ntf_set_charge_state(bool on) {
 		charge_state_changed = true;
 	}
 	is_charging = on;
+	last_charge_state_change_time = jiffies;
 }
 EXPORT_SYMBOL(ntf_set_charge_state);
 int charge_level = -1;
@@ -405,12 +407,15 @@ EXPORT_SYMBOL(ntf_input_event);
 
 void ntf_vibration(int length) {
 	if (length>=MIN_TD_VALUE_NOTIFICATION) {
+		unsigned int time_diff_charge = jiffies - last_charge_state_change_time;
 #if 1
 // op6
 		if (length==MIN_TD_VALUE_OP6_FORCED_FP) return;
 		if (length==MIN_TD_VALUE_OP6_SILENT_MODE) return;
 #endif
-		ntf_notify_listeners(NTF_EVENT_NOTIFICATION, 1, NTF_EVENT_NOTIFICATION_ARG_HAPTIC);
+		if (jiffies_to_msecs(time_diff_charge) > 1800) { // if charger attached too close in time, it will be a non notif vibration, don't trigger...
+			ntf_notify_listeners(NTF_EVENT_NOTIFICATION, 1, NTF_EVENT_NOTIFICATION_ARG_HAPTIC);
+		}
 	}
 #if 1
 // htc u12
