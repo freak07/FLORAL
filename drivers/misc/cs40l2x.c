@@ -5311,6 +5311,8 @@ static void cs40l2x_vibe_brightness_set(struct led_classdev *led_cdev,
 			unsigned int time_diff = jiffies - last_vib_on_time;
 			last_vib_on_time = 0;
 			ntf_vibration(jiffies_to_msecs(time_diff));
+		} else {
+			last_vib_on_time = 0;
 		}
 #endif
 		break;
