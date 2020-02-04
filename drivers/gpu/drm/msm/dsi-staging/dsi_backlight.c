@@ -45,8 +45,12 @@
 #define BL_STATE_LP		BL_CORE_DRIVER1
 #define BL_STATE_LP2		BL_CORE_DRIVER2
 
-bool backlight_dimmer = 0;
-module_param(backlight_dimmer, bool, 0644);
+#ifdef CONFIG_UCI
+static int backlight_min = 3;
+static bool backlight_dimmer = false;
+static u32 last_brightness;
+static bool first_brightness_set = false;
+#endif
 
 #ifdef CONFIG_UCI
 static struct dsi_backlight_config *bl_g;
@@ -100,6 +104,7 @@ static void uci_sys_listener(void) {
 		uci_lux_level = new_lux_level;
 	}
 }
+static int dsi_backlight_update_status(struct backlight_device *bd);
 static void uci_user_listener(void) {
 	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
@@ -109,6 +114,24 @@ static void uci_user_listener(void) {
 		uci_hbm_use_ambient_light = new_hbm_use_ambient_light;
 		uci_lux_level = -1;
 		uci_sys_listener();
+	}
+	{
+		bool change = false;
+		int on = backlight_dimmer?1:0;
+		int backlight_min_curr = backlight_min;
+
+		backlight_min = uci_get_user_property_int_mm("backlight_min", backlight_min, 3, 128);
+		on = !!uci_get_user_property_int_mm("backlight_dimmer", on, 0, 1);
+
+		if (on != backlight_dimmer || backlight_min_curr != backlight_min) change = true;
+
+		backlight_dimmer = on;
+
+		if (first_brightness_set && change) {
+			if (!(bl_g->bl_device->props.state & BL_CORE_FBBLANK)) {
+				dsi_backlight_update_status(bl_g->bl_device);
+			}
+		}
 	}
 }
 static void call_uci_sys(struct work_struct * call_uci_sys_work)
@@ -261,7 +284,11 @@ static u32 dsi_backlight_calculate_normal(struct dsi_backlight_config *bl,
 		/* map UI brightness into driver backlight level rounding it */
 		rc = dsi_backlight_lerp(
 			1, bl->brightness_max_level,
-			backlight_dimmer ? 3 : bl->bl_min_level, bl->bl_max_level,
+#ifdef CONFIG_UCI
+			backlight_dimmer ? backlight_min : bl->bl_min_level, bl->bl_max_level,
+#else
+			bl->bl_min_level, bl->bl_max_level,
+#endif
 			brightness, &bl_lvl);
 		if (unlikely(rc))
 			pr_err("failed to linearly interpolate, brightness unmodified\n");
@@ -487,10 +514,20 @@ static u32 dsi_backlight_calculate_hbm(struct dsi_backlight_config *bl,
 		}
 	}
 
+#ifdef CONFIG_UCI
+	{
+		int panel_bri_start = (backlight_dimmer && target_range==0) ? backlight_min : range->panel_bri_start; // normal range (0), backlight dimmer can be applied. Otherwise not (HBM).
+		rc = dsi_backlight_lerp(
+			range->user_bri_start, range->user_bri_end,
+			panel_bri_start, range->panel_bri_end,
+			brightness, &bl_lvl);
+	}
+#else
 	rc = dsi_backlight_lerp(
 		range->user_bri_start, range->user_bri_end,
 		range->panel_bri_start, range->panel_bri_end,
 		brightness, &bl_lvl);
+#endif
 	if (unlikely(rc))
 		pr_err("hbm: failed to linearly interpolate, brightness unmodified\n");
 
@@ -571,6 +608,10 @@ static int dsi_backlight_update_status(struct backlight_device *bd)
 	}
 	bl->bl_actual = bl_lvl;
 	bl->last_state = bd->props.state;
+#ifdef CONFIG_UCI
+	last_brightness = bl_lvl;
+	first_brightness_set = true;
+#endif
 
 done:
 	mutex_unlock(&panel->panel_lock);
