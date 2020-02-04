@@ -49,6 +49,8 @@ bool backlight_dimmer = 0;
 module_param(backlight_dimmer, bool, 0644);
 
 #ifdef CONFIG_UCI
+static struct dsi_backlight_config *bl_g;
+
 static bool last_hbm_mode = false;
 
 static int uci_switch_hbm(int on) {
@@ -57,6 +59,10 @@ static int uci_switch_hbm(int on) {
 
 	if (!bl_g->hbm)
 		return -ENOTSUPP;
+
+	if (on && bl_g->bl_device->props.state & BL_CORE_FBBLANK) {
+		return 0;
+	}
 
 	panel = container_of(bl_g, struct dsi_panel, bl_config);
 	dsi_panel_update_hbm(panel, hbm_mode);
@@ -774,6 +780,13 @@ static int dsi_backlight_register(struct dsi_backlight_config *bl)
 
 	if (sysfs_create_groups(&bl->bl_device->dev.kobj, bl_device_groups))
 		pr_warn("unable to create device groups\n");
+
+#ifdef CONFIG_UCI
+	bl_g = bl;
+	uci_add_sys_listener(uci_sys_listener);
+	uci_add_user_listener(uci_user_listener);
+	ntf_add_listener(ntf_listener);
+#endif
 
 	reg = regulator_get_optional(panel->parent, "lab");
 	if (!PTR_ERR_OR_ZERO(reg)) {
