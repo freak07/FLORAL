@@ -1382,7 +1382,7 @@ static void hdd_send_association_event(struct net_device *dev,
 
 		ucfg_p2p_status_connect(adapter->vdev);
 
-		hdd_info("wlan: " MAC_ADDRESS_STR " connected to "
+		hdd_nofl_info("wlan: " MAC_ADDRESS_STR " connected to "
 			MAC_ADDRESS_STR "\n",
 			MAC_ADDR_ARRAY(adapter->mac_addr.bytes),
 			MAC_ADDR_ARRAY(wrqu.ap_addr.sa_data));
@@ -1460,7 +1460,7 @@ static void hdd_send_association_event(struct net_device *dev,
 		hdd_debug("wlan: new IBSS peer connection to BSSID " MAC_ADDRESS_STR,
 			MAC_ADDR_ARRAY(sta_ctx->conn_info.bssId.bytes));
 	} else {                /* Not Associated */
-		hdd_info("wlan: disconnected");
+		hdd_nofl_info("wlan: disconnected");
 		memset(wrqu.ap_addr.sa_data, '\0', ETH_ALEN);
 		policy_mgr_decr_session_set_pcl(hdd_ctx->psoc,
 				adapter->device_mode, adapter->session_id);
@@ -1812,7 +1812,7 @@ static QDF_STATUS hdd_dis_connect_handler(struct hdd_adapter *adapter,
 	sme_ft_reset(mac_handle, adapter->session_id);
 	sme_reset_key(mac_handle, adapter->session_id);
 	if (hdd_remove_beacon_filter(adapter) != 0)
-		hdd_err("hdd_remove_beacon_filter() failed");
+		hdd_debug("hdd_remove_beacon_filter() failed");
 
 	if (eCSR_ROAM_IBSS_LEAVE == roamStatus) {
 		uint8_t i;
@@ -5404,7 +5404,7 @@ int hdd_set_genie_to_csr(struct hdd_adapter *adapter,
 	if (hdd_ctx->force_rsne_override &&
 	    (security_ie[0] == DOT11F_EID_RSN)) {
 		hdd_warn("Test mode enabled set def Auth and enc type. RSN IE passed in connect req: ");
-		qdf_trace_hex_dump(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_WARN,
+		qdf_trace_hex_dump(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_DEBUG,
 				   roam_profile->pRSNReqIE,
 				   roam_profile->nRSNReqIELength);
 
