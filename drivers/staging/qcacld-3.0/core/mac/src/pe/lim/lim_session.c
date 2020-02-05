@@ -840,7 +840,7 @@ void pe_delete_session(tpAniSirGlobal mac_ctx, tpPESession session)
 	TX_TIMER *timer_ptr;
 
 	if (!session || (session && !session->valid)) {
-		pe_err("session is not valid");
+		pe_debug("session already deleted or not valid");
 		return;
 	}
 

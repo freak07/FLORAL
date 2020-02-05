@@ -1606,7 +1606,10 @@ static QDF_STATUS lim_assoc_tx_complete_cnf(void *context,
 	uint16_t reason_code;
 	tpAniSirGlobal mac_ctx = (tpAniSirGlobal)context;
 
-	pe_debug("tx_complete= %d", tx_complete);
+	 pe_nofl_info("Assoc TX %s",
+		      (tx_complete == WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK) ?
+		      "success" : "fail");
+
 	if (tx_complete == WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK) {
 		assoc_ack_status = ACKED;
 		reason_code = QDF_STATUS_SUCCESS;
@@ -2174,9 +2177,9 @@ static QDF_STATUS lim_auth_tx_complete_cnf(void *context,
 	uint16_t auth_ack_status;
 	uint16_t reason_code;
 
-	pe_debug("tx_complete = %d %s", tx_complete,
-		(tx_complete == WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK) ?
-		 "success" : "fail");
+	pe_nofl_info("tx_complete = %d %s", tx_complete,
+		     (tx_complete == WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK) ?
+		     "success" : "fail");
 	if (tx_complete == WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK) {
 		mac_ctx->auth_ack_status = LIM_AUTH_ACK_RCD_SUCCESS;
 		auth_ack_status = ACKED;
@@ -2435,9 +2438,8 @@ alloc_packet:
 				qdf_mem_copy(body, auth_frame->challengeText,
 					     SIR_MAC_SAP_AUTH_CHALLENGE_LENGTH);
 				body += SIR_MAC_SAP_AUTH_CHALLENGE_LENGTH;
-
 				body_len -= SIR_MAC_SAP_AUTH_CHALLENGE_LENGTH +
-							SIR_MAC_CHALLENGE_ID_LEN;
+					    SIR_MAC_CHALLENGE_ID_LEN;
 			}
 		}
 
@@ -2475,7 +2477,7 @@ alloc_packet:
 			lim_add_fils_data_to_auth_frame(session, body);
 		}
 
-		pe_info("Tx Auth SN=%d TSN:%d status %d (%d) to "
+		pe_nofl_info("Tx Auth SN=%d TSN:%d status %d (%d) to "
 			MAC_ADDRESS_STR,
 			((mac_hdr->seqControl.seqNumHi << 4) | mac_hdr->seqControl.seqNumLo),
 			auth_frame->authTransactionSeqNumber,
