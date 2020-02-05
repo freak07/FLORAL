@@ -7945,7 +7945,7 @@ static void csr_process_fils_join_rsp(tpAniSirGlobal mac_ctx,
 					roam_info->fils_join_rsp->tk_len,
 					roam_info->fils_join_rsp->tk, 0);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
-		sme_err("Set context for unicast fail");
+		sme_debug("Set context for unicast fail");
 		goto process_fils_join_rsp_fail;
 	}
 	return;
@@ -12166,10 +12166,11 @@ csr_roam_chk_lnk_disassoc_ind(tpAniSirGlobal mac_ctx, tSirSmeRsp *msg_ptr)
 		return;
 	}
 
-	sme_err("DISASSOCIATION from peer =" MAC_ADDRESS_STR "reason: %d status: %d session: %d",
-		MAC_ADDR_ARRAY(pDisassocInd->peer_macaddr.bytes),
-		pDisassocInd->reasonCode,
-		pDisassocInd->statusCode, sessionId);
+	sme_nofl_info("disassoc from peer " MAC_ADDRESS_STR
+		      "reason: %d status: %d vid: %d",
+		      MAC_ADDR_ARRAY(pDisassocInd->peer_macaddr.bytes),
+		      pDisassocInd->reasonCode,
+		      pDisassocInd->statusCode, sessionId);
 	/*
 	 * If we are in neighbor preauth done state then on receiving
 	 * disassoc or deauth we dont roam instead we just disassoc
@@ -15974,7 +15975,7 @@ QDF_STATUS csr_send_join_req_msg(tpAniSirGlobal pMac, uint32_t sessionId,
 		}
 		qdf_mem_copy(&csr_join_req->selfMacAddr, &pSession->selfMacAddr,
 			     sizeof(tSirMacAddr));
-		sme_err("Connecting to ssid:%.*s bssid: "MAC_ADDRESS_STR" rssi: %d channel: %d country_code: %c%c",
+		sme_nofl_info("Connecting to ssid:%.*s bssid: "MAC_ADDRESS_STR" rssi: %d channel: %d country_code: %c%c",
 			csr_join_req->ssId.length, csr_join_req->ssId.ssId,
 			MAC_ADDR_ARRAY(pBssDescription->bssId),
 			pBssDescription->rssi, pBssDescription->channelId,
@@ -16743,8 +16744,8 @@ QDF_STATUS csr_send_join_req_msg(tpAniSirGlobal pMac, uint32_t sessionId,
 						QDF_MC_TIMER_TO_SEC_UNIT)/
 						QDF_MC_TIMER_TO_MS_UNIT);
 			if (!QDF_IS_STATUS_SUCCESS(packetdump_timer_status))
-				sme_err("cannot start packetdump timer status: %d",
-					packetdump_timer_status);
+				sme_debug("cannot start packetdump timer status: %d",
+					  packetdump_timer_status);
 		}
 #ifndef WLAN_MDM_CODE_REDUCTION_OPT
 		if (eWNI_SME_JOIN_REQ == messageType) {
@@ -22123,7 +22124,7 @@ fail:
 			"Malloc fail: Fail to send response to SME");
 		return;
 	}
-	sme_err("Sending set HW fail response to SME");
+	sme_debug("Sending set HW fail response to SME");
 	param->status = SET_HW_MODE_STATUS_ECANCELED;
 	param->cfgd_hw_mode_index = 0;
 	param->num_vdev_mac_entries = 0;
