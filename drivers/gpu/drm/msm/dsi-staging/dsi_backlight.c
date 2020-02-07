@@ -85,7 +85,6 @@ static bool screen_on = true;
 static void uci_sys_listener(void) {
 	if (screen_wake_by_user) {
 		int new_lux_level = uci_get_sys_property_int_mm("lux_level", 0, 0, 27000);
-		pr_info("%s hbm\n",__func__);
 		if (!uci_hbm_switch) {  // hbm switch is off..
 			if (last_hbm_mode) { // and it's set to hbm already in driver.. switch it off
 				uci_switch_hbm(0);
@@ -108,7 +107,6 @@ static int dsi_backlight_update_status(struct backlight_device *bd);
 static void uci_user_listener(void) {
 	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
-	pr_info("%s hbm\n",__func__);
 	if (new_hbm_switch!=uci_hbm_switch || new_hbm_use_ambient_light!=uci_hbm_use_ambient_light) {
 		uci_hbm_switch = new_hbm_switch;
 		uci_hbm_use_ambient_light = new_hbm_use_ambient_light;
