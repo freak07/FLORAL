@@ -103,10 +103,14 @@ static void uci_sys_listener(void) {
 		uci_lux_level = new_lux_level;
 	}
 }
+static bool lp_kcal_overlay = false;
+static int lp_kcal_overlay_level = 50;
 static int dsi_backlight_update_status(struct backlight_device *bd);
 static void uci_user_listener(void) {
 	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
+	lp_kcal_overlay = !!uci_get_user_property_int_mm("lp_kcal_overlay", 0, 0, 1);
+	lp_kcal_overlay_level = uci_get_user_property_int_mm("lp_kcal_overlay_level", 50, 20, 60);
 	if (new_hbm_switch!=uci_hbm_switch || new_hbm_use_ambient_light!=uci_hbm_use_ambient_light) {
 		uci_hbm_switch = new_hbm_switch;
 		uci_hbm_use_ambient_light = new_hbm_use_ambient_light;
@@ -118,7 +122,7 @@ static void uci_user_listener(void) {
 		int on = backlight_dimmer?1:0;
 		int backlight_min_curr = backlight_min;
 
-		backlight_min = uci_get_user_property_int_mm("backlight_min", backlight_min, 3, 128);
+		backlight_min = uci_get_user_property_int_mm("backlight_min", backlight_min, 2, 128);
 		on = !!uci_get_user_property_int_mm("backlight_dimmer", on, 0, 1);
 
 		if (on != backlight_dimmer || backlight_min_curr != backlight_min) change = true;
@@ -558,7 +562,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 	else
 		bl_lvl = dsi_backlight_calculate_normal(bl, bl_temp);
 
-	pr_debug("brightness=%d, bl_scale=%d, ad=%d, bl_lvl=%d, hbm = %d\n",
+	pr_info("brightness=%d, bl_scale=%d, ad=%d, bl_lvl=%d, hbm = %d\n",
 			brightness, bl->bl_scale, bl->bl_scale_ad, bl_lvl,
 			panel->hbm_mode);
 
@@ -607,7 +611,9 @@ static int dsi_backlight_update_status(struct backlight_device *bd)
 	bl->bl_actual = bl_lvl;
 	bl->last_state = bd->props.state;
 #ifdef CONFIG_UCI
-	last_brightness = bl_lvl;
+	if (bl_lvl>0) {
+		last_brightness = bl_lvl;
+	}
 	first_brightness_set = true;
 #endif
 
@@ -881,7 +887,12 @@ static int dsi_backlight_update_regulator(struct dsi_backlight_config *bl,
 
 	return rc;
 }
-
+#ifdef CONFIG_UCI
+extern int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b);
+extern int kcal_internal_restore(bool forced_update);
+extern void kcal_force_update(void);
+static bool kcal_override = false;
+#endif
 int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 {
 	struct backlight_device *bd = bl->bl_device;
@@ -902,6 +913,25 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 #endif
 	mutex_lock(&bd->ops_lock);
 	state = get_state_after_dpms(bl, power_mode);
+#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
+	if (is_lp_mode(state)) {
+		if (lp_kcal_overlay && last_brightness<=7) {
+			kcal_override = true;
+			kcal_internal_override(254,254,254,lp_kcal_overlay_level,lp_kcal_overlay_level,lp_kcal_overlay_level);
+			kcal_force_update();
+		} else {
+			if (kcal_override) {
+				kcal_internal_restore(true);
+				kcal_override = false;
+			}
+		}
+	} else {
+		if (kcal_override) {
+			kcal_internal_restore(true);
+			kcal_override = false;
+		}
+	}
+#endif
 
 	if (is_lp_mode(state)) {
 		rc = dsi_backlight_update_regulator(bl, state);
