@@ -590,6 +590,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		bool is_filtering_on = false;
 #endif
 		finger_counter--;
+		if (finger_counter<0) finger_counter = 0;
 
 		touch_down_called = false;
 		touch_x_called = false;
@@ -819,6 +820,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
         if (!strcmp(event,NTF_EVENT_SLEEP)) {
 		// screen off also should indicate gesture can be done again...
 		screen_off_after_gesture = true;
+		finger_counter = 0;
         }
 }
 
