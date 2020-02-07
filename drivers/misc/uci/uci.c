@@ -23,6 +23,8 @@
 #include <linux/mm.h>
 //file operation-
 
+//#define UCI_LOG_DEBUG
+
 #define CONFIG_MSM_RDM_NOTIFY
 #undef CONFIG_FB
 
@@ -200,7 +202,9 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 
 		inode=fp->f_inode;
 		fsize=inode->i_size;
+#ifdef UCI_LOG_DEBUG
 		pr_info("%s [uci] file size %d...  %s\n",__func__,(int)fsize,file_name);
+#endif
 		if (fsize> MAX_FILE_SIZE) { 
 			pr_err("uci file too big\n"); 
 			return -1;
@@ -219,7 +223,9 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 				pr_err("%s uci sys file too old, don't parse, return error. Age: %d\n",__func__,(int)delta_t.tv_sec);
 				return -3;
 			} else {
+#ifdef UCI_LOG_DEBUG
 				pr_info("%s uci sys file age ok, do parse. Age: %d\n",__func__,(int)delta_t.tv_sec);
+#endif
 			}
 		}
 
@@ -432,7 +438,9 @@ const char* uci_get_user_property_str(const char* property, const char* default_
 		}
 		spin_unlock(&cfg_rw_lock);
 	}
+#ifdef UCI_LOG_DEBUG
 	pr_info("%s uci get user prop *failed* %s\n",__func__, property);
+#endif
 	return default_value;
 }
 EXPORT_SYMBOL(uci_get_user_property_str);
@@ -475,7 +483,9 @@ const char* uci_get_sys_property_str(const char* property, const char* default_v
 		}
 		spin_unlock(&cfg_rw_lock);
 	}
+#ifdef UCI_LOG_DEBUG
 	pr_info("%s uci get sys prop *failed* %s\n",__func__, property);
+#endif
 	return default_value;
 }
 EXPORT_SYMBOL(uci_get_sys_property_str);
@@ -511,7 +521,9 @@ static DECLARE_WORK(reschedule_work, reschedule_work_func);
 
 static void parse_work_func(struct work_struct * parse_work_func_work)
 {
+#ifdef UCI_LOG_DEBUG
 	pr_info("%s uci \n",__func__);
+#endif
 	if (should_parse_user) parse_uci_user_cfg_file();
 	if (should_parse_sys) parse_uci_sys_cfg_file();
 	if (!first_parse_done) {
@@ -579,14 +591,18 @@ static int fb_notifier_callback(struct notifier_block *self,
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
+#ifdef UCI_LOG_DEBUG
 		pr_info("uci screen on -early\n");
+#endif
             break;
 
         case FB_BLANK_POWERDOWN:
         case FB_BLANK_HSYNC_SUSPEND:
         case FB_BLANK_VSYNC_SUSPEND:
         case FB_BLANK_NORMAL:
+#ifdef UCI_LOG_DEBUG
 		pr_info("uci screen off -early\n");
+#endif
             break;
         }
     }
@@ -627,8 +643,10 @@ static int fb_notifier_callback(
     if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
         return 0;
 
+#ifdef UCI_LOG_DEBUG
     pr_info("[info] %s go to the msm_drm_notifier_callback value = %d\n",
 	    __func__, (int)val);
+#endif
 
     if (evdata && evdata->data && val ==
 	MSM_DRM_EARLY_EVENT_BLANK) {
@@ -639,7 +657,9 @@ static int fb_notifier_callback(
 	case MSM_DRM_BLANK_UNBLANK:
 	    break;
 	default:
-	    pr_info("%s defalut\n", __func__);
+#ifdef UCI_LOG_DEBUG
+	    pr_info("%s default\n", __func__);
+#endif
 	    break;
 	}
     }
