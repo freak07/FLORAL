@@ -364,10 +364,10 @@ static int kad_start_delay_halfseconds = 2; // how long KAD should wait before s
 
 static int kad_running_for_aod_gesture = 0; // state, if KAD is initiated for aod gesture, repetition shouldn't be done
 
-__maybe_unused static int kad_kcal_sat = 128;
+static int kad_kcal_sat = 128;
 static int kad_kcal_val = 135;
 static int kad_kcal_cont = 255;
-__maybe_unused static int peek_kcal_sat = 128;
+static int peek_kcal_sat = 128;
 static int peek_kcal_val = 254;
 static int peek_kcal_cont = 254;
 
@@ -390,11 +390,9 @@ static int get_kad_pick_up_block_camera(void) {
 	return uci_get_user_property_int_mm("kad_pick_up_block_camera", 0, 0, 1);
 }
 
-#if 0
 static int get_kad_kcal_sat(void) {
 	return uci_get_user_property_int_mm("kad_kcal_sat", kad_kcal_sat, 128, 383);
 }
-#endif
 static int get_kad_kcal_val(void) {
 	return uci_get_user_property_int_mm("kad_kcal_val", kad_kcal_val, 128, 383);
 }
@@ -410,11 +408,10 @@ static int get_kad_kcal_g(void) {
 static int get_kad_kcal_b(void) {
 	return uci_get_user_property_int_mm("kad_kcal_b", kad_kcal_b, 40, 256);
 }
-#if 0
+
 static int get_peek_kcal_sat(void) {
 	return uci_get_user_property_int_mm("peek_kcal_sat", peek_kcal_sat, 128, 383);
 }
-#endif
 static int get_peek_kcal_val(void) {
 	return uci_get_user_property_int_mm("peek_kcal_val", peek_kcal_val, 128, 383);
 }
@@ -607,7 +604,7 @@ static void kcal_restore_sync(bool force_kcal_update) {
 			int retry_count = 2;
 			pr_info("%s kad RRRRRRRRRRRR restore... screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 			while (retry_count-->0) {
-				if (screen_on) {
+				if (screen_on && kcal_internal_restore(force_kcal_update)) {
 					needs_kcal_restore_on_screen_on = 0;
 					kad_kcal_overlay_on = 0;
 					kad_kcal_backed_up = 0; // changes to kcal may happen in user apps...don't take granted it's backed up (like night mode)
@@ -677,6 +674,7 @@ static void kcal_set(struct work_struct * kcal_set_work)
 				pr_info("%s kad backup... BBBBBBBBBBBB   screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 				while (retry_count-->0) {
 					if (screen_on) {
+						kcal_internal_backup();
 						kad_kcal_backed_up = 1;
 						break;
 					}
@@ -690,13 +688,13 @@ static void kcal_set(struct work_struct * kcal_set_work)
 			pr_info("%s kad override... SSSSSSSSSS   screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 			while (retry_count-->0) {
 				if (!kad_running_for_kcal_only && !kad_running_for_aod_gesture) {
-					if (screen_on ,get_kad_kcal_val(),get_kad_kcal_cont(), get_kad_kcal_r(), get_kad_kcal_g(), get_kad_kcal_b()) {
+					if (screen_on && kcal_internal_override(get_kad_kcal_sat(),get_kad_kcal_val(),get_kad_kcal_cont(), get_kad_kcal_r(), get_kad_kcal_g(), get_kad_kcal_b())) {
 						kad_kcal_overlay_on = 1;
 						done = true;
 						break;
 					}
 				} else {
-					if (screen_on, get_peek_kcal_val(),get_peek_kcal_cont(), get_peek_kcal_r(), get_peek_kcal_g(), get_peek_kcal_b()) {
+					if (screen_on && kcal_internal_override(get_peek_kcal_sat(),get_peek_kcal_val(),get_peek_kcal_cont(), get_peek_kcal_r(), get_peek_kcal_g(), get_peek_kcal_b())) {
 						kad_kcal_overlay_on = 1;
 						done = true;
 						break;
@@ -3129,7 +3127,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
         if (!strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
         } else
         if (!strcmp(event,NTF_EVENT_INPUT)) {
-#if 0
+#ifdef CONFIG_IFILTER_KCAL_ANYTIME
 		if (!kad_running && !kad_running_for_kcal_only) {
 			kcal_internal_restore(true);
 		}
