@@ -407,6 +407,12 @@ int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int
 		pr_info("%s kad unable to lock\n",__func__);
 		return 0;
 	}
+
+	if (override) {
+		mutex_unlock(&kcal_int_lock);
+		return -1;
+	}
+
 	{
 		pr_info("%s kad lock ### override kcal rgb: sat %d val %d cont %d | r %d g %d b %d\n",__func__, kcal_sat, kcal_val, kcal_cont, r,g,b);
 		stored_sat = kcal_sat;
