@@ -245,7 +245,8 @@ extern void init_wait_entry(struct wait_queue_entry *wq_entry, int flags);
 #define ___wait_event(wq_head, condition, state, exclusive, ret, cmd)		\
 ({										\
 	__label__ __out;							\
-	struct wait_queue_entry __wq_entry;					\
+	/* Unconditionally initialized by init_wait_entry(). */			\
+	struct wait_queue_entry __wq_entry __do_not_initialize;			\
 	long __ret = ret;	/* explicit shadow */				\
 										\
 	init_wait_entry(&__wq_entry, exclusive ? WQ_FLAG_EXCLUSIVE : 0);	\
