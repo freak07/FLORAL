@@ -281,6 +281,10 @@ struct ftrace_likely_data {
 #define __nocfi
 #endif
 
+#ifndef __do_not_initialize
+#define __do_not_initialize
+#endif
+
 #ifndef __noscs
 #define __noscs
 #endif

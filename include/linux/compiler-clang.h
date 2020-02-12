@@ -65,3 +65,9 @@
 #else
 # define __noscs
 #endif
+
+#ifdef CONFIG_INIT_STACK_ALL
+#define __do_not_initialize __attribute__((uninitialized))
+#else
+#define __do_not_initialize
+#endif
