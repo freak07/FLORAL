@@ -77,10 +77,22 @@ static int uci_switch_hbm(int on) {
 }
 
 static int uci_lux_level = -1;
+static int uci_lux_level_detailed = -1;
 static bool uci_hbm_switch = false;
 static bool uci_hbm_use_ambient_light = false;
 static bool screen_wake_by_user = false;
 static bool screen_on = true;
+
+static bool is_lp_mode_on = false;
+extern int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b);
+extern int kcal_internal_restore(bool forced_update);
+extern void kcal_force_update(void);
+// user params
+static bool lp_kcal_overlay = false;
+static bool lp_kcal_overlay_dynamic = false;
+static int lp_kcal_overlay_level = 50;
+
+extern void uci_force_sde_update(void);
 
 static void uci_sys_listener(void) {
 	if (screen_wake_by_user) {
@@ -102,14 +114,28 @@ static void uci_sys_listener(void) {
 		}
 		uci_lux_level = new_lux_level;
 	}
+	if (is_lp_mode_on && lp_kcal_overlay_dynamic) {
+		int new_lux_level = uci_get_sys_property_int_mm("lux_level_detailed", 0, 0, 27000);
+		pr_info("%s [aod_dimmer] is_lp_mode_on - sys - new lux level %d\n",__func__,new_lux_level);
+		if (lp_kcal_overlay && new_lux_level <=10) {
+			int lvl = lp_kcal_overlay_level + new_lux_level;
+			if (kcal_internal_override(254,254,254,lvl,lvl,lvl)>0) {
+				pr_info("%s [aod_dimmer] is_lp_mode_on - sys - force_update - lvl %d\n",__func__,lvl);
+				kcal_force_update();
+				uci_force_sde_update();
+			}
+		} else {
+			kcal_internal_restore(true);
+		}
+		uci_lux_level_detailed = new_lux_level;
+	}
 }
-static bool lp_kcal_overlay = false;
-static int lp_kcal_overlay_level = 50;
 static int dsi_backlight_update_status(struct backlight_device *bd);
 static void uci_user_listener(void) {
 	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
 	lp_kcal_overlay = !!uci_get_user_property_int_mm("lp_kcal_overlay", 0, 0, 1);
+	lp_kcal_overlay_dynamic = !!uci_get_user_property_int_mm("lp_kcal_overlay_dynamic", 1, 0, 1);
 	lp_kcal_overlay_level = uci_get_user_property_int_mm("lp_kcal_overlay_level", 50, 20, 60);
 	if (new_hbm_switch!=uci_hbm_switch || new_hbm_use_ambient_light!=uci_hbm_use_ambient_light) {
 		uci_hbm_switch = new_hbm_switch;
@@ -887,12 +913,7 @@ static int dsi_backlight_update_regulator(struct dsi_backlight_config *bl,
 
 	return rc;
 }
-#ifdef CONFIG_UCI
-extern int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b);
-extern int kcal_internal_restore(bool forced_update);
-extern void kcal_force_update(void);
-static bool kcal_override = false;
-#endif
+
 int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 {
 	struct backlight_device *bd = bl->bl_device;
@@ -915,20 +936,25 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 	state = get_state_after_dpms(bl, power_mode);
 #ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
 	if (is_lp_mode(state)) {
+		pr_info("%s [aod_dimmer] lp_mode - last_brightness %d\n",__func__,last_brightness);
 		if (lp_kcal_overlay && last_brightness<=7) {
-			kcal_override = true;
-			kcal_internal_override(254,254,254,lp_kcal_overlay_level,lp_kcal_overlay_level,lp_kcal_overlay_level);
-			kcal_force_update();
-		} else {
-			if (kcal_override) {
-				kcal_internal_restore(true);
-				kcal_override = false;
+			if (kcal_internal_override(254,254,254,lp_kcal_overlay_level,lp_kcal_overlay_level,lp_kcal_overlay_level)>0) {
+				kcal_force_update();
 			}
+		} else {
+			kcal_internal_restore(true);
+		}
+		is_lp_mode_on = true;
+		if (lp_kcal_overlay && lp_kcal_overlay_dynamic) {
+			uci_lux_level_detailed = -1;
+			write_uci_out("aod_lp_on");
 		}
 	} else {
-		if (kcal_override) {
-			kcal_internal_restore(true);
-			kcal_override = false;
+		kcal_internal_restore(true);
+		is_lp_mode_on = false;
+		if (lp_kcal_overlay && lp_kcal_overlay_dynamic) {
+			uci_lux_level_detailed = -1;
+			write_uci_out("aod_lp_off");
 		}
 	}
 #endif
