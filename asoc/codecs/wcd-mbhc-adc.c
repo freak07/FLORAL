@@ -31,7 +31,7 @@
 #include "wcd-mbhc-v2.h"
 #include "pdata.h"
 
-#define WCD_MBHC_ADC_HS_THRESHOLD_MV    1700
+#define WCD_MBHC_ADC_HS_THRESHOLD_MV    1767
 #define WCD_MBHC_ADC_HPH_THRESHOLD_MV   75
 #define WCD_MBHC_ADC_MICBIAS_MV         1800
 #define WCD_MBHC_FAKE_INS_RETRY         4
@@ -48,7 +48,7 @@ static int wcd_mbhc_get_micbias(struct wcd_mbhc *mbhc)
 	 * micbias = 1.0V + VOUT_CTL * 50mV
 	 */
 	micbias = 1000 + (vout_ctl * 50);
-	pr_debug("%s: vout_ctl: %d, micbias: %d\n",
+	pr_info("%s: vout_ctl: %d, micbias: %d\n",
 		 __func__, vout_ctl, micbias);
 
 	return micbias;
@@ -102,7 +102,7 @@ static int wcd_measure_adc_continuous(struct wcd_mbhc *mbhc)
 	/* Get voltage from ADC result */
 	output_mv = wcd_get_voltage_from_adc(adc_result,
 					     wcd_mbhc_get_micbias(mbhc));
-	pr_debug("%s: adc_result: 0x%x, output_mv: %d\n",
+	pr_info("%s: adc_result: 0x%x, output_mv: %d\n",
 		 __func__, adc_result, output_mv);
 
 	return output_mv;
@@ -163,7 +163,7 @@ static int wcd_measure_adc_once(struct wcd_mbhc *mbhc, int mux_ctl)
 			__func__, adc_complete, adc_timeout);
 		ret = -EINVAL;
 	} else {
-		pr_debug("%s: adc complete: %d, adc timeout: %d output_mV: %d\n",
+		pr_info("%s: adc complete: %d, adc timeout: %d output_mV: %d\n",
 			__func__, adc_complete, adc_timeout, output_mv);
 		ret = output_mv;
 	}
@@ -486,7 +486,7 @@ static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 		}
 	}
 	if (is_spl_hs) {
-		pr_debug("%s: Headset with threshold found\n",  __func__);
+		pr_info("%s: Headset with threshold found\n",  __func__);
 		mbhc->micbias_enable = true;
 		ret = true;
 	}
@@ -625,7 +625,7 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 	int try = 0;
 	int hs_threshold, micbias_mv;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_info("%s: enter\n", __func__);
 
 	mbhc = container_of(work, struct wcd_mbhc, correct_plug_swch);
 	codec = mbhc->codec;
@@ -639,16 +639,18 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 	WCD_MBHC_RSC_UNLOCK(mbhc);
 
 	/* Check for cross connection */
-	do {
-		cross_conn = wcd_check_cross_conn(mbhc);
-		try++;
-	} while (try < mbhc->swap_thr);
+	if (mbhc->swap_detect) {
+		do {
+			cross_conn = wcd_check_cross_conn(mbhc);
+			try++;
+		} while (try < mbhc->swap_thr);
 
-	if (cross_conn > 0) {
-		plug_type = MBHC_PLUG_TYPE_GND_MIC_SWAP;
-		pr_debug("%s: cross connection found, Plug type %d\n",
-			 __func__, plug_type);
-		goto correct_plug_type;
+		if (cross_conn > 0) {
+			plug_type = MBHC_PLUG_TYPE_GND_MIC_SWAP;
+			pr_debug("%s: cross connection found, Plug type %d\n",
+				 __func__, plug_type);
+			goto correct_plug_type;
+		}
 	}
 	/* Find plug type */
 	output_mv = wcd_measure_adc_continuous(mbhc);
@@ -734,7 +736,8 @@ correct_plug_type:
 		if (mbhc->mbhc_cb->hph_pa_on_status)
 			is_pa_on = mbhc->mbhc_cb->hph_pa_on_status(mbhc->codec);
 
-		if ((output_mv <= hs_threshold) &&
+		if (mbhc->swap_detect && (output_mv <= WCD_MBHC_ADC_HS_THRESHOLD_MV) &&
+		    (output_mv <= hs_threshold) &&
 		    (!is_pa_on)) {
 			/* Check for cross connection*/
 			ret = wcd_check_cross_conn(mbhc);
@@ -786,14 +789,16 @@ correct_plug_type:
 					continue;
 				}
 			}
+		} else if (!mbhc->swap_detect) {
+			plug_type = MBHC_PLUG_TYPE_HEADSET;
 		}
 
 		if (output_mv > hs_threshold) {
-			pr_debug("%s: cable is extension cable\n", __func__);
+			pr_info("%s: cable is extension cable\n", __func__);
 			plug_type = MBHC_PLUG_TYPE_HIGH_HPH;
 			wrk_complete = true;
 		} else {
-			pr_debug("%s: cable might be headset: %d\n", __func__,
+			pr_info("%s: cable might be headset: %d\n", __func__,
 				 plug_type);
 			if (plug_type != MBHC_PLUG_TYPE_GND_MIC_SWAP) {
 				plug_type = wcd_mbhc_get_plug_from_adc(
@@ -948,16 +953,13 @@ exit:
 static irqreturn_t wcd_mbhc_adc_hs_rem_irq(int irq, void *data)
 {
 	struct wcd_mbhc *mbhc = data;
-	unsigned long timeout;
 	int adc_threshold, output_mv, retry = 0;
 	bool hphpa_on = false;
 	u8  moisture_status = 0;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_info("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 
-	timeout = jiffies +
-		  msecs_to_jiffies(WCD_FAKE_REMOVAL_MIN_PERIOD_MS);
 	adc_threshold = wcd_mbhc_adc_get_hs_thres(mbhc);
 
 	do {
@@ -973,11 +975,11 @@ static irqreturn_t wcd_mbhc_adc_hs_rem_irq(int irq, void *data)
 			 __func__, output_mv);
 		if ((output_mv <= adc_threshold) &&
 		    retry > FAKE_REM_RETRY_ATTEMPTS) {
-			pr_debug("%s: headset is NOT actually removed\n",
+			pr_info("%s: headset is NOT actually removed\n",
 				 __func__);
 			goto exit;
 		}
-	} while (!time_after(jiffies, timeout));
+	} while (retry <= FAKE_REM_RETRY_ATTEMPTS);
 
 	if (wcd_swch_level_remove(mbhc)) {
 		pr_debug("%s: Switch level is low ", __func__);
@@ -1050,7 +1052,7 @@ static irqreturn_t wcd_mbhc_adc_hs_ins_irq(int irq, void *data)
 	u8 clamp_state = 0;
 	u8 clamp_retry = WCD_MBHC_FAKE_INS_RETRY;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_info("%s: enter\n", __func__);
 
 	/*
 	 * ADC COMPLETE and ELEC_REM interrupts are both enabled for HEADPHONE,
