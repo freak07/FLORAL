@@ -72,6 +72,8 @@ static int haptic_mode = 0; // 0 - always blink, 1 - only blink with haptic vibr
 #endif
 static int flash_only_face_down = 1;
 
+static bool in_call = false;
+
 static bool flash_start_queued = false;
 
 #if 0
@@ -318,7 +320,7 @@ void do_flash_blink(void) {
 	pr_info("%s ########################## flash_blink ############################# \n",__func__);
 	alarm_cancel(&flash_blink_unidle_smp_cpu_rtc); // stop pending alarm... no need to unidle cpu in that alarm...
 
-	if (currently_torch_mode || interrupt_retime) return;
+	if (currently_torch_mode || interrupt_retime || in_call) return;
 
 	dim = is_dim_blink_needed();
 	pr_info("%s dim %d\n",__func__,dim);
@@ -529,6 +531,7 @@ void flash_blink(bool haptic) {
 	if (!haptic && uci_get_flash_haptic_mode()) return;
 	if (haptic && get_flash_ignore_vibration()) return;
 #endif
+	if (in_call) return;
 
 	// if torch i on, don't blink
 	if (currently_torch_mode) return;
@@ -655,6 +658,12 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 			flash_blink(true);
 		} else {
 			flash_stop_blink();
+		}
+	}
+	if (!strcmp(event,NTF_EVENT_IN_CALL)) { // call started
+		in_call = !!num_param;
+		if (in_call) {
+			flash_stop_blink(); // stop flash/vib reminder
 		}
 	}
 

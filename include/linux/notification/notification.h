@@ -37,6 +37,7 @@ enum notif_led_type {
 #define NTF_EVENT_PROXIMITY "proximity"
 #define NTF_EVENT_LOCKED "locked"
 #define NTF_EVENT_CAMERA_ON "camera"
+#define NTF_EVENT_IN_CALL "in_call"
 
 #define NTF_EVENT_NOTIFICATION_ARG_HAPTIC "haptic"
 
