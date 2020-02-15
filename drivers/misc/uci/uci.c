@@ -55,53 +55,36 @@ struct notifier_block *uci_msm_drm_notif;
 
 
 // file operations
-int uci_fwrite(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
-    mm_segment_t oldfs;
+int uci_fwrite(struct file* file, loff_t pos, unsigned char* data, unsigned int size) {
     int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_write(file, data, size, &offset);
-
-    set_fs(oldfs);
+    ret = kernel_write(file, data, size, &pos);
     return ret;
 }
 
 int uci_read(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
-    mm_segment_t oldfs;
     int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_read(file, data, size, &offset);
-
-    set_fs(oldfs);
+    ret = kernel_read(file, data, size, &offset);
     return ret;
 }
 
 void uci_fclose(struct file* file) {
-    filp_close(file, NULL);
+    fput(file);
 }
 
 struct file* uci_fopen(const char* path, int flags, int rights) {
     struct file* filp = NULL;
-    mm_segment_t oldfs;
     int err = 0;
 
-    oldfs = get_fs();
-    set_fs(get_ds());
     filp = filp_open(path, flags, rights);
-    set_fs(oldfs);
+
     if(IS_ERR(filp)) {
         err = PTR_ERR(filp);
-    pr_err("[uci]File Open Error:%s %d\n",path, err);
+	pr_err("[uci]File Open Error:%s %d\n",path, err);
         return NULL;
     }
     if(!filp->f_op){
-    pr_err("[uci]File Operation Method Error!!\n");
-    return NULL;
+        pr_err("[uci]File Operation Method Error!!\n");
+        return NULL;
     }
 
     return filp;
@@ -127,32 +110,34 @@ char *krnl_cfg_queue[MAX_PARAMS];
 static int queue_length = 0;
 
 static int stamp = 0;
-static char stamps[10][3] = {"0\n\0","1\n\0","2\n\0","3\n\0","4\n\0","5\n\0","6\n\0","7\n\0","8\n\0","9\n\0"};
+static char stamps[10][3] = {"0\n","1\n","2\n","3\n","4\n","5\n","6\n","7\n","8\n","9\n"};
 
 void write_uci_krnl_cfg_file(void) {
 	// locking
 	struct file*fp = NULL;
 	int rc = 0;
 	int i = 0;
-	char to_write[1000];
+	loff_t pos = 0;
+	unsigned char to_write[1000] = "";
+
 	spin_lock(&cfg_w_lock);
-	strcat((char*)to_write, "#cleanslate kernel out\n");
+	strcat(to_write, "#cleanslate kernel out\n");
 	for (i=0; i<queue_length;i++) {
-		strcat((char*)to_write, krnl_cfg_queue[i]);
-		strcat((char*)to_write, "\n");
+		strcat(to_write, krnl_cfg_queue[i]);
+		strcat(to_write, "\n");
 	}
-	strcat((char*)to_write,stamps[stamp++]);
+	strcat(to_write,stamps[stamp++]);
 	if (stamp==10) stamp = 0;
 	queue_length = 0;
-
 	spin_unlock(&cfg_w_lock); // must unlock here, fopen may sleep
 	// UNLOCK
 
 	pr_info("%s [CLEANSLATE] uci writing file kernel out...\n",__func__);
-	fp=uci_fopen (UCI_KERNEL_FILE, O_WRONLY|O_CREAT|O_TRUNC, 0);
+	fp=uci_fopen (UCI_KERNEL_FILE, O_RDWR | O_CREAT | O_TRUNC, 0600);
 	if (fp) {
-		rc = uci_fwrite(fp,0,to_write,strlen(to_write));
+		rc = uci_fwrite(fp,pos,to_write,strlen(to_write));
 		if (rc) pr_info("%s [CLEANSLATE] uci error file kernel out...%d\n",__func__,rc);
+		vfs_fsync(fp,1);
 		uci_fclose(fp);
 		pr_info("%s [CLEANSLATE] uci closed file kernel out...\n",__func__);
 	}
