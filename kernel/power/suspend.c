@@ -254,17 +254,11 @@ static void s2idle_enter(void)
 
 static void s2idle_loop(void)
 {
-	
-	ktime_t delta = 0;
-	
 	pm_pr_dbg("suspend-to-idle\n");
 
 	for (;;) {
-		ktime_t before;
 		int error;
-		
 		bool leave_s2idle = false;
-		before = ktime_get();
 
 		dpm_noirq_begin();
 
@@ -323,23 +317,6 @@ static void s2idle_loop(void)
 		 * reenable wakeup reason logging).
 		 */
 		pm_wakeup_clear(false);
-
-		/*
-		 * Count all iterations except for the last one as "sleep time".
-		 */
-		delta = ktime_add(delta, ktime_sub(ktime_get(), before));
-	}
-
-	/*
-	 * If the monotonic clock difference between the start of the loop and
-	 * this point is too large, user space may get confused about whether or
-	 * not the system has been suspended and tasks may get killed by
-	 * watchdogs etc., so compensate for that.
-	 */
-	if (ktime_to_ns(delta) > 0) {
-		struct timespec64 timespec64_delta = ktime_to_timespec64(delta);
-
-		timekeeping_inject_sleeptime64(&timespec64_delta);
 		clear_wakeup_reasons();
 	}
 
