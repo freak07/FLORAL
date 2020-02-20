@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 
-obj-$(CONFIG_UNICODE) += unicode.o
-
-unicode-y := utf8-norm.o utf8-core.o
+obj-$(CONFIG_UNICODE) += utf8-norm.o
 
 # This rule is not invoked during the kernel compilation.  It is used to
 # regenerate the utf8data.h header file.
