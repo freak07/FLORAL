@@ -524,7 +524,7 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	u8 *raw_key = NULL;
 	int res;
 
-	if (fscrypt_has_encryption_key(inode))
+	if (inode->i_crypt_info)
 		return 0;
 
 	res = fscrypt_initialize(inode->i_sb->s_cop->flags);
@@ -600,7 +600,7 @@ int fscrypt_get_encryption_info(struct inode *inode)
 		goto out;
 
 done:
-	if (cmpxchg_release(&inode->i_crypt_info, NULL, crypt_info) == NULL)
+	if (cmpxchg(&inode->i_crypt_info, NULL, crypt_info) == NULL)
 		crypt_info = NULL;
 out:
 	if (res == -ENOKEY)
