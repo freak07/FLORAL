@@ -526,7 +526,6 @@ static ssize_t dwc3_link_state_write(struct file *file,
 		return 0;
 	}
 
-
 	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
 		return -EFAULT;
 

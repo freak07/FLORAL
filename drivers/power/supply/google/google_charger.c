@@ -83,7 +83,6 @@
 #define PDO_FIXED_FLAGS \
 	(PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP | PDO_FIXED_USB_COMM)
 
-
 #define CHG_TERM_LONG_DELAY_MS		300000	/* 5 min */
 #define CHG_TERM_SHORT_DELAY_MS		60000	/* 1 min */
 #define CHG_TERM_RETRY_MS		2000	/* 2 sec */
@@ -107,7 +106,18 @@ enum pd_pps_stage {
 	PPS_DISABLED,
 };
 
+enum pd_nr_pdo {
+	PDO_FIXED_5V = 1,
+	PDO_FIXED_HIGH_VOLTAGE,
+	PDO_PPS,
+
+	PDO_MAX_SUPP = PDO_PPS,
+	PDO_MAX = PDO_MAX_OBJECTS,	/* 7 */
+};
+
 struct pd_pps_data {
+	struct wakeup_source pps_ws;
+	bool stay_awake;
 	unsigned int stage;
 	int pd_online;
 	time_t last_update;
@@ -115,6 +125,7 @@ struct pd_pps_data {
 	uint8_t chg_flags;
 	int nr_src_cap;
 	u32 *src_caps;
+	u32 default_pps_pdo;
 
 	int min_uv;
 	int max_uv;
@@ -205,6 +216,8 @@ struct chg_drv {
 	int chg_mode;			/* debug */
 	int stop_charging;		/* no power source */
 	int egain_retries;
+	u32 snk_pdo[PDO_MAX_OBJECTS];
+	unsigned int nr_snk_pdo;
 
 	/* retail */
 	int disable_charging;		/* from retail */
@@ -238,6 +251,8 @@ google_chg_alarm_handler(struct alarm *alarm, ktime_t time)
 {
 	struct chg_drv *chg_drv =
 	    container_of(alarm, struct chg_drv, chg_wakeup_alarm);
+
+	__pm_stay_awake(&chg_drv->chg_ws);
 
 	schedule_delayed_work(&chg_drv->chg_work, 0);
 
@@ -290,19 +305,21 @@ static char *psy_usbc_type_str[] = {
 };
 
 /* */
-static int cgh_update_capability(struct power_supply *tcpm_psy, bool full)
+static int chg_update_capability(struct power_supply *tcpm_psy,
+				 unsigned int nr_pdo,
+				 u32 pps_cap)
 {
-	int ret;
 	struct tcpm_port *port = (struct tcpm_port *)
 				 power_supply_get_drvdata(tcpm_psy);
-	u32 pdo[2] = { PDO_FIXED(5000, PD_SNK_MAX_MA, PDO_FIXED_FLAGS),
-		       PDO_FIXED(PD_SNK_MAX_MV, PD_SNK_MAX_MA_9V, 0), };
 
-	ret = tcpm_update_sink_capabilities(port, pdo,
-					    (full) ? 1 : 2,
-					    OP_SNK_MW);
+	u32 pdo[] = { PDO_FIXED(5000, PD_SNK_MAX_MA, PDO_FIXED_FLAGS),
+		      PDO_FIXED(PD_SNK_MAX_MV, PD_SNK_MAX_MA_9V, 0),
+		      pps_cap };
 
-	return ret;
+	if (!nr_pdo || nr_pdo > PDO_MAX_SUPP)
+		return -EINVAL;
+
+	return tcpm_update_sink_capabilities(port, pdo, nr_pdo, OP_SNK_MW);
 }
 
 /* called on google_charger_init_work() and on every disconnect */
@@ -328,6 +345,8 @@ static inline void chg_init_state(struct chg_drv *chg_drv)
 	chg_drv->pps_data.nr_src_cap = 0;
 	tcpm_put_partner_src_caps(&chg_drv->pps_data.src_caps);
 	chg_drv->pps_data.src_caps = NULL;
+	if (chg_drv->pps_data.stay_awake)
+		__pm_relax(&chg_drv->pps_data.pps_ws);
 }
 
 /* NOTE: doesn't reset chg_drv->adapter_details.v = 0 see chg_work() */
@@ -339,10 +358,14 @@ static inline void chg_reset_state(struct chg_drv *chg_drv)
 
 	if (chg_drv->chg_term.enable)
 		chg_reset_termination_data(chg_drv);
-	if (chg_drv->chg_term.usb_5v == 1) {
-		cgh_update_capability(chg_drv->tcpm_psy, false);
+
+	chg_update_capability(chg_drv->tcpm_psy,
+			      chg_drv->pps_data.default_pps_pdo ?
+			      PDO_PPS : PDO_FIXED_HIGH_VOLTAGE,
+			      chg_drv->pps_data.default_pps_pdo);
+
+	if (chg_drv->chg_term.usb_5v == 1)
 		chg_drv->chg_term.usb_5v = 0;
-	}
 
 	/* TODO: handle interaction with PPS code */
 	vote(chg_drv->msc_interval_votable, CHG_PPS_VOTER, false, 0);
@@ -630,25 +653,6 @@ static int pps_get_src_cap(struct pd_pps_data *pps,
 	return pps->nr_src_cap;
 }
 
-static int pps_update_capability(struct power_supply *tcpm_psy, u32 pps_cap)
-{
-	struct tcpm_port *port = (struct tcpm_port *)
-					power_supply_get_drvdata(tcpm_psy);
-	int ret;
-	u32 pdo[3];
-
-	/* Always Fixed 5V in the first PDO */
-	pdo[0] = PDO_FIXED(5000, PD_SNK_MAX_MA, PDO_FIXED_FLAGS);
-	pdo[1] = PDO_FIXED(PD_SNK_MAX_MV, PD_SNK_MAX_MA_9V, 0);
-	pdo[2] = pps_cap;
-
-	ret = tcpm_update_sink_capabilities(port, pdo,
-					    sizeof(pdo) / sizeof(pdo[0]),
-					    OP_SNK_MW);
-
-	return ret;
-}
-
 /* return the update interval pps will vote for
  * . 0 to disable the PPS update internval voter
  * . <0 for error
@@ -672,6 +676,9 @@ static int pps_work(struct pd_pps_data *pps, struct power_supply *tcpm_psy)
 				pps->pd_online = TCPM_PSY_FIXED_ONLINE;
 				return 0;
 			}
+
+			if (pps->stay_awake)
+				__pm_stay_awake(&pps->pps_ws);
 
 			pps->last_update = get_boot_sec();
 			rc = pps_get_src_cap(pps, tcpm_psy);
@@ -725,6 +732,8 @@ static int pps_work(struct pd_pps_data *pps, struct power_supply *tcpm_psy)
 			/* pps_update_interval==0 disable the vote */
 			logbuffer_log(pps->log,"PPS not supported");
 			pps->stage = PPS_DISABLED;
+			if (pps->stay_awake)
+				__pm_relax(&pps->pps_ws);
 		} else if (rc != 0) {
 			logbuffer_log(pps->log,
 				      "failed to set PROP_ONLINE, rc = %d",
@@ -824,6 +833,8 @@ static int pps_update_adapter(struct chg_drv *chg_drv,
 		pps->pd_online = TCPM_PSY_FIXED_ONLINE;
 		pps->keep_alive_cnt = 0;
 		logbuffer_log(pps->log,"PPS deactivated while updating");
+		if (pps->stay_awake)
+			__pm_relax(&pps->pps_ws);
 	}
 
 	return ret;
@@ -1336,8 +1347,13 @@ update_charger:
 	/* tied to the charger: could tie to battery @ 100% instead */
 	if ((chg_drv->chg_term.usb_5v == 0) && chg_done) {
 		pr_info("MSC_CHG switch to 5V on full\n");
-		cgh_update_capability(chg_drv->tcpm_psy, true);
+		chg_update_capability(chg_drv->tcpm_psy, PDO_FIXED_5V, 0);
 		chg_drv->chg_term.usb_5v = 1;
+	} else if (chg_drv->pps_data.stage == PPS_ACTIVE && chg_done) {
+		pr_info("MSC_CHG switch to Fixed Profile on full\n");
+		chg_drv->pps_data.stage = PPS_DISABLED;
+		chg_update_capability(chg_drv->tcpm_psy, PDO_FIXED_HIGH_VOLTAGE,
+				      0);
 	}
 
 	/* WAR: battery overcharge on a weak adapter */
@@ -1357,6 +1373,12 @@ rerun_error:
 		pr_err("MSC_CHG error rerun=%d in %d ms (%d)\n",
 			success, CHG_WORK_ERROR_RETRY_MS, rc);
 
+	/* If stay_awake is false, we are safe to ping the adapter */
+	if (!chg_drv->pps_data.stay_awake &&
+	    chg_drv->pps_data.stage == PPS_ACTIVE)
+		pps_ping(&chg_drv->pps_data, chg_drv->tcpm_psy);
+
+	return;
 exit_chg_work:
 	/* Route adapter details after the roundtrip since google_battery
 	 * might overwrite the value when it starts a new cycle.
@@ -1382,11 +1404,31 @@ exit_chg_work:
 
 // ----------------------------------------------------------------------------
 
+static int chg_parse_pdos(struct chg_drv *chg_drv)
+{
+	int i;
+
+	for (i = 0; i < chg_drv->nr_snk_pdo; i++) {
+		u32 pdo = chg_drv->snk_pdo[i];
+		enum pd_pdo_type type = pdo_type(pdo);
+
+		if (type == PDO_TYPE_APDO) {
+			chg_drv->pps_data.default_pps_pdo = pdo;
+			return 0;
+		}
+	}
+
+	return -ENODATA;
+}
+
 /* return negative when using ng charging */
 static int chg_init_chg_profile(struct chg_drv *chg_drv)
 {
 	struct device *dev = chg_drv->device;
 	struct device_node *node = dev->of_node;
+	struct device_node *dn;
+	const __be32 *prop;
+	int length;
 	u32 temp;
 	int ret;
 
@@ -1454,6 +1496,54 @@ static int chg_init_chg_profile(struct chg_drv *chg_drv)
 		pr_info("renegotiate on full\n");
 		chg_drv->chg_term.usb_5v = 0;
 	}
+
+	/* The port needs to ping or update the PPS adapter every 10 seconds
+	 * (maximum). However, Qualcomm PD phy returns error when system is
+	 * waking up. To prevent the timeout when system is resumed from
+	 * suspend, hold a wakelock while PPS is active.
+	 *
+	 * Remove this wakeup source once we fix the Qualcomm PD phy issue.
+	 */
+	chg_drv->pps_data.stay_awake =
+		of_property_read_bool(node, "google,pps-awake");
+
+	prop = of_get_property(node, "google,usbc-connector", NULL);
+	if (!prop) {
+		pr_err("Coundn't find usbc-connector property\n");
+		return -ENOENT;
+	}
+
+	dn = of_find_node_by_phandle(be32_to_cpup(prop));
+	if (!dn) {
+		pr_err("Coundn't find usb_con node\n");
+		return -ENOENT;
+	}
+
+	prop = of_get_property(dn, "sink-pdos", &length);
+	if (!prop) {
+		pr_err("Coundn't find sink-pdos property\n");
+		of_node_put(dn);
+		return -ENOENT;
+	}
+	if (!length || (length / sizeof(u32)) > PDO_MAX_OBJECTS) {
+		pr_err("Invalid length of sink-pdos\n");
+		of_node_put(dn);
+		return -EINVAL;
+	}
+
+	chg_drv->nr_snk_pdo = length / sizeof(u32);
+
+	ret = of_property_read_u32_array(dn, "sink-pdos", chg_drv->snk_pdo,
+					 length / sizeof(u32));
+	if (ret) {
+		pr_err("Couldn't read sink-pdos, ret %d\n", ret);
+		of_node_put(dn);
+		return ret;
+	}
+
+	chg_parse_pdos(chg_drv);
+
+	of_node_put(dn);
 
 	pr_info("charging profile in the battery\n");
 
@@ -1973,7 +2063,8 @@ static int pps_switch_profile(struct chg_drv *chg_drv, bool more_pwr)
 			pdo = PDO_PPS_APDO(PD_SNK_MIN_MV,
 					   PD_SNK_MAX_MV,
 					   PD_SNK_MAX_MA);
-			ret = pps_update_capability(chg_drv->tcpm_psy, pdo);
+			ret = chg_update_capability(chg_drv->tcpm_psy, PDO_PPS,
+						    pdo);
 			if (ret < 0)
 				logbuffer_log(pps->log,
 					"Failed to update sink caps, ret %d",
@@ -1983,7 +2074,8 @@ static int pps_switch_profile(struct chg_drv *chg_drv, bool more_pwr)
 			   max_ma > current_ma) {
 			/* TODO: tune the max_mv */
 			pdo = PDO_PPS_APDO(PD_SNK_MIN_MV, 6000, PD_SNK_MAX_MA);
-			ret = pps_update_capability(chg_drv->tcpm_psy, pdo);
+			ret = chg_update_capability(chg_drv->tcpm_psy, PDO_PPS,
+						    pdo);
 			if (ret < 0)
 				logbuffer_log(pps->log,
 					"Failed to update sink caps, ret %d",
@@ -2361,9 +2453,11 @@ static int chg_set_fcc_charge_cntl_limit(struct thermal_cooling_device *tcd,
 
 	tdev->current_level = lvl;
 
-	if (tdev->current_level == tdev->thermal_levels)
+	if (tdev->current_level == tdev->thermal_levels) {
+		pr_info("MSC_THERM_FCC lvl=%d charge disable\n", lvl);
 		return vote(chg_drv->msc_chg_disable_votable,
 					THERMAL_DAEMON_VOTER, true, 0);
+	}
 
 	vote(chg_drv->msc_chg_disable_votable, THERMAL_DAEMON_VOTER, false, 0);
 
@@ -2407,6 +2501,8 @@ static int chg_set_dc_in_charge_cntl_limit(struct thermal_cooling_device *tcd,
 			power_supply_set_property(chg_drv->wlc_psy,
 				POWER_SUPPLY_PROP_ONLINE, &pval);
 		}
+
+		pr_info("MSC_THERM_DC lvl=%d dc disable\n", lvl);
 
 		return 0;
 	}
@@ -2761,6 +2857,9 @@ static int google_charger_probe(struct platform_device *pdev)
 	/* votables and chg_work need a wakeup source */
 	wakeup_source_init(&chg_drv->chg_ws, "google-charger");
 
+	/* pps may need a wakeup source */
+	wakeup_source_init(&chg_drv->pps_data.pps_ws, "google-pps");
+
 	/* create the votables before talking to google_battery */
 	ret = chg_create_votables(chg_drv);
 	if (ret < 0)
@@ -2815,6 +2914,7 @@ static int google_charger_remove(struct platform_device *pdev)
 			power_supply_put(chg_drv->tcpm_psy);
 
 		wakeup_source_trash(&chg_drv->chg_ws);
+		wakeup_source_trash(&chg_drv->pps_data.pps_ws);
 
 		alarm_try_to_cancel(&chg_drv->chg_wakeup_alarm);
 

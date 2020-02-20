@@ -38,6 +38,12 @@ What:		/sys/fs/f2fs/<disk>/main_blkaddr
 Date:		November 2019
 Contact:	"Ramon Pantin" <pantin@google.com>
 Description:
+		 Controls the issue rate of segment discard commands.
+
+What:		/sys/fs/f2fs/<disk>/max_blkaddr
+Date:		November 2019
+Contact:	"Ramon Pantin" <pantin@google.com>
+Description:
 		 Shows first block address of MAIN area.
 
 What:		/sys/fs/f2fs/<disk>/ipu_policy

@@ -25,6 +25,8 @@
 #define P9221_EPP_THRESHOLD_UV			7000000
 #define P9221_MAX_VOUT_SET_MV_DEFAULT		9000
 
+#define P9221_DEFAULT_VOTER			"DEFAULT_VOTER"
+
 /*
  * P9221 common registers
  */
@@ -215,6 +217,22 @@
 #define P9221R5_MODE_EXTENDED			BIT(3)
 #define P9221R5_MODE_WPCMODE			BIT(0)
 
+/*
+ * P9382 unique registers
+ */
+#define P9382A_I2C_ADDRESS			0x3b
+
+#define P9382A_CHIP_ID				0x9382
+#define P9382A_DATA_SEND_BUF_START		0x130
+#define P9382A_DATA_RECV_BUF_START		0x1B0
+
+#define P9382A_STATUS_REG			0x34
+
+#define P9382A_MODE_TXMODE			BIT(2)
+
+
+
+
 struct p9221_charger_platform_data {
 	int				irq_gpio;
 	int				irq_int;
@@ -223,6 +241,8 @@ struct p9221_charger_platform_data {
 	int				qien_gpio;
 	int				slct_gpio;
 	int				slct_value;
+	int				ben_gpio;
+	int				switch_gpio;
 	int				max_vout_mv;
 	u8				fod[P9221R5_NUM_FOD];
 	u8				fod_epp[P9221R5_NUM_FOD];
@@ -233,7 +253,8 @@ struct p9221_charger_platform_data {
 	int				needs_dcin_reset;
 	int				nb_alignment_freq;
 	int				*alignment_freq;
-	u32				wlc_alignment_scalar;
+	u32				alignment_scalar;
+	u32				icl_ramp_delay_ms;
 };
 
 struct p9221_charger_data {
@@ -251,8 +272,10 @@ struct p9221_charger_data {
 	struct delayed_work		align_work;
 	struct delayed_work		tx_work;
 	struct delayed_work		icl_ramp_work;
+	struct work_struct		uevent_work;
 	struct alarm			icl_ramp_alarm;
 	struct timer_list		vrect_timer;
+	struct timer_list		align_timer;
 	struct bin_attribute		bin;
 	struct logbuffer		*log;
 	int				online;
@@ -260,11 +283,14 @@ struct p9221_charger_data {
 	u16				addr;
 	u8				count;
 	u8				cust_id;
+	int				ben_state;
 	u8				pp_buf[P9221R5_MAX_PP_BUF_SIZE];
 	bool				pp_buf_valid;
+	int				addr_data_recv_buf_start;
 	u8				rx_buf[P9221R5_DATA_RECV_BUF_SIZE];
 	u16				rx_len;
 	bool				rx_done;
+	int				addr_data_send_buf_start;
 	u8				tx_buf[P9221R5_DATA_SEND_BUF_SIZE];
 	u32				tx_id;
 	u8				tx_id_str[(sizeof(u32) * 2) + 1];
@@ -278,15 +304,22 @@ struct p9221_charger_data {
 	bool				resume_complete;
 	bool				icl_ramp;
 	u32				icl_ramp_ua;
-	u32				icl_ramp_delay_ms;
 	bool				fake_force_epp;
 	bool				force_bpp;
 	u32				dc_icl_bpp;
-	int				wlc_alignment;
-	int				wlc_alignment_last;
+	int				align;
+	int				align_count;
+	int				alignment;
+	u8				alignment_str[(sizeof(u32) * 3) + 1];
+	int				alignment_last;
+	int				alignment_capable;
+	int				mfg_check_count;
+	u16				mfg;
+	int				alignment_time;
 	u32				current_filtered;
 	u32				current_sample_cnt;
 	struct delayed_work		dcin_pon_work;
+	bool				is_mfg_google;
 };
 
 struct p9221_prop_reg_map_entry {
@@ -294,6 +327,12 @@ struct p9221_prop_reg_map_entry {
 	u16				reg;
 	bool				get;
 	bool				set;
+};
+
+enum p9221_align_mfg_check_state {
+	ALIGN_MFG_FAILED = -1,
+	ALIGN_MFG_CHECKING,
+	ALIGN_MFG_PASSED,
 };
 
 #define P9221_SHOW(name, reg, width, mask, format)			\

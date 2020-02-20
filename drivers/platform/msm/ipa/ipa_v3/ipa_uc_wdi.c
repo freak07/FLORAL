@@ -1059,7 +1059,7 @@ static int ipa3_wdi2_gsi_alloc_evt_ring(
 			enum ipa_client_type client,
 			unsigned long *evt_ring_hdl)
 {
-	union __packed gsi_evt_scratch evt_scratch;
+	union gsi_evt_scratch evt_scratch;
 	int result = -EFAULT;
 
 	/* GSI EVENT RING allocation */
@@ -1178,7 +1178,7 @@ int ipa3_connect_gsi_wdi_pipe(struct ipa_wdi_in_params *in,
 	struct ipa_ep_cfg_ctrl ep_cfg_ctrl;
 	struct gsi_chan_props gsi_channel_props;
 	struct gsi_evt_ring_props gsi_evt_ring_props;
-	union __packed gsi_channel_scratch gsi_scratch;
+	union gsi_channel_scratch gsi_scratch;
 	phys_addr_t pa;
 	unsigned long va;
 	u32 gsi_db_reg_phs_addr_lsb;
@@ -2453,7 +2453,7 @@ int ipa3_resume_gsi_wdi_pipe(u32 clnt_hdl)
 	struct ipa3_ep_context *ep;
 	struct ipa_ep_cfg_ctrl ep_cfg_ctrl;
 	struct gsi_chan_info chan_info;
-	union __packed gsi_channel_scratch gsi_scratch;
+	union gsi_channel_scratch gsi_scratch;
 	struct IpaHwOffloadStatsAllocCmdData_t *pcmd_t = NULL;
 
 	IPADBG("ep=%d\n", clnt_hdl);
@@ -2590,7 +2590,7 @@ int ipa3_suspend_gsi_wdi_pipe(u32 clnt_hdl)
 	struct ipahal_ep_cfg_ctrl_scnd ep_ctrl_scnd = { 0 };
 	int retry_cnt = 0;
 	struct gsi_chan_info chan_info;
-	union __packed gsi_channel_scratch gsi_scratch;
+	union gsi_channel_scratch gsi_scratch;
 	struct IpaHwOffloadStatsAllocCmdData_t *pcmd_t = NULL;
 
 	ipa_ep_idx = ipa3_get_ep_mapping(ipa3_get_client_mapping(clnt_hdl));
@@ -2833,7 +2833,7 @@ int ipa3_write_qmapid_gsi_wdi_pipe(u32 clnt_hdl, u8 qmap_id)
 {
 	int result = 0;
 	struct ipa3_ep_context *ep;
-	union __packed gsi_wdi_channel_scratch3_reg gsi_scratch;
+	union gsi_wdi_channel_scratch3_reg gsi_scratch;
 
 	memset(&gsi_scratch, 0, sizeof(gsi_scratch));
 	ep = &ipa3_ctx->ep[clnt_hdl];

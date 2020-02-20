@@ -127,14 +127,16 @@ Optional properties:
   - cirrus,gpio1-rise-index : Specifies the wavetable index mapped to GPIO1
     rising edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO1 rising edges are mapped to
-    index 1. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO1 is enabled.
+    index 1 (active-high polarity) or index 2 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO1 is enabled.
 
   - cirrus,gpio1-fall-index : Specifies the wavetable index mapped to GPIO1
     falling edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO1 falling edges are mapped to
-    index 2. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO1 is enabled.
+    index 2 (active-high polarity) or index 1 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO1 is enabled.
 
   - cirrus,gpio1-fall-timeout : Specifies the number of 48-kHz periods for
     which the device remains in the active state in search of a GPIO1 falling
@@ -149,41 +151,52 @@ Optional properties:
     The timeout specified for GPIO1 applies to any additional GPIO2, GPIO3 or
     GPIO4 pins enabled by cirrus,gpio-indv-enable.
 
+    If cirrus,gpio-indv-pol specifies a pin as active low, the timeout instead
+    follows a falling edge and specifies the time the device remains active in
+    search of a subsequent rising edge. Rising edges that arrive following the
+    timeout are ignored.
+
   - cirrus,gpio2-rise-index : Specifies the wavetable index mapped to GPIO2
     rising edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO2 rising edges are mapped to
-    index 1. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO2 is enabled.
+    index 1 (active-high polarity) or index 2 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO2 is enabled.
 
   - cirrus,gpio2-fall-index : Specifies the wavetable index mapped to GPIO2
     falling edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO2 falling edges are mapped to
-    index 2. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO2 is enabled.
+    index 2 (active-high polarity) or index 1 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO2 is enabled.
 
   - cirrus,gpio3-rise-index : Specifies the wavetable index mapped to GPIO3
     rising edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO3 rising edges are mapped to
-    index 1. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO3 is enabled.
+    index 1 (active-high polarity) or index 2 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO3 is enabled.
 
   - cirrus,gpio3-fall-index : Specifies the wavetable index mapped to GPIO3
     falling edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO3 falling edges are mapped to
-    index 2. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO3 is enabled.
+    index 2 (active-high polarity) or index 1 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO3 is enabled.
 
   - cirrus,gpio4-rise-index : Specifies the wavetable index mapped to GPIO4
     rising edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO4 rising edges are mapped to
-    index 1. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO4 is enabled.
+    index 1 (active-high polarity) or index 2 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO4 is enabled.
 
   - cirrus,gpio4-fall-index : Specifies the wavetable index mapped to GPIO4
     falling edges. If this value is omitted, specified as zero or exceeds the
     maximum available index in the wavetable, GPIO4 falling edges are mapped to
-    index 2. This value is ignored if cirrus,gpio-indv-enable does not specify
-    that GPIO4 is enabled.
+    index 2 (active-high polarity) or index 1 (active-low polarity) based on
+    cirrus,gpio-indv-pol. This value is ignored if cirrus,gpio-indv-enable does
+    not specify that GPIO4 is enabled.
 
   - cirrus,gpio-indv-enable : Bit mask for enabling any of the GPIO1, GPIO2,
     GPIO3 or GPIO4 pins individually. Individual pins are enabled by writing
@@ -195,8 +208,10 @@ Optional properties:
     0x8 = GPIO4
 
     Enabling a pin arms the device to render playback in response to rising or
-    falling edges along that pin. Rising edges along any enabled pin (with the
-    exception of GPIO3) additionally prompt the device to exit hibernation.
+    falling edges along that pin. If cirrus,gpio-indv-pol specifies the pin as
+    active high, rising edges along that pin prompt the device to exit standby
+    as well as hibernation (with the exception of GPIO3). The edge sensitivity
+    is inverted if cirrus,gpio-indv-pol specifies the pin as active low.
 
     If this value is omitted, a value of 0x1 (GPIO1 only) or 0xF (GPIO1, GPIO2,
     GPIO3 and GPIO4) is assumed for CS40L25A or CS40L25B, respectively.
@@ -218,6 +233,17 @@ Optional properties:
 
     The behavior specified for GPIO1 applies to any additional GPIO2, GPIO3 or
     GPIO4 pins enabled by cirrus,gpio-indv-enable.
+
+  - cirrus,gpio-indv-pol : Bit mask for specifying active-low polarity for any
+    of the GPIO1, GPIO2, GPIO3 or GPIO4 pins individually. Individual pins are
+    made active low by writing the bitwise OR of any of the following:
+
+    0x1 = GPIO1
+    0x2 = GPIO2
+    0x4 = GPIO3 (standby only)
+    0x8 = GPIO4
+
+    If this value is omitted, a value of 0x0 (all active high) is assumed.
 
   - cirrus,hiber-enable : Boolean for instructing the device to enter and exit
     hibernation mode upon suspend and resume, respectively. Hibernation mode is
@@ -269,6 +295,10 @@ Optional properties:
     state (default case) and neither I2C-triggered nor GPIO-triggered playback
     are affected.
 
+    Starting with firmware revision 8.7.0, OUT+ and OUT- pin state control is
+    deferred to the DSP such that neither I2C-triggered nor GPIO-triggered
+    playback are affected even if cirrus,amp-gnd-stby is specified.
+
   - cirrus,boost-ctl-millivolt : Maximum target voltage to which the class H
     algorithm may increase the VBST supply, expressed in mV. Valid values range
     from 2550 to 11000 (inclusive) in steps of 50. If this value is specified as
@@ -280,15 +310,30 @@ Optional properties:
     of 125. If this value is omitted, the threshold remains at 12 V.
 
   - cirrus,vpbr-enable : Boolean for enabling VP brownout prevention. If this
-    property is omitted, VP brownout prevention remains disabled.
+    property is omitted, VP brownout prevention remains disabled unless it is
+    enabled through a cirrus,vpbr-config child node.
+
+    This property remains available for backwards compatibility and need not be
+    specified if a cirrus,vpbr-config child node is present and cirrus,br-enable
+    is already specified within the child node.
 
   - cirrus,vpbr-thld1-millivolt : Initial VP brownout prevention threshold,
     expressed in mV. Valid values range from 2497 to 3874 (inclusive). The value
     written to the device is quantized in steps of approximately 48 mV. If this
     value is omitted, the threshold remains at 2.639 V.
 
+    This property remains available for backwards compatibility and need not be
+    specified if a cirrus,vpbr-config child node is present and cirrus,br-thld1
+    is already specified within the child node. If both are present, however,
+    cirrus,vpbr-thld1-millivolt takes priority.
+
   - cirrus,vbbr-enable : Boolean for enabling VBST brownout prevention. If this
-    property is omitted, VBST brownout prevention remains disabled.
+    property is omitted, VBST brownout prevention remains disabled unless it is
+    enabled through a cirrus,vbbr-config child node.
+
+    This property remains available for backwards compatibility and need not be
+    specified if a cirrus,vbbr-config child node is present and cirrus,br-enable
+    is already specified within the child node.
 
   - cirrus,vbbr-thld1-millivolt : Initial VBST brownout prevention threshold,
     expressed in mV. Valid values range from 109 to 3445 (inclusive). The value
@@ -297,9 +342,18 @@ Optional properties:
     interpreted as the difference between the target VBST level and the actual
     measured VBST level.
 
+    This property remains available for backwards compatibility and need not be
+    specified if a cirrus,vbbr-config child node is present and cirrus,br-thld1
+    is already specified within the child node. If both are present, however,
+    cirrus,vbbr-thld1-millivolt takes priority.
+
   - cirrus,fw-id-remap : Alternative firmware build ID (silicon revision B1
-    only). If this value is omitted, an ID of 0x1400C3 (standard issue firmware)
-    is assumed.
+    only), equal to one of the following.
+
+    0x1400C3: cs40l25a.wmfw
+    0x1400CB: cs40l25a_clab.wmfw
+
+    If this value is omitted, an ID of 0x1400C3 is assumed.
 
   - cirrus,auto-recovery : Boolean for enabling auto-recovery mode, wherein the
     driver checks for inadvertent device reset prior to administering I2C-
@@ -310,6 +364,40 @@ Optional properties:
     Auto-recovery mode increases the latency of I2C-triggered playback by that
     of a single I2C read transaction. If this property is omitted, auto-recovery
     mode remains disabled and I2C-triggered playback is unaffected.
+
+Optional properties for VP (cirrus,vpbr-config) and VBST (cirrus,vbbr-config)
+brownout prevention child nodes:
+
+  - cirrus,br-enable: Boolean for enabling brownout prevention.
+
+  - cirrus,br-thld1: Value to be used for the VPBR_THLD1/VBBR_THLD1 register
+    field (see the CS40L25/B data sheet for more information). If this property
+    is omitted, a value of zero is assumed. Note that this field is interpreted
+    differently between VP and VBST brownout prevention.
+
+  - cirrus,br-max-att: Value to be used for the VPBR_MAX_ATT/VBBR_MAX_ATT
+    register field (see the CS40L25/B data sheet for more information). If this
+    property is omitted, a value of zero is assumed.
+
+  - cirrus,br-atk-vol: Value to be used for the VPBR_ATK_VOL/VBBR_ATK_VOL
+    register field (see the CS40L25/B data sheet for more information). If this
+    property is omitted, a value of zero is assumed.
+
+  - cirrus,br-atk-rate: Value to be used for the VPBR_ATK_RATE/VBBR_ATK_RATE
+    register field (see the CS40L25/B data sheet for more information). If this
+    property is omitted, a value of zero is assumed.
+
+  - cirrus,br-wait: Value to be used for the VPBR_WAIT/VBBR_WAIT register field
+    (see the CS40L25/B data sheet for more information). If this property is
+    omitted, a value of zero is assumed.
+
+  - cirrus,br-rel-rate: Value to be used for the VPBR_REL_RATE/VBBR_REL_RATE
+    register field (see the CS40L25/B data sheet for more information). If this
+    property is omitted, a value of zero is assumed.
+
+  - cirrus,br-mute-enable: Boolean to specify that the output shall be muted
+    if VPBR_MAX_ATT/VBBR_MAX_ATT is reached during the attack state in the
+    continued presence of a brownout condition.
 
 Examples:
 

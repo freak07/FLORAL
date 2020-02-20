@@ -116,6 +116,7 @@ struct glink_core_rx_intent {
  * @rx_pipe:	pipe object for receive FIFO
  * @tx_pipe:	pipe object for transmit FIFO
  * @irq:	IRQ for signaling incoming events
+ * @irq_name:	name registered for IRQ
  * @kworker:	kworker to handle rx_done work
  * @task:	kthread running @kworker
  * @rx_work:	worker for handling received control messages
@@ -140,6 +141,7 @@ struct qcom_glink {
 	struct qcom_glink_pipe *tx_pipe;
 
 	int irq;
+	const char *irq_name;
 
 	struct kthread_worker kworker;
 	struct task_struct *task;
@@ -1822,18 +1824,6 @@ static void qcom_glink_work(struct work_struct *work)
 	}
 }
 
-static void qcom_glink_cancel_rx_work(struct qcom_glink *glink)
-{
-	struct glink_defer_cmd *dcmd;
-	struct glink_defer_cmd *tmp;
-
-	/* cancel any pending deferred rx_work */
-	cancel_work_sync(&glink->rx_work);
-
-	list_for_each_entry_safe(dcmd, tmp, &glink->rx_queue, node)
-		kfree(dcmd);
-}
-
 static ssize_t rpmsg_name_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
@@ -1925,11 +1915,14 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 					   struct qcom_glink_pipe *tx,
 					   bool intentless)
 {
+	static const char *unknown_irq = "unknown";
+	static const char *irq_prefix = "glink-native-";
 	struct qcom_glink *glink;
 	u32 *arr;
 	int size;
 	int irq;
 	int ret;
+	const char *irq_src;
 
 	glink = devm_kzalloc(dev, sizeof(*glink), GFP_KERNEL);
 	if (!glink)
@@ -1958,6 +1951,15 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 	if (ret < 0)
 		glink->name = dev->of_node->name;
 
+	irq_src = glink->name;
+	if (irq_src == NULL)
+		irq_src = unknown_irq;
+	size = strlen(irq_prefix) + strlen(irq_src) + 1;
+	glink->irq_name = devm_kzalloc(dev, size, GFP_KERNEL);
+	if (!glink->irq_name)
+		return ERR_PTR(-ENOMEM);
+	snprintf((char *)glink->irq_name, size, "%s%s", irq_prefix, irq_src);
+
 	glink->mbox_client.dev = dev;
 	glink->mbox_client.knows_txdone = true;
 	glink->mbox_chan = mbox_request_channel(&glink->mbox_client, 0);
@@ -1973,7 +1975,6 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 	if (IS_ERR(glink->task)) {
 		dev_err(dev, "failed to spawn intent kthread %ld\n",
 			PTR_ERR(glink->task));
-		mbox_free_channel(glink->mbox_chan);
 		return ERR_CAST(glink->task);
 	}
 
@@ -1986,7 +1987,7 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
 	ret = devm_request_irq(dev, irq,
 			       qcom_glink_native_intr,
 			       IRQF_SHARED,
-			       "glink-native", glink);
+			       glink->irq_name, glink);
 	if (ret) {
 		dev_err(dev, "failed to request IRQ\n");
 		goto unregister;
@@ -2050,7 +2051,7 @@ void qcom_glink_native_remove(struct qcom_glink *glink)
 	subsys_unregister_early_notifier(glink->name, XPORT_LAYER_NOTIF);
 	qcom_glink_notif_reset(glink);
 	disable_irq(glink->irq);
-	qcom_glink_cancel_rx_work(glink);
+	cancel_work_sync(&glink->rx_work);
 
 	ret = device_for_each_child(glink->dev, NULL, qcom_glink_remove_device);
 	if (ret)

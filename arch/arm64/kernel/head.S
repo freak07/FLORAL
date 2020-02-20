@@ -618,8 +618,8 @@ __secondary_switched:
 	ldr	x2, [x0, #CPU_BOOT_TASK]
 	msr	sp_el0, x2
 #ifdef CONFIG_SHADOW_CALL_STACK
-	ldr	x18, [x2, #TSK_TI_SCS]		// Set shadow call stack
-	str	xzr, [x2, #TSK_TI_SCS]
+	ldr	x18, [x2, #TSK_TI_SCS]		// set shadow call stack
+	str	xzr, [x2, #TSK_TI_SCS]		// limit visibility of saved SCS
 #endif
 	mov	x29, #0
 	mov	x30, #0

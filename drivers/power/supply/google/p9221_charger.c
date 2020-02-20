@@ -35,7 +35,8 @@
 #define P9221_TX_TIMEOUT_MS		(20 * 1000)
 #define P9221_DCIN_TIMEOUT_MS		(1 * 1000)
 #define P9221_VRECT_TIMEOUT_MS		(2 * 1000)
-#define P9221_ALIGN_TIMEOUT_MS		100
+#define P9221_ALIGN_TIMEOUT_MS		(2 * 1000)
+#define P9221_ALIGN_DELAY_MS		100
 #define P9221_NOTIFIER_DELAY_MS		100
 #define P9221_DCIN_PON_DELAY_MS		250
 #define P9221R5_ILIM_MAX_UA		(1600 * 1000)
@@ -55,6 +56,11 @@
 #define WLC_MFG_GOOGLE			0x72
 #define WLC_CURRENT_FILTER_LENGTH	10
 #define WLC_ALIGN_DEFAULT_SCALAR	4
+#define WLC_ALIGN_IRQ_THRESHOLD		10
+
+#define RTX_BEN_DISABLED	0
+#define RTX_BEN_ON		1
+#define RTX_BEN_ENABLED		2
 
 static void p9221_icl_ramp_reset(struct p9221_charger_data *charger);
 static void p9221_icl_ramp_start(struct p9221_charger_data *charger);
@@ -62,6 +68,10 @@ static void p9221_icl_ramp_start(struct p9221_charger_data *charger);
 static const u32 p9221_ov_set_lut[] = {
 	17000000, 20000000, 15000000, 13000000,
 	11000000, 11000000, 11000000, 11000000};
+
+static char *align_status_str[] = {
+	"...", "M2C", "OK", "-1"
+};
 
 static size_t p9221_hex_str(u8 *data, size_t len, char *buf, size_t max_buf,
 			    bool msbfirst)
@@ -374,6 +384,20 @@ static bool p9221_is_epp(struct p9221_charger_data *charger)
 	if (charger->force_bpp)
 		return false;
 
+	/*
+	*  NOTE: mfg may be zero due to race condition during bringup. will
+	*  check once more if mfg == 0.
+	*/
+	if (charger->mfg == 0) {
+		ret = p9221_reg_read_16(charger, P9221R5_EPP_TX_MFG_CODE_REG,
+					&charger->mfg);
+		if (ret < 0)
+			dev_err(&charger->client->dev,
+				"cannot read MFG_CODE (%d)\n", ret);
+	}
+
+	charger->is_mfg_google = charger->mfg == WLC_MFG_GOOGLE;
+
 	ret = p9221_reg_read_8(charger, P9221R5_SYSTEM_MODE_REG, &reg);
 	if (ret == 0)
 		return (reg & P9221R5_SYSTEM_MODE_EXTENDED_MASK) > 0;
@@ -504,7 +528,7 @@ static int p9221_send_data(struct p9221_charger_data *charger)
 
 	mutex_lock(&charger->cmd_lock);
 
-	ret = p9221_reg_write_n(charger, P9221R5_DATA_SEND_BUF_START,
+	ret = p9221_reg_write_n(charger, charger->addr_data_send_buf_start,
 				charger->tx_buf, charger->tx_len);
 	if (ret) {
 		dev_err(&charger->client->dev, "Failed to load tx %d\n", ret);
@@ -613,6 +637,11 @@ static struct p9221_prop_reg_map_entry *p9221_get_map_entry(
 	return NULL;
 }
 
+static bool p9221_is_online(const struct p9221_charger_data *charger)
+{
+	return charger->online || charger->ben_state;
+}
+
 static int p9221_get_property_reg(struct p9221_charger_data *charger,
 				  enum power_supply_property prop,
 				  union power_supply_propval *val)
@@ -632,7 +661,7 @@ static int p9221_get_property_reg(struct p9221_charger_data *charger,
 	if (p == NULL)
 		return -EINVAL;
 
-	if (!charger->online)
+	if (!p9221_is_online(charger))
 		return -ENODEV;
 
 	ret = p9221_reg_read_cooked(charger, p->reg, &data);
@@ -653,7 +682,7 @@ static int p9221_set_property_reg(struct p9221_charger_data *charger,
 	if (p == NULL)
 		return -EINVAL;
 
-	if (!charger->online)
+	if (!p9221_is_online(charger))
 		return -ENODEV;
 
 	return p9221_reg_write_cooked(charger, p->reg, val->intval);
@@ -714,8 +743,13 @@ static void p9221_set_offline(struct p9221_charger_data *charger)
 	cancel_delayed_work(&charger->dcin_work);
 
 	/* Reset alignment value when charger goes offline */
-	charger->wlc_alignment = -1;
 	cancel_delayed_work(&charger->align_work);
+	charger->align = POWER_SUPPLY_ALIGN_ERROR;
+	charger->align_count = 0;
+	charger->alignment = -1;
+	charger->alignment_capable = ALIGN_MFG_FAILED;
+	charger->mfg = 0;
+	schedule_work(&charger->uevent_work);
 
 	p9221_icl_ramp_reset(charger);
 	del_timer(&charger->vrect_timer);
@@ -723,11 +757,13 @@ static void p9221_set_offline(struct p9221_charger_data *charger)
 	p9221_vote_defaults(charger);
 	if (charger->enabled &&
 	    charger->pdata->qien_gpio >= 0) {
-		gpio_set_value(charger->pdata->qien_gpio, 1);
+		if (charger->is_mfg_google == false)
+			gpio_set_value(charger->pdata->qien_gpio, 1);
 
 		mod_delayed_work(system_wq, &charger->dcin_pon_work,
 				 msecs_to_jiffies(P9221_DCIN_PON_DELAY_MS));
 	}
+	charger->is_mfg_google = false;
 }
 
 static void p9221_tx_work(struct work_struct *work)
@@ -747,12 +783,30 @@ static void p9221_vrect_timer_handler(unsigned long data)
 {
 	struct p9221_charger_data *charger = (struct p9221_charger_data *)data;
 
+	if (charger->align == POWER_SUPPLY_ALIGN_CHECKING) {
+		schedule_work(&charger->uevent_work);
+		charger->align = POWER_SUPPLY_ALIGN_MOVE;
+		logbuffer_log(charger->log, "align: state: %s",
+			      align_status_str[charger->align]);
+	}
 	dev_info(&charger->client->dev,
 		 "timeout waiting for VRECT, online=%d\n", charger->online);
 	logbuffer_log(charger->log,
 		"vrect: timeout online=%d", charger->online);
 
+	mod_timer(&charger->align_timer,
+		  jiffies + msecs_to_jiffies(P9221_ALIGN_TIMEOUT_MS));
+
 	pm_relax(charger->dev);
+}
+
+static void p9221_align_timer_handler(unsigned long data)
+{
+	struct p9221_charger_data *charger = (struct p9221_charger_data *)data;
+
+	schedule_work(&charger->uevent_work);
+	charger->align = POWER_SUPPLY_ALIGN_ERROR;
+	logbuffer_log(charger->log, "align: timeout no IRQ");
 }
 
 static void p9221_dcin_pon_work(struct work_struct *work)
@@ -816,10 +870,20 @@ static void p9221_dcin_work(struct work_struct *work)
 			charger->online, status_reg);
 }
 
+static void p9221_init_align(struct p9221_charger_data *charger)
+{
+	/* Reset values used for alignment */
+	charger->alignment_last = -1;
+	charger->current_filtered = 0;
+	charger->current_sample_cnt = 0;
+	charger->mfg_check_count = 0;
+	schedule_delayed_work(&charger->align_work,
+			      msecs_to_jiffies(P9221_ALIGN_DELAY_MS));
+}
+
 static void p9221_align_work(struct work_struct *work)
 {
 	int res, align_buckets, i;
-	u16 mfg, status_reg = 0;
 	u16 current_now, current_filter_sample;
 	u32 wlc_freq, current_scaling;
 	struct p9221_charger_data *charger = container_of(work,
@@ -828,36 +892,51 @@ static void p9221_align_work(struct work_struct *work)
 	if (charger->pdata->alignment_freq == NULL)
 		return;
 
-	schedule_delayed_work(&charger->align_work,
-			msecs_to_jiffies(P9221_ALIGN_TIMEOUT_MS));
+	charger->alignment = -1;
 
-	res = p9221_reg_read_16(charger, P9221_STATUS_REG, &status_reg);
-	if (res != 0)
+	if (!charger->online)
 		return;
 
-	if (!(status_reg & P9221R5_STAT_VRECTON))
-		return;
+	/*
+	 *  NOTE: mfg may be zero due to race condition during bringup. If the
+	 *  mfg check continues to fail then mfg is not correct and we do not
+	 *  reschedule align_work. Always reschedule if alignment_capable is 1.
+	 *  Check 10 times if alignment_capble is still 0.
+	 */
+	if ((charger->mfg_check_count < 10) ||
+	    (charger->alignment_capable == ALIGN_MFG_PASSED))
+		schedule_delayed_work(&charger->align_work,
+				      msecs_to_jiffies(P9221_ALIGN_DELAY_MS));
 
-	if (!(status_reg & P9221R5_STAT_VOUTCHANGED))
-		return;
+	if (charger->alignment_capable == ALIGN_MFG_CHECKING) {
+		charger->mfg_check_count += 1;
 
-	if (!p9221_is_epp(charger))
-		return;
+		res = p9221_reg_read_16(charger,
+					P9221R5_EPP_TX_MFG_CODE_REG,
+					&charger->mfg);
+		if (res < 0) {
+			dev_err(&charger->client->dev,
+				"cannot read MFG_CODE (%d)\n", res);
+			return;
+		}
 
-	res = p9221_reg_read_16(charger, P9221R5_EPP_TX_MFG_CODE_REG, &mfg);
-	if (res < 0) {
-		dev_err(&charger->client->dev,
-			"cannot read MFG_CODE (%d)\n", res);
-		return;
+		/* No mfg update. Will check again on next schedule */
+		if (charger->mfg == 0)
+			return;
+
+		if ((charger->mfg != WLC_MFG_GOOGLE) ||
+		    !p9221_is_epp(charger)) {
+			logbuffer_log(charger->log,
+				      "align: not align capable mfg: 0x%x",
+				      charger->mfg);
+			cancel_delayed_work(&charger->align_work);
+			charger->alignment_capable = ALIGN_MFG_FAILED;
+			return;
+		}
+		charger->alignment_capable = ALIGN_MFG_PASSED;
 	}
 
-	if (mfg != WLC_MFG_GOOGLE) {
-		logbuffer_log(charger->log,
-			      "align: not google wlc mfg: 0x%x", mfg);
-		return;
-	}
-
-	if (charger->pdata->wlc_alignment_scalar == 0)
+	if (charger->pdata->alignment_scalar == 0)
 		goto no_scaling;
 
 	res = p9221_reg_read_16(charger, P9221R5_IOUT_REG, &current_now);
@@ -879,7 +958,7 @@ static void p9221_align_work(struct work_struct *work)
 	dev_dbg(&charger->client->dev, "current = %umA, avg_current = %umA\n",
 		current_now, charger->current_filtered);
 
-	current_scaling = charger->pdata->wlc_alignment_scalar *
+	current_scaling = charger->pdata->alignment_scalar *
 			  charger->current_filtered;
 
 no_scaling:
@@ -892,14 +971,14 @@ no_scaling:
 
 	align_buckets = charger->pdata->nb_alignment_freq - 1;
 
-	charger->wlc_alignment = -1;
+	charger->alignment = -1;
 
 	for (i = 0; i < align_buckets; i += 1) {
 		if ((wlc_freq > (charger->pdata->alignment_freq[i] -
 				 current_scaling)) &&
 		    (wlc_freq <= (charger->pdata->alignment_freq[i + 1] -
 				  current_scaling))) {
-			charger->wlc_alignment = (WLC_ALIGNMENT_MAX * i) /
+			charger->alignment = (WLC_ALIGNMENT_MAX * i) /
 						 (align_buckets - 1);
 			break;
 		}
@@ -910,12 +989,13 @@ no_scaling:
 		return;
 	}
 
-	if (charger->wlc_alignment != charger->wlc_alignment_last) {
+	if (charger->alignment != charger->alignment_last) {
+		schedule_work(&charger->uevent_work);
 		logbuffer_log(charger->log,
 			      "align: alignment=%i. op_freq=%u. current_avg=%u",
-			     charger->wlc_alignment, wlc_freq,
+			     charger->alignment, wlc_freq,
 			     charger->current_filtered);
-		charger->wlc_alignment_last = charger->wlc_alignment;
+		charger->alignment_last = charger->alignment;
 	}
 }
 
@@ -924,7 +1004,7 @@ static const char *p9221_get_tx_id_str(struct p9221_charger_data *charger)
 	int ret;
 	uint32_t tx_id = 0;
 
-	if (!charger->online)
+	if (!p9221_is_online(charger))
 		return NULL;
 
 	pm_runtime_get_sync(charger->dev);
@@ -968,7 +1048,7 @@ static int p9221_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 		val->intval = 1;
 		break;
-	case POWER_SUPPLY_PROP_ONLINE:
+	case POWER_SUPPLY_PROP_ONLINE: /* TODO: verify this */
 		val->intval = charger->online && charger->enabled;
 		break;
 	case POWER_SUPPLY_PROP_SERIAL_NUMBER:
@@ -994,9 +1074,6 @@ static int p9221_get_property(struct power_supply *psy,
 
 		/* success */
 		ret = 0;
-		break;
-	case POWER_SUPPLY_PROP_ALIGNMENT:
-		val->intval = charger->wlc_alignment;
 		break;
 	default:
 		ret = p9221_get_property_reg(charger, prop, val);
@@ -1026,7 +1103,6 @@ static int p9221_set_property(struct power_supply *psy,
 
 		if (charger->enabled == val->intval)
 			break;
-
 		/*
 		 * Asserting the enable line will automatically take bring
 		 * us online if we are in field.  De-asserting the enable
@@ -1212,6 +1288,9 @@ static int p9221_set_dc_icl(struct p9221_charger_data *charger)
 
 	dev_info(&charger->client->dev, "Setting ICL %duA ramp=%d\n", icl,
 		 charger->icl_ramp);
+	if (charger->icl_ramp)
+	    vote(charger->dc_icl_votable, P9221_DEFAULT_VOTER, true, icl);
+
 	ret = vote(charger->dc_icl_votable, P9221_WLC_VOTER, true, icl);
 	if (ret)
 		dev_err(&charger->client->dev,
@@ -1282,18 +1361,21 @@ static void p9221_icl_ramp_reset(struct p9221_charger_data *charger)
 
 static void p9221_icl_ramp_start(struct p9221_charger_data *charger)
 {
+	const bool no_ramp = charger->pdata->icl_ramp_delay_ms == -1 ||
+			     !charger->icl_ramp_ua;
+
 	/* Only ramp on BPP at this time */
-	if (p9221_is_epp(charger))
+	if (p9221_is_epp(charger) || no_ramp)
 		return;
 
 	p9221_icl_ramp_reset(charger);
 
 	dev_info(&charger->client->dev, "ICL ramp set alarm %dms, %dua, ramp=%d\n",
-		 charger->icl_ramp_delay_ms, charger->icl_ramp_ua,
+		 charger->pdata->icl_ramp_delay_ms, charger->icl_ramp_ua,
 		 charger->icl_ramp);
 
 	alarm_start_relative(&charger->icl_ramp_alarm,
-			     ms_to_ktime(charger->icl_ramp_delay_ms));
+			     ms_to_ktime(charger->pdata->icl_ramp_delay_ms));
 }
 
 static void p9221_set_online(struct p9221_charger_data *charger)
@@ -1327,12 +1409,12 @@ static void p9221_set_online(struct p9221_charger_data *charger)
 
 	cancel_delayed_work(&charger->dcin_pon_work);
 
-	/* Reset last alignment value when online */
-	charger->wlc_alignment_last = -1;
-	charger->current_filtered = 0;
-	charger->current_sample_cnt = 0;
-	schedule_delayed_work(&charger->align_work,
-			msecs_to_jiffies(P9221_ALIGN_TIMEOUT_MS));
+	charger->alignment_capable = ALIGN_MFG_CHECKING;
+	charger->align = POWER_SUPPLY_ALIGN_CENTERED;
+	charger->alignment = -1;
+	logbuffer_log(charger->log, "align: state: %s",
+		      align_status_str[charger->align]);
+	schedule_work(&charger->uevent_work);
 }
 
 static int p9221_has_dc_in(struct p9221_charger_data *charger)
@@ -1530,7 +1612,7 @@ bool p9221_notifier_check_det(struct p9221_charger_data *charger)
 
 	del_timer(&charger->vrect_timer);
 
-	if (charger->online)
+	if (charger->online && !charger->ben_state)
 		goto done;
 
 	dev_info(&charger->client->dev, "detected wlc, trigger wc changed\n");
@@ -1561,8 +1643,9 @@ static void p9221_notifier_work(struct work_struct *work)
 	bool relax = true;
 	int ret;
 
-	dev_info(&charger->client->dev, "Notifier work: on:%d dc:%d np:%d det:%d\n",
+	dev_info(&charger->client->dev, "Notifier work: on:%d ben:%d dc:%d np:%d det:%d\n",
 		 charger->online,
+		 charger->ben_state,
 		 charger->check_dc, charger->check_np,
 		 charger->check_det);
 
@@ -1594,8 +1677,9 @@ static void p9221_notifier_work(struct work_struct *work)
 		ret = p9221_reg_read_cooked(charger, P9221R5_VRECT_REG,
 					    &vrect_uv);
 		logbuffer_log(charger->log,
-			      "notifier: on:%d dc:%d det:%d VRECT=%uuV (%d)",
+			      "notifier: on:%d ben:%d dc:%d det:%d VRECT=%uuV (%d)",
 			      charger->online,
+			      charger->ben_state,
 			      charger->check_dc, charger->check_det,
 			      (ret == 0) ? vrect_uv : 0, ret);
 	}
@@ -1652,7 +1736,7 @@ static ssize_t p9221_show_version(struct device *dev,
 	int ret;
 	u8 val8 = 0;
 
-	if (!charger->online)
+	if (!p9221_is_online(charger))
 		return -ENODEV;
 
 	count += p9221_add_reg_buffer(charger, buf, count, P9221_CHIP_ID_REG,
@@ -1730,7 +1814,7 @@ static ssize_t p9221_show_status(struct device *dev,
 	u8 tmp[P9221R5_NUM_FOD];
 	uint32_t tx_id = 0;
 
-	if (!charger->online)
+	if (!p9221_is_online(charger))
 		return -ENODEV;
 
 	count += p9221_add_reg_buffer(charger, buf, count,
@@ -1864,7 +1948,8 @@ static ssize_t p9221_show_icl_ramp_delay_ms(struct device *dev,
 	struct i2c_client *client = to_i2c_client(dev);
 	struct p9221_charger_data *charger = i2c_get_clientdata(client);
 
-	return scnprintf(buf, PAGE_SIZE, "%d\n", charger->icl_ramp_delay_ms);
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			 charger->pdata->icl_ramp_delay_ms);
 }
 
 static ssize_t p9221_store_icl_ramp_delay_ms(struct device *dev,
@@ -1879,7 +1964,7 @@ static ssize_t p9221_store_icl_ramp_delay_ms(struct device *dev,
 	ret = kstrtou32(buf, 10, &ms);
 	if (ret < 0)
 		return ret;
-	charger->icl_ramp_delay_ms = ms;
+	charger->pdata->icl_ramp_delay_ms = ms;
 	return count;
 }
 
@@ -1958,7 +2043,7 @@ static ssize_t p9221_show_data(struct device *dev,
 	if (!charger->count || (charger->addr > (0xFFFF - charger->count)))
 		return -EINVAL;
 
-	if (!charger->online)
+	if (!p9221_is_online(charger))
 		return -ENODEV;
 
 	ret = p9221_reg_read_n(charger, charger->addr, reg, charger->count);
@@ -1987,7 +2072,7 @@ static ssize_t p9221_store_data(struct device *dev,
 	if (!charger->count || (charger->addr > (0xFFFF - charger->count)))
 		return -EINVAL;
 
-	if (!charger->online)
+	if (!p9221_is_online(charger))
 		return -ENODEV;
 
 	tmp_buf = kmalloc(strlen(buf) + 1, GFP_KERNEL);
@@ -2195,6 +2280,232 @@ static ssize_t p9221_set_dc_icl_bpp(struct device *dev,
 static DEVICE_ATTR(dc_icl_bpp, 0644,
 		   p9221_show_dc_icl_bpp, p9221_set_dc_icl_bpp);
 
+static ssize_t p9221_show_alignment(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct p9221_charger_data *charger = i2c_get_clientdata(client);
+
+	if (charger->alignment == -1)
+		p9221_init_align(charger);
+
+	if ((charger->align != POWER_SUPPLY_ALIGN_CENTERED) ||
+	    (charger->alignment == -1))
+		return scnprintf(buf, PAGE_SIZE, "%s\n",
+				 align_status_str[charger->align]);
+	else
+		return scnprintf(buf, PAGE_SIZE, "%d\n", charger->alignment);
+}
+
+static DEVICE_ATTR(alignment, 0444, p9221_show_alignment, NULL);
+
+/* ------------------------------------------------------------------------ */
+
+static ssize_t p9382_show_rtx_sw(struct device *dev,
+				 struct device_attribute *attr,
+				 char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct p9221_charger_data *charger = i2c_get_clientdata(client);
+	int value;
+
+	if (charger->pdata->switch_gpio < 0)
+		return -ENODEV;
+
+	value = gpio_get_value(charger->pdata->switch_gpio);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", value != 0);
+}
+
+static ssize_t p9382_set_rtx_sw(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct p9221_charger_data *charger = i2c_get_clientdata(client);
+
+	if (charger->pdata->switch_gpio < 0)
+		return -ENODEV;
+
+	/* TODO: better test on rX mode */
+	if (charger->online) {
+		dev_err(&charger->client->dev, "invalid rX state");
+		return -EINVAL;
+	}
+
+	gpio_set_value(charger->pdata->switch_gpio, buf[0] != '0');
+
+	return count;
+}
+
+static DEVICE_ATTR(rtx_sw, 0644, p9382_show_rtx_sw, p9382_set_rtx_sw);
+
+
+static ssize_t p9382_show_rtx_boost(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct p9221_charger_data *charger = i2c_get_clientdata(client);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", charger->ben_state);
+}
+
+/* assume that we have 2 GPIO to turn on the boost */
+static int p9382_rtx_enable(struct p9221_charger_data *charger, bool enable)
+{
+	if (charger->pdata->ben_gpio >= 0)
+		gpio_set_value(charger->pdata->ben_gpio, enable);
+	if (charger->pdata->switch_gpio >= 0)
+		gpio_set_value(charger->pdata->switch_gpio, enable);
+
+	return (charger->pdata->ben_gpio >= 0 ||
+		charger->pdata->switch_gpio >= 0);
+}
+
+static int p9382_ben_cfg(struct p9221_charger_data *charger, int cfg)
+{
+	const int ben_gpio = charger->pdata->ben_gpio;
+	const int switch_gpio = charger->pdata->switch_gpio;
+
+	dev_info(&charger->client->dev, "ben_cfg: %d->%d (ben=%d, switch=%d)",
+		 charger->ben_state, cfg, ben_gpio, switch_gpio);
+
+	switch (cfg) {
+	case RTX_BEN_DISABLED:
+		if (charger->ben_state == RTX_BEN_ON)
+			p9382_rtx_enable(charger, false);
+		else if (ben_gpio >= 0)
+			gpio_set_value(ben_gpio, 0);
+		charger->ben_state = cfg;
+		break;
+	case RTX_BEN_ENABLED:
+		charger->ben_state = cfg;
+		if (ben_gpio >= 0)
+			gpio_set_value(ben_gpio, 1);
+		break;
+	case RTX_BEN_ON:
+		charger->ben_state = cfg;
+		p9382_rtx_enable(charger, true);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static ssize_t p9382_set_rtx_boost(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct p9221_charger_data *charger = i2c_get_clientdata(client);
+	const int state = buf[0] - '0';
+	int ret;
+
+	/* always ok to disable */
+	if (state && charger->online && !charger->ben_state) {
+		dev_err(&charger->client->dev, "invalid rX state");
+		return -ENODEV;
+	}
+
+	/* 0 -> BEN_DISABLED, 1 -> BEN_ON */
+	ret = p9382_ben_cfg(charger, state);
+	if (ret < 0)
+		count = ret;
+
+	return count;
+}
+
+static DEVICE_ATTR(rtx_boost, 0644, p9382_show_rtx_boost, p9382_set_rtx_boost);
+
+
+static ssize_t p9382_show_rtx(struct device *dev,
+				     struct device_attribute *attr,
+				     char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct p9221_charger_data *charger = i2c_get_clientdata(client);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", charger->ben_state);
+}
+
+static int p9382_wait_for_mode(struct p9221_charger_data *charger, int mode)
+{
+	int loops, ret;
+	uint8_t sys_mode;
+
+	/* 30 * 100 = 3 sec */
+	for (loops = 30 ; loops ; loops--) {
+		ret = p9221_reg_read_8(charger, P9221R5_SYSTEM_MODE_REG,
+					&sys_mode);
+		if (ret < 0) {
+			dev_err(&charger->client->dev,
+				"cannot read system_mode (%d)", ret);
+			return -EIO;
+		}
+
+		if (sys_mode == mode)
+			return 0;
+
+		msleep(100);
+	}
+
+	return -ETIMEDOUT;
+}
+
+/* write 1 to enable boost & switch, write 0 to 0x34, wait for 0x4c==0x4
+ * write 0 to write 0x80 to 0x4E, wait for 0x4c==0, disable boost & switch
+ */
+static ssize_t p9382_set_rtx(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *buf, size_t count)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct p9221_charger_data *charger = i2c_get_clientdata(client);
+	int ret;
+
+	if (buf[0] == '0') {
+		/* Write 0x80 to 0x4E, check 0x4C reads back as 0x0000 */
+		ret = p9221_set_cmd_reg(charger, P9221R5_COM_RENEGOTIATE);
+		if (ret == 0) {
+			ret = p9382_wait_for_mode(charger, 0);
+			if (ret < 0)
+				pr_err("cannot exit rTX mode (%d)\n", ret);
+		}
+
+		ret = p9382_ben_cfg(charger, RTX_BEN_DISABLED);
+		if (ret < 0)
+			return ret;
+
+	} else if (buf[0] == '1') {
+		ret = p9382_ben_cfg(charger, RTX_BEN_ON);
+		if (ret < 0)
+			return ret;
+
+		/* write 0x0000 to 0x34, check 0x4C reads back as 0x04 */
+		ret = p9221_reg_write_16(charger, P9382A_STATUS_REG, 0);
+		if (ret == 0)
+			ret = p9382_wait_for_mode(charger, P9382A_MODE_TXMODE);
+
+		if (ret < 0) {
+			pr_err("cannot enter rTX mode (%d)\n", ret);
+			return ret;
+		}
+
+	} else {
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR(rtx, 0644, p9382_show_rtx, p9382_set_rtx);
+
+/* ------------------------------------------------------------------------ */
+
 static struct attribute *p9221_attributes[] = {
 	&dev_attr_version.attr,
 	&dev_attr_status.attr,
@@ -2211,6 +2522,10 @@ static struct attribute *p9221_attributes[] = {
 	&dev_attr_icl_ramp_delay_ms.attr,
 	&dev_attr_force_epp.attr,
 	&dev_attr_dc_icl_bpp.attr,
+	&dev_attr_rtx_sw.attr,
+	&dev_attr_rtx_boost.attr,
+	&dev_attr_rtx.attr,
+	&dev_attr_alignment.attr,
 	NULL
 };
 
@@ -2480,6 +2795,7 @@ static void p9221_irq_handler(struct p9221_charger_data *charger, u16 irq_src)
 	/* Receive complete */
 	if (irq_src & P9221R5_STAT_CCDATARCVD) {
 		uint8_t rxlen = 0;
+
 		res = p9221_reg_read_8(charger, P9221R5_COM_CHAN_RECV_SIZE_REG,
 				       &rxlen);
 		if (res) {
@@ -2489,8 +2805,8 @@ static void p9221_irq_handler(struct p9221_charger_data *charger, u16 irq_src)
 		}
 		if (rxlen) {
 			res = p9221_reg_read_n(charger,
-					       P9221R5_DATA_RECV_BUF_START,
-					       charger->rx_buf, rxlen);
+					charger->addr_data_recv_buf_start,
+					charger->rx_buf, rxlen);
 			if (res)
 				dev_err(&charger->client->dev,
 					"Failed to read len: %d\n", res);
@@ -2516,7 +2832,7 @@ static void p9221_irq_handler(struct p9221_charger_data *charger, u16 irq_src)
 		char s[maxsz];
 
 		res = p9221_reg_read_n(charger,
-				       P9221R5_DATA_RECV_BUF_START,
+				       charger->addr_data_recv_buf_start,
 				       charger->pp_buf,
 				       sizeof(charger->pp_buf));
 		if (res)
@@ -2556,9 +2872,12 @@ static irqreturn_t p9221_irq_thread(int irq, void *irq_data)
 		goto out;
 	}
 
-	dev_info(&charger->client->dev, "INT: %04x\n", irq_src);
-	logbuffer_log(charger->log, "INT=%04x on:%d",
-		      irq_src, charger->online);
+	/* TODO: interrupt storm with irq_src = when in rTX mode */
+	if (!charger->ben_state) {
+		dev_info(&charger->client->dev, "INT: %04x\n", irq_src);
+		logbuffer_log(charger->log, "INT=%04x on:%d",
+			      irq_src, charger->online);
+	}
 
 	if (!irq_src)
 		goto out;
@@ -2569,6 +2888,10 @@ static irqreturn_t p9221_irq_thread(int irq, void *irq_data)
 			"Failed to clear INT reg: %d\n", ret);
 		goto out;
 	}
+
+	/* todo interrupt handling for rx */
+	if (charger->ben_state)
+		goto out;
 
 	if (irq_src & P9221_STAT_VRECT) {
 		dev_info(&charger->client->dev,
@@ -2594,11 +2917,28 @@ static irqreturn_t p9221_irq_det_thread(int irq, void *irq_data)
 {
 	struct p9221_charger_data *charger = irq_data;
 
-	logbuffer_log(charger->log, "irq_det: online=%d", charger->online);
+	logbuffer_log(charger->log, "irq_det: online=%d ben=%d",
+		      charger->online, charger->ben_state);
 
 	/* If we are already online, just ignore the interrupt. */
-	if (charger->online)
+	if (p9221_is_online(charger))
 		return IRQ_HANDLED;
+
+	if (charger->align != POWER_SUPPLY_ALIGN_MOVE) {
+		if (charger->align != POWER_SUPPLY_ALIGN_CHECKING)
+			schedule_work(&charger->uevent_work);
+		charger->align = POWER_SUPPLY_ALIGN_CHECKING;
+		charger->align_count++;
+
+		if (charger->align_count > WLC_ALIGN_IRQ_THRESHOLD) {
+			schedule_work(&charger->uevent_work);
+			charger->align = POWER_SUPPLY_ALIGN_MOVE;
+		}
+		logbuffer_log(charger->log, "align: state: %s",
+			      align_status_str[charger->align]);
+	}
+
+	del_timer(&charger->align_timer);
 
 	/*
 	 * This interrupt will wake the device if it's suspended,
@@ -2611,6 +2951,14 @@ static irqreturn_t p9221_irq_det_thread(int irq, void *irq_data)
 	pm_stay_awake(charger->dev);
 
 	return IRQ_HANDLED;
+}
+
+static void p9221_uevent_work(struct work_struct *work)
+{
+	struct p9221_charger_data *charger = container_of(work,
+			struct p9221_charger_data, uevent_work);
+
+	kobject_uevent(&charger->dev->kobj, KOBJ_CHANGE);
 }
 
 static int p9221_parse_dt(struct device *dev,
@@ -2643,6 +2991,17 @@ static int p9221_parse_dt(struct device *dev,
 		dev_info(dev, "WLC_BPP_EPP_SLCT gpio:%d value=%d",
 					pdata->slct_gpio, pdata->slct_value);
 	}
+
+	/* boost enable, power WLC IC from device */
+	ret = of_get_named_gpio(node, "idt,gpio_ben", 0);
+	pdata->ben_gpio = ret;
+	if (ret >= 0)
+		dev_info(dev, "ben gpio:%d\n", pdata->ben_gpio);
+
+	ret = of_get_named_gpio(node, "idt,gpio_switch", 0);
+	pdata->switch_gpio = ret;
+	if (ret >= 0)
+		dev_info(dev, "switch gpio:%d\n", pdata->switch_gpio);
 
 	/* Main IRQ */
 	ret = of_get_named_gpio(node, "idt,irq_gpio", 0);
@@ -2783,13 +3142,17 @@ static int p9221_parse_dt(struct device *dev,
 
 	ret = of_property_read_u32(node, "google,alignment_scalar", &data);
 	if (ret < 0)
-		pdata->wlc_alignment_scalar = WLC_ALIGN_DEFAULT_SCALAR;
+		pdata->alignment_scalar = WLC_ALIGN_DEFAULT_SCALAR;
 	else {
-		pdata->wlc_alignment_scalar = data;
-		if (pdata->wlc_alignment_scalar != WLC_ALIGN_DEFAULT_SCALAR)
+		pdata->alignment_scalar = data;
+		if (pdata->alignment_scalar != WLC_ALIGN_DEFAULT_SCALAR)
 			dev_info(dev, "google,alignment_scalar updated to: %d\n",
-				 pdata->wlc_alignment_scalar);
+				 pdata->alignment_scalar);
 	}
+
+	ret = of_property_read_bool(node, "idt,ramp-disable");
+	if (ret)
+		pdata->icl_ramp_delay_ms = -1 ;
 
 	return 0;
 }
@@ -2805,7 +3168,6 @@ static enum power_supply_property p9221_props[] = {
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_OPERATING_FREQ,
-	POWER_SUPPLY_PROP_ALIGNMENT,
 };
 
 static const struct power_supply_desc p9221_psy_desc = {
@@ -2819,6 +3181,43 @@ static const struct power_supply_desc p9221_psy_desc = {
 	.no_thermal = true,
 };
 
+/* return true when online */
+static bool p9221_get_chip_id(struct p9221_charger_data *charger, u16 *chip_id)
+{
+	int ret;
+
+	/* Test to see if the charger is online */
+	ret = p9221_reg_read_16(charger, P9221_CHIP_ID_REG, chip_id);
+	if (ret == 0) {
+		dev_info(charger->dev, "Charger online id:%04x\n", *chip_id);
+		return true;
+	}
+
+	/* off, try to power on the WLC chip */
+	ret = p9382_rtx_enable(charger, true);
+	if (ret == 0) {
+		ret = p9221_reg_read_16(charger, P9221_CHIP_ID_REG, chip_id);
+		p9382_rtx_enable(charger, false);
+
+		if (ret == 0) {
+			dev_info(charger->dev, "Charger rTX id:%04x\n",
+				 *chip_id);
+			return false;
+		}
+	}
+
+	/* hack/fallback use the chip address. useful for prototypes that might
+	 * not have the ability to power the chip.
+	 */
+	if (charger->client->addr == P9382A_I2C_ADDRESS) {
+		dev_info(charger->dev, "Charger rTX address :%02x\n",
+			 charger->client->addr);
+		*chip_id = P9382A_CHIP_ID;
+	}
+
+	return false;
+}
+
 static int p9221_charger_probe(struct i2c_client *client,
 				const struct i2c_device_id *id)
 {
@@ -2826,8 +3225,9 @@ static int p9221_charger_probe(struct i2c_client *client,
 	struct p9221_charger_data *charger;
 	struct p9221_charger_platform_data *pdata = client->dev.platform_data;
 	struct power_supply_config psy_cfg = {};
-	int ret = 0;
 	u16 chip_id = 0;
+	bool online;
+	int ret;
 
 	ret = i2c_check_functionality(client->adapter,
 				      I2C_FUNC_SMBUS_BYTE_DATA |
@@ -2862,15 +3262,21 @@ static int p9221_charger_probe(struct i2c_client *client,
 	charger->client = client;
 	charger->pdata = pdata;
 	charger->resume_complete = true;
+	charger->align = POWER_SUPPLY_ALIGN_ERROR;
+	charger->align_count = 0;
+	charger->is_mfg_google = false;
 	mutex_init(&charger->io_lock);
 	mutex_init(&charger->cmd_lock);
 	setup_timer(&charger->vrect_timer, p9221_vrect_timer_handler,
+		    (unsigned long)charger);
+	setup_timer(&charger->align_timer, p9221_align_timer_handler,
 		    (unsigned long)charger);
 	INIT_DELAYED_WORK(&charger->dcin_work, p9221_dcin_work);
 	INIT_DELAYED_WORK(&charger->tx_work, p9221_tx_work);
 	INIT_DELAYED_WORK(&charger->icl_ramp_work, p9221_icl_ramp_work);
 	INIT_DELAYED_WORK(&charger->align_work, p9221_align_work);
 	INIT_DELAYED_WORK(&charger->dcin_pon_work, p9221_dcin_pon_work);
+	INIT_WORK(&charger->uevent_work, p9221_uevent_work);
 	alarm_init(&charger->icl_ramp_alarm, ALARM_BOOTTIME,
 		   p9221_icl_ramp_alarm_cb);
 
@@ -2882,6 +3288,12 @@ static int p9221_charger_probe(struct i2c_client *client,
 	if (charger->pdata->slct_gpio >= 0)
 		gpio_direction_output(charger->pdata->slct_gpio,
 				      charger->pdata->slct_value);
+
+	if (charger->pdata->ben_gpio >= 0)
+		gpio_direction_output(charger->pdata->ben_gpio, 0);
+
+	if (charger->pdata->switch_gpio >= 0)
+		gpio_direction_output(charger->pdata->switch_gpio, 0);
 
 	/* Default to R5+ */
 	charger->cust_id = 5;
@@ -2904,14 +3316,26 @@ static int p9221_charger_probe(struct i2c_client *client,
 	if (!charger->dc_icl_votable)
 		dev_warn(&charger->client->dev, "Could not find DC_ICL votable\n");
 
-	charger->icl_ramp_ua = P9221_DC_ICL_BPP_RAMP_DEFAULT_UA;
-	charger->icl_ramp_delay_ms = P9221_DC_ICL_BPP_RAMP_DELAY_DEFAULT_MS;
+	/* Ramping on BPP is optional */
+	if (charger->pdata->icl_ramp_delay_ms != -1) {
+		charger->icl_ramp_ua = P9221_DC_ICL_BPP_RAMP_DEFAULT_UA;
+		charger->pdata->icl_ramp_delay_ms =
+					P9221_DC_ICL_BPP_RAMP_DELAY_DEFAULT_MS;
+	}
+
 	charger->dc_icl_bpp = 0;
 
-	/* Test to see if the charger is online */
-	ret = p9221_reg_read_16(charger, P9221_CHIP_ID_REG, &chip_id);
-	if (ret == 0 && chip_id == P9221_CHIP_ID) {
-		dev_info(&client->dev, "Charger online id:%04x\n", chip_id);
+	/* valid chip_id [P9382A_CHIP_ID, P9221_CHIP_ID] or 0 */
+	online = p9221_get_chip_id(charger, &chip_id);
+	if (chip_id == P9382A_CHIP_ID) {
+		charger->addr_data_send_buf_start = P9382A_DATA_SEND_BUF_START;
+		charger->addr_data_recv_buf_start = P9382A_DATA_RECV_BUF_START;
+	} else {
+		charger->addr_data_send_buf_start = P9221R5_DATA_SEND_BUF_START;
+		charger->addr_data_recv_buf_start = P9221R5_DATA_RECV_BUF_START;
+	}
+
+	if (online) {
 		/* set charger->online=true, will ignore first VRECTON IRQ */
 		p9221_set_online(charger);
 	} else {
@@ -2982,9 +3406,9 @@ static int p9221_charger_probe(struct i2c_client *client,
 		charger->log = NULL;
 	}
 
-	dev_info(&client->dev, "P9221 Charger Driver Loaded\n");
+	dev_info(&client->dev, "p9221 Charger Driver Loaded\n");
 
-	if (chip_id == P9221_CHIP_ID) {
+	if (online) {
 		charger->dc_psy = power_supply_get_by_name("dc");
 		if (charger->dc_psy)
 			power_supply_changed(charger->dc_psy);
@@ -3001,8 +3425,11 @@ static int p9221_charger_remove(struct i2c_client *client)
 	cancel_delayed_work_sync(&charger->tx_work);
 	cancel_delayed_work_sync(&charger->icl_ramp_work);
 	cancel_delayed_work_sync(&charger->dcin_pon_work);
+	cancel_delayed_work_sync(&charger->align_work);
+	cancel_work_sync(&charger->uevent_work);
 	alarm_try_to_cancel(&charger->icl_ramp_alarm);
 	del_timer_sync(&charger->vrect_timer);
+	del_timer_sync(&charger->align_timer);
 	device_init_wakeup(charger->dev, false);
 	cancel_delayed_work_sync(&charger->notifier_work);
 	power_supply_unreg_notifier(&charger->nb);
@@ -3014,6 +3441,7 @@ static int p9221_charger_remove(struct i2c_client *client)
 
 static const struct i2c_device_id p9221_charger_id_table[] = {
 	{ "p9221", 0 },
+	{ "p9382", 0 },
 	{ },
 };
 MODULE_DEVICE_TABLE(i2c, p9221_charger_id_table);
@@ -3021,6 +3449,7 @@ MODULE_DEVICE_TABLE(i2c, p9221_charger_id_table);
 #ifdef CONFIG_OF
 static struct of_device_id p9221_charger_match_table[] = {
 	{ .compatible = "idt,p9221",},
+	{ .compatible = "idt,p9382",},
 	{},
 };
 #else

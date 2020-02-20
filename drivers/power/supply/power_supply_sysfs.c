@@ -462,7 +462,6 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(scale_mode_en),
 	POWER_SUPPLY_ATTR(operating_freq),
 	POWER_SUPPLY_ATTR(voltage_max_limit),
-	POWER_SUPPLY_ATTR(alignment),
 	POWER_SUPPLY_ATTR(real_capacity),
 	POWER_SUPPLY_ATTR(dead_battery),
 	/* Capacity Estimation */
