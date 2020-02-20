@@ -87,16 +87,22 @@ EXPORT_SYMBOL(fscrypt_release_ctx);
 
 /**
  * fscrypt_get_ctx() - Gets an encryption context
+ * @inode:       The inode for which we are doing the crypto
  * @gfp_flags:   The gfp flag for memory allocation
  *
  * Allocates and initializes an encryption context.
  *
- * Return: A new encryption context on success; an ERR_PTR() otherwise.
+ * Return: An allocated and initialized encryption context on success; error
+ * value or NULL otherwise.
  */
-struct fscrypt_ctx *fscrypt_get_ctx(gfp_t gfp_flags)
+struct fscrypt_ctx *fscrypt_get_ctx(const struct inode *inode, gfp_t gfp_flags)
 {
-	struct fscrypt_ctx *ctx;
+	struct fscrypt_ctx *ctx = NULL;
+	struct fscrypt_info *ci = inode->i_crypt_info;
 	unsigned long flags;
+
+	if (ci == NULL)
+		return ERR_PTR(-ENOKEY);
 
 	/*
 	 * We first try getting the ctx from a free list because in
@@ -254,9 +260,9 @@ struct page *fscrypt_encrypt_page(const struct inode *inode,
 	if (WARN_ON_ONCE(!PageLocked(page)))
 		return ERR_PTR(-EINVAL);
 
-	ctx = fscrypt_get_ctx(gfp_flags);
+	ctx = fscrypt_get_ctx(inode, gfp_flags);
 	if (IS_ERR(ctx))
-		return ERR_CAST(ctx);
+		return (struct page *)ctx;
 
 	/* The encryption operation will require a bounce page. */
 	ciphertext_page = fscrypt_alloc_bounce_page(ctx, gfp_flags);
