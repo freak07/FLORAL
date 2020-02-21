@@ -146,14 +146,7 @@ static u8 key_mask;	/* /< store the last update of the key mask
 static int fts_init_sensing(struct fts_ts_info *info);
 static int fts_mode_handler(struct fts_ts_info *info, int force);
 
-
 static int fts_chip_initialization(struct fts_ts_info *info, int init_type);
-
-static void fts_report_timestamp(struct fts_ts_info *info)
-{
-	input_event(info->input_dev, EV_MSC, MSC_TIMESTAMP,
-		info->timestamp / 1000);
-}
 
 /**
   * Release all the touches in the linux input subsystem
@@ -177,7 +170,6 @@ void release_all_touches(struct fts_ts_info *info)
 		input_report_abs(info->input_dev, ABS_MT_TRACKING_ID, -1);
 	}
 	input_report_key(info->input_dev, BTN_TOUCH, 0);
-	fts_report_timestamp(info);
 	input_sync(info->input_dev);
 	info->touch_id = 0;
 #ifdef STYLUS_MODE
@@ -1520,7 +1512,7 @@ static void touchsim_work(struct work_struct *work)
 	struct fts_ts_info *info  = container_of(touchsim,
 						struct fts_ts_info,
 						touchsim);
-	u64 timestamp_ns = ktime_get_ns();
+	ktime_t timestamp = ktime_get();
 
 	/* prevent CPU from entering deep sleep */
 	pm_qos_update_request(&info->pm_qos_req, 100);
@@ -1535,13 +1527,9 @@ static void touchsim_work(struct work_struct *work)
 	touchsim_report_contact_event(info->input_dev, TOUCHSIM_SLOT_ID,
 					touchsim->x, touchsim->y, 1);
 
-	input_event(info->input_dev, EV_MSC, MSC_TIMESTAMP,
-			timestamp_ns / 1000);
-
 	input_sync(info->input_dev);
-
 #ifndef CONFIG_SKIP_HEATMAP
-	heatmap_read(&info->v4l2, timestamp_ns);
+	heatmap_read(&info->v4l2, ktime_to_ns(timestamp));
 #endif
 
 	pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
@@ -3891,7 +3879,6 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	const unsigned char EVENTS_REMAINING_MASK = 0x1F;
 	unsigned char events_remaining = 0;
 	unsigned char *evt_data;
-	event_dispatch_handler_t event_handler;
 	bool processed_pointer_event = false;
 
 	/* It is possible that interrupts were disabled while the handler is
@@ -3934,10 +3921,8 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 
 			/* Ensure event ID is within bounds */
 			if (eventId < NUM_EVT_ID) {
-				event_handler =
-					info->event_dispatch_table[eventId];
-				processed_pointer_event =
-					event_handler(info, evt_data);
+				processed_pointer_event = info->event_dispatch_table[eventId](
+					info, evt_data);
 			}
 		}
 	}
@@ -3945,19 +3930,11 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	if (info->touch_id == 0)
 		input_report_key(info->input_dev, BTN_TOUCH, 0);
 
-	/*
-	 * Only report timestamp for pointer events and ignore events
-	 * like errors, status updates, etc.
-	 * Otherwise, we will generate events that only consist of timestamps.
-	 */
-	if (processed_pointer_event) {
-		fts_report_timestamp(info);
-	}
 	input_sync(info->input_dev);
 
 #ifndef CONFIG_SKIP_HEATMAP
-        if (processed_pointer_event)
-		heatmap_read(&info->v4l2, info->timestamp);
+	if (processed_pointer_event)
+		heatmap_read(&info->v4l2, ktime_to_ns(info->timestamp));
 #endif
 
 	/* Disable the firmware motion filter during single touch */
@@ -4426,7 +4403,8 @@ static irqreturn_t fts_isr(int irq, void *handle)
 {
 	struct fts_ts_info *info = handle;
 
-	info->timestamp = ktime_get_ns();
+	info->timestamp = ktime_get();
+	input_set_timestamp(info->input_dev, info->timestamp);
 
 	return IRQ_WAKE_THREAD;
 }
@@ -5518,7 +5496,6 @@ static int fts_probe(struct spi_device *client)
 	input_set_abs_params(info->input_dev, ABS_MT_DISTANCE, DISTANCE_MIN,
 			     DISTANCE_MAX, 0, 0);
 #endif
-	input_set_capability(info->input_dev, EV_MSC, MSC_TIMESTAMP);
 
 #ifdef GESTURE_MODE
 	input_set_capability(info->input_dev, EV_KEY, KEY_WAKEUP);
