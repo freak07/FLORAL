@@ -1512,7 +1512,7 @@ static void touchsim_work(struct work_struct *work)
 	struct fts_ts_info *info  = container_of(touchsim,
 						struct fts_ts_info,
 						touchsim);
-	ktime_t timestamp = ktime_get();
+	ktime_t __maybe_unused timestamp = ktime_get();
 
 	/* prevent CPU from entering deep sleep */
 	pm_qos_update_request(&info->pm_qos_req, 100);
