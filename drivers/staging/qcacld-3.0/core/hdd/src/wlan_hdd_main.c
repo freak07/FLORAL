@@ -4443,7 +4443,8 @@ int hdd_vdev_create(struct hdd_adapter *adapter,
 	status = qdf_event_reset(&adapter->qdf_session_open_event);
 	if (QDF_STATUS_SUCCESS != status) {
 		hdd_err("failed to reinit session open event");
-		return -EINVAL;
+		errno = qdf_status_to_os_return(status);
+		goto objmgr_vdev_destroy_procedure;
 	}
 	errno = hdd_set_sme_session_param(adapter, &sme_session_params,
 					  callback, ctx);
@@ -4463,17 +4464,14 @@ int hdd_vdev_create(struct hdd_adapter *adapter,
 	status = qdf_wait_for_event_completion(&adapter->qdf_session_open_event,
 			SME_CMD_VDEV_CREATE_DELETE_TIMEOUT);
 	if (QDF_STATUS_SUCCESS != status) {
-		if (adapter->qdf_session_open_event.force_set) {
+		if (adapter->qdf_session_open_event.force_set)
 			/*
 			 * SSR/PDR has caused shutdown, which has forcefully
-			 * set the event. Return without the closing session.
+			 * set the event.
 			 */
-			adapter->session_id = HDD_SESSION_ID_INVALID;
 			hdd_err("Session open event forcefully set");
-			return -EINVAL;
-		}
 
-		if (QDF_STATUS_E_TIMEOUT == status)
+		else if (QDF_STATUS_E_TIMEOUT == status)
 			hdd_err("Session failed to open within timeout period");
 		else
 			hdd_err("Failed to wait for session open event(status-%d)",
@@ -5480,6 +5478,7 @@ struct hdd_adapter *hdd_open_adapter(struct hdd_context *hdd_ctx, uint8_t sessio
 	INIT_WORK(&adapter->scan_block_work, wlan_hdd_cfg80211_scan_block_cb);
 	qdf_list_create(&adapter->blocked_scan_request_q, WLAN_MAX_SCAN_COUNT);
 	qdf_mutex_create(&adapter->blocked_scan_request_q_lock);
+	qdf_event_create(&adapter->acs_complete_event);
 
 	if (QDF_STATUS_SUCCESS == status) {
 		/* Add it to the hdd's session list. */
@@ -5544,6 +5543,7 @@ QDF_STATUS hdd_close_adapter(struct hdd_context *hdd_ctx, struct hdd_adapter *ad
 
 	qdf_list_destroy(&adapter->blocked_scan_request_q);
 	qdf_mutex_destroy(&adapter->blocked_scan_request_q_lock);
+	qdf_event_destroy(&adapter->acs_complete_event);
 
 	/* cleanup adapter */
 	policy_mgr_clear_concurrency_mode(hdd_ctx->psoc,
@@ -5820,7 +5820,13 @@ QDF_STATUS hdd_stop_adapter_ext(struct hdd_context *hdd_ctx,
 		cds_flush_work(&adapter->sap_stop_bss_work);
 
 		/* Any softap specific cleanup here... */
-		qdf_atomic_set(&adapter->session.ap.acs_in_progress, 0);
+		if (qdf_atomic_read(&adapter->session.ap.acs_in_progress)) {
+			hdd_info("ACS in progress, wait for complete");
+			qdf_wait_for_event_completion(
+				&adapter->acs_complete_event,
+				ACS_COMPLETE_TIMEOUT);
+		}
+
 		wlan_hdd_undo_acs(adapter);
 		if (adapter->device_mode == QDF_P2P_GO_MODE)
 			wlan_hdd_cleanup_remain_on_channel_ctx(adapter);
