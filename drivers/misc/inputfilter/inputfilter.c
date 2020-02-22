@@ -224,7 +224,7 @@ static int get_face_down_screen_off(void) {
 }
 
 bool should_screen_off_face_down(int screen_timeout_sec, int face_down);
-static void ifilter_pwrtrigger(int vibration, const char caller[]);
+static void ifilter_pwrtrigger(int vibration, int delay, const char caller[]);
 
 void stop_kernel_ambient_display(bool interrupt_ongoing);
 
@@ -263,9 +263,9 @@ void ifilter_uci_sys_listener(void) {
 		}
 		ifilter_ringing = ringing;
 		if (face_down && last_face_down!=face_down) {
-			if (screen_on && ntf_wake_by_user() && !ringing && !ifilter_screen_waking_app) {
+			if (screen_on && !ringing && !ifilter_screen_waking_app) {
 				if (should_screen_off_face_down(screen_timeout_sec, face_down)) {
-					ifilter_pwrtrigger(0,__func__);
+					ifilter_pwrtrigger(0,0,__func__);
 				}
 			}
 		}
@@ -761,7 +761,7 @@ static void ifilter_presspwr(struct work_struct * ifilter_presspwr_work) {
         mutex_unlock(&pwrkeyworklock);
 	return;
 }
-static DECLARE_WORK(ifilter_presspwr_work, ifilter_presspwr);
+static DECLARE_DELAYED_WORK(ifilter_presspwr_work, ifilter_presspwr);
 
 static void ifilter_vib(void) {
 	// avoid using squeeze vib length 15...
@@ -774,11 +774,10 @@ static DECLARE_WORK(ifilter_vib_work, ifilter_vib_work_func);
 
 
 /* PowerKey trigger */
-static void ifilter_pwrtrigger(int vibration, const char caller[]) {
+static void ifilter_pwrtrigger(int vibration, int delay, const char caller[]) {
 	if (vibration) ifilter_vib();
 	pr_info("%s power press - screen_on: %d caller %s\n",__func__, screen_on,caller);
-//	schedule_work(&ifilter_presspwr_work);
-	queue_work(ifilter_pwr_wq, &ifilter_presspwr_work);
+	mod_delayed_work(ifilter_pwr_wq, &ifilter_presspwr_work, msecs_to_jiffies(delay));
         return;
 }
 
@@ -932,7 +931,7 @@ static void ifilter_home_button_func_trigger(void) {
 			}
 			queue_work(ifilter_vib_wq, &ifilter_vib_work);
 			mdelay(50); // delay a bit, so finger up can trigger input event in goofix driver before screen off suspend...causes issues with fp input events after screen wake otherwise
-			ifilter_pwrtrigger(0,__func__);
+			ifilter_pwrtrigger(0,0,__func__);
 			do_home_button_off_too_in_work_func = 0;
 		}
                 return;
@@ -1130,7 +1129,7 @@ static bool ifilter_input_filter(struct input_handle *handle,
 							if (triple_tap_wait) { // triple tap happened, power off
 								alarm_cancel(&triple_tap_rtc);
 								triple_tap_wait = false;
-								ifilter_pwrtrigger(0,__func__);
+								ifilter_pwrtrigger(0,0,__func__);
 							} else {
 //								ktime_t wakeup_time;
 //								ktime_t curr_time = ktime_get();
@@ -1178,7 +1177,7 @@ static bool ifilter_input_filter(struct input_handle *handle,
 							return false;
 						} else {
 							if (last_short_tap_diff > (DT_WAIT_PERIOD_BASE_VALUE + 9 + get_doubletap_wait_period()*2) * JIFFY_MUL) { // long doubletap
-								ifilter_pwrtrigger(0,__func__);
+								ifilter_pwrtrigger(0,0,__func__);
 							} else { // short doubletap
 								if (get_ifilter_key()!=KEY_KPDOT) {
 								// home button simulation
@@ -2063,7 +2062,7 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 	if (screen_on && squeeze_peek_wait) {
 		last_kad_screen_off_time = jiffies;
 		last_peek_timeout_screen_off_time = jiffies;
-		ifilter_pwrtrigger(0,__func__);
+		ifilter_pwrtrigger(0,0,__func__);
 		if (kad_running && !kad_running_for_kcal_only && !kad_running_for_aod_gesture && !interrupt_kad_peekmode_wait) { // not interrupted, and kad mode peek.. see if re-schedule is needed...
 			kad_repeat_counter++;
 			if (should_kad_start() && kad_repeat_counter<smart_get_kad_repeat_times()) { // only reschedule if kad should still smart start...and counter is below times limit...
@@ -2210,7 +2209,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 					squeeze_swipe_trigger();
 				} else {
 					last_screen_event_timestamp = jiffies;
-					ifilter_pwrtrigger(0,__func__); // SCREEN ON
+					ifilter_pwrtrigger(0,0,__func__); // SCREEN ON
 				}
 			}
 			return;
@@ -2285,7 +2284,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 						squeeze_swipe_trigger();
 					} else {
 						last_screen_event_timestamp = jiffies;
-						ifilter_pwrtrigger(0,__func__); // SCREEN ON
+						ifilter_pwrtrigger(0,0,__func__); // SCREEN ON
 					}
 				}
 				return;
@@ -2357,7 +2356,8 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 				} else {
 					last_screen_event_timestamp = jiffies;
 					if (!screen_on || !get_squeeze_sleep_on_long()) {
-						ifilter_pwrtrigger(0,__func__); // SCREEN ON if not already or OFF if screen is on and NOT squeeze sleep on long only...
+						// POWER OFF / ON
+						ifilter_pwrtrigger(0,250,__func__); // SCREEN ON if not already or OFF if screen is on and NOT squeeze sleep on long only...
 					}
 				}
 			}
@@ -2368,7 +2368,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 			wait_for_squeeze_power = 1; // pwr trigger should be canceled if right after squeeze happens a power setting
 			// ..that would mean user is on the settings screen and calibrating.
 			ntf_input_event(__func__,"");
-			ifilter_pwrtrigger(0,__func__); // POWER ON FULLY, NON PEEK
+			ifilter_pwrtrigger(0,0,__func__); // POWER ON FULLY, NON PEEK
 			stop_kad_running(true,__func__);
 		} else if (screen_on && diff>MAX_SQUEEZE_TIME && diff<=MAX_SQUEEZE_TIME_LONG && (get_squeeze_swipe()||get_squeeze_sleep_on_long())) {
 			if (get_squeeze_sleep()) {
@@ -2390,7 +2390,7 @@ void if_report_squeeze_event(unsigned long timestamp, bool vibration, int num_pa
 				if (get_squeeze_swipe()||get_squeeze_sleep_on_long()) {
 					pr_info("%s squeeze call (after swipe or sleep_on_long -- power onoff endstage SWIPE - full sleep - swipe mode middle long gesture! %d\n",__func__,stage);
 					last_screen_event_timestamp = jiffies;
-					ifilter_pwrtrigger(0,__func__); // POWER OFF
+					ifilter_pwrtrigger(0,250,__func__); // POWER OFF
 					stop_kad_running(true,__func__);
 				}
 				return;
@@ -2434,7 +2434,7 @@ void do_kernel_ambient_display(void) {
 		squeeze_peekmode_trigger();
 		// KAD waking screen
 		ntf_kad_wake(); // signal kad wake, so screen on will be intercepted as not wake by user
-		ifilter_pwrtrigger(0,__func__);
+		ifilter_pwrtrigger(0,0,__func__);
 	}
 }
 
@@ -2551,7 +2551,7 @@ void if_report_squeeze_wake_event(int nanohub_flag, int vibrator_flag, unsigned 
 		if (!get_squeeze_sleep()) return;
 		pr_info("%s screen on and latest event diff small enough: pwr on\n",__func__);
 		last_timestamp = 0;
-		ifilter_pwrtrigger(0,__func__);
+		ifilter_pwrtrigger(0,0,__func__);
 		return;
 	}
 #endif
@@ -3062,7 +3062,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 				last_screen_event_timestamp = jiffies;
 				start_kad_running(KAD_FOR_AOD);
 				squeeze_peekmode_trigger();
-				ifilter_pwrtrigger(0,__func__); // SCREEN ON
+				ifilter_pwrtrigger(0,0,__func__); // SCREEN ON
 			}
 		}
 	} else
