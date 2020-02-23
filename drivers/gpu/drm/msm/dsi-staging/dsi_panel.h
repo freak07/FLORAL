@@ -318,9 +318,6 @@ struct dsi_panel {
 	bool vr_mode;
 	enum hbm_mode_type hbm_mode;
 	bool hbm_pending_irc_on;
-	bool hbm_sv_enabled;
-	/* Work used to handle hbmsv hang */
-	struct delayed_work hanghandler_work;
 };
 
 /**
