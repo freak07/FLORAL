@@ -115,8 +115,7 @@ static char dsi_dsc_rc_range_bpg_offset[] = {2, 0, 0, -2, -4, -6, -8, -8,
  */
 
 static int dsi_panel_clear_vr_locked(struct dsi_panel *panel);
-static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
-					enum hbm_mode_type hbm_mode);
+static int dsi_panel_update_hbm_locked(struct dsi_panel *panel, bool enable);
 
 int dsi_dsc_create_pps_buf_cmd(struct msm_display_dsc_info *dsc, char *buf,
 				int pps_id)
@@ -4177,7 +4176,7 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 		}
 	}
 
-	rc = dsi_panel_update_hbm_locked(panel, HBM_MODE_OFF);
+	rc = dsi_panel_update_hbm_locked(panel, false);
 	if (rc) {
 		pr_err("[%s] couldn't disable HBM mode for LP1 transition\n",
 			panel->name);
@@ -4226,7 +4225,7 @@ int dsi_panel_set_lp2(struct dsi_panel *panel)
 		}
 	}
 
-	rc = dsi_panel_update_hbm_locked(panel, HBM_MODE_OFF);
+	rc = dsi_panel_update_hbm_locked(panel, false);
 	if (rc) {
 		pr_err("[%s] couldn't disable HBM mode for LP2 transition\n",
 			panel->name);
@@ -4292,7 +4291,7 @@ static int dsi_panel_set_vr_locked(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 
-	rc = dsi_panel_update_hbm_locked(panel, HBM_MODE_OFF);
+	rc = dsi_panel_update_hbm_locked(panel, false);
 	if (rc) {
 		pr_err("[%s] couldn't disable HBM mode before VR entry, aborting VR entry\n",
 			panel->name);
@@ -4383,18 +4382,12 @@ bool dsi_panel_get_vr_mode(struct dsi_panel *panel)
 	return vr_mode = panel->vr_mode;
 }
 
-static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
-					enum hbm_mode_type hbm_mode)
+static int dsi_panel_update_hbm_locked(struct dsi_panel *panel, bool enable)
 {
 	struct dsi_backlight_config *bl = &panel->bl_config;
 	struct hbm_data *hbm = bl->hbm;
 
-	if (!hbm)
-		return 0;
-
-	if (hbm_mode < 0 || hbm_mode >= HBM_MODE_MAX)
-		return -EINVAL;
-	if (hbm_mode == panel->hbm_mode)
+	if (!hbm || (panel->hbm_mode == enable))
 		return 0;
 
 	if ((dsi_backlight_get_dpms(bl) != SDE_MODE_DPMS_ON) ||
@@ -4404,31 +4397,13 @@ static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
 		return -EINVAL;
 	}
 
-	panel->hbm_pending_irc_on =
-		(panel->hbm_mode == HBM_MODE_SV && hbm_mode == HBM_MODE_OFF);
-
+	panel->hbm_mode = enable;
 	hbm->cur_range = HBM_RANGE_MAX;
-
-	if (hbm_mode == HBM_MODE_SV) {
-		int rc = panel->funcs->update_irc(panel, false);
-
-		if (rc != 0 && rc != -EOPNOTSUPP)
-			pr_err("[%s] failed to disable IRC, rc=%d\n",
-			       panel->name, rc);
-	} else if (hbm_mode == HBM_MODE_ON && panel->hbm_mode == HBM_MODE_SV) {
-		int rc = panel->funcs->update_irc(panel, true);
-
-		if (rc != 0 && rc != -EOPNOTSUPP)
-			pr_err("[%s] failed to enable IRC, rc=%d\n",
-			       panel->name, rc);
-	}
-
-	panel->hbm_mode = hbm_mode;
 
 	/* When HBM exit is requested, send HBM exit commands
 	 * immediately to avoid conflict with subsequent backlight ops.
 	 */
-	if (hbm_mode == HBM_MODE_OFF) {
+	if (!enable) {
 		int rc;
 
 		dsi_backlight_hbm_dimming_start(bl,
@@ -4446,7 +4421,7 @@ static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
 	return 0;
 }
 
-int dsi_panel_update_hbm(struct dsi_panel *panel, enum hbm_mode_type hbm_mode)
+int dsi_panel_update_hbm(struct dsi_panel *panel, bool enable)
 {
 	int rc = 0;
 
@@ -4457,7 +4432,7 @@ int dsi_panel_update_hbm(struct dsi_panel *panel, enum hbm_mode_type hbm_mode)
 		return 0;
 
 	mutex_lock(&panel->panel_lock);
-	rc = dsi_panel_update_hbm_locked(panel, hbm_mode);
+	rc = dsi_panel_update_hbm_locked(panel, enable);
 	mutex_unlock(&panel->panel_lock);
 	if (rc)
 		return rc;
@@ -4465,7 +4440,7 @@ int dsi_panel_update_hbm(struct dsi_panel *panel, enum hbm_mode_type hbm_mode)
 	return backlight_update_status(panel->bl_config.bl_device);
 }
 
-enum hbm_mode_type dsi_panel_get_hbm(struct dsi_panel *panel)
+bool dsi_panel_get_hbm(struct dsi_panel *panel)
 {
 	if (!panel) {
 		pr_err("invalid params\n");
@@ -4815,7 +4790,7 @@ int dsi_panel_disable(struct dsi_panel *panel)
 		}
 	}
 
-	rc = dsi_panel_update_hbm_locked(panel, HBM_MODE_OFF);
+	rc = dsi_panel_update_hbm_locked(panel, false);
 	if (rc)
 		pr_warn("[%s] couldn't disable HBM mode to unprepare display\n",
 			panel->name);

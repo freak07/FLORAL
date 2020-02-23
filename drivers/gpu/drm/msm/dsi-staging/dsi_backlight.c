@@ -406,15 +406,6 @@ void dsi_backlight_hbm_dimming_stop(struct dsi_backlight_config *bl)
 	}
 
 	hbm->dimming_stop_cmd = NULL;
-
-	if (panel->hbm_pending_irc_on) {
-		int rc = panel->funcs->update_irc(panel, true);
-
-		if (rc)
-			pr_err("hmb sv: failed to enble IRC.\n");
-		panel->hbm_pending_irc_on = false;
-	}
-
 	pr_debug("HBM dimming stopped\n");
 }
 
@@ -592,7 +583,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 	bl_temp = mult_frac(bl_temp, bl->bl_scale_ad,
 			MAX_AD_BL_SCALE_LEVEL);
 
-	if (panel->hbm_mode != HBM_MODE_OFF)
+	if (panel->hbm_mode)
 		bl_lvl = dsi_backlight_calculate_hbm(bl, bl_temp);
 	else
 		bl_lvl = dsi_backlight_calculate_normal(bl, bl_temp);
@@ -776,7 +767,7 @@ static ssize_t hbm_mode_store(struct device *dev,
 	struct dsi_backlight_config *bl = NULL;
 	struct dsi_panel *panel = NULL;
 	int rc = 0;
-	int hbm_mode = 0;
+	bool hbm_mode = false;
 
 	/* dev is non-NULL, enforced by sysfs_create_file_ns */
 	bd = to_backlight_device(dev);
@@ -785,17 +776,14 @@ static ssize_t hbm_mode_store(struct device *dev,
 	if (!bl->hbm)
 		return -ENOTSUPP;
 
-	rc = kstrtoint(buf, 10, &hbm_mode);
+	rc = kstrtobool(buf, &hbm_mode);
 	if (rc)
 		return rc;
 
 	panel = container_of(bl, struct dsi_panel, bl_config);
 	rc = dsi_panel_update_hbm(panel, hbm_mode);
-	if (rc) {
-		pr_err("hbm_mode store failed: %d\n", rc);
+	if (rc)
 		return rc;
-	}
-	pr_debug("hbm_mode set to %d\n", panel->hbm_mode);
 
 #ifdef CONFIG_UCI
 	last_hbm_mode = hbm_mode;
@@ -809,7 +797,7 @@ static ssize_t hbm_mode_show(struct device *dev,
 	struct backlight_device *bd = NULL;
 	struct dsi_backlight_config *bl = NULL;
 	struct dsi_panel *panel = NULL;
-	int hbm_mode = false;
+	bool hbm_mode = false;
 
 	/* dev is non-NULL, enforced by sysfs_create_file_ns */
 	bd = to_backlight_device(dev);
@@ -824,7 +812,7 @@ static ssize_t hbm_mode_show(struct device *dev,
 	last_hbm_mode = hbm_mode;
 #endif
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", hbm_mode);
+	return snprintf(buf, PAGE_SIZE, "%s\n", hbm_mode ? "on" : "off");
 }
 
 static DEVICE_ATTR_RW(hbm_mode);
@@ -1464,7 +1452,7 @@ static int dsi_panel_bl_parse_hbm(struct device *parent,
 	u32 val = 0;
 	bool dimming_used = false;
 
-	panel->hbm_mode = HBM_MODE_OFF;
+	panel->hbm_mode = false;
 
 	if (bl->hbm) {
 		pr_warn("HBM data already parsed, freeing before reparsing\n");
