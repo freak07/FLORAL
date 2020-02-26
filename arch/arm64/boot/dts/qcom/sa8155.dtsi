@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -617,6 +617,7 @@
 		compatible = "qcom,emac-dwc-eqos";
 		qcom,arm-smmu;
 		emac-core-version = <2>;
+		emac-phy-addr = <7>;
 		reg = <0x20000 0x10000>,
 			<0x36000 0x100>,
 			<0x3D00000 0x300000>;
@@ -716,16 +717,6 @@
 
 &ipa_hw {
 	status="disabled";
-};
-
-&android_q_fstab {
-	metadata {
-		compatible = "android,metadata";
-		status = "ok";
-		type = "ext4";
-		mnt_flags = "noatime,nosuid,nodev,discard";
-		fsmgr_flags = "wait,formattable,first_stage_mount";
-	};
 };
 
 #include "sa8155-audio.dtsi"

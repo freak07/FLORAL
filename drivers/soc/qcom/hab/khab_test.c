@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -322,18 +322,22 @@ static ssize_t expimp_store(struct kobject *kobj, struct kobj_attribute *attr,
 	int ret;
 	char str[36] = {0};
 
-	sscanf(buf, "%s", &str);
-	if (strncmp(buf, "dump_pipe", strlen("dump_pipe")) == 0) {
+	ret = sscanf(buf, "%35s", str);
+	if (ret < 1)
+		pr_err("failed to read anything from input %d", ret);
+
+	if (strnlen(str, strlen("dump_pipe")) == strlen("dump_pipe") &&
+		strcmp(str, "dump_pipe") == 0) {
 		/* string terminator is ignored */
 		dump_hab();
 		return strlen("dump_pipe");
-	} else {
-		ret = sscanf(buf, "%du", &pid_stat);
-		if (ret < 1) {
-			pr_err("failed to read anything from input %d", ret);
-		} else
-		  return pid_stat; /* good result stored */
 	}
+
+	ret = sscanf(buf, "%du", &pid_stat);
+	if (ret < 1)
+		pr_err("failed to read anything from input %d", ret);
+	else
+		return pid_stat; /* good result stored */
 	return -EEXIST;
 }
 
@@ -382,15 +386,8 @@ int hab_stat_deinit_sub(struct hab_driver *driver)
 	return 0;
 }
 
-#define HAB_PIPE_DUMP_FILE_NAME "/sdcard/habpipe-"
-#define HAB_PIPE_DUMP_FILE_EXT ".dat"
-
-static struct file *filp = NULL;
-
-int dump_hab_open(void) {
-	int rc = 0;
-	char file_path[256];
-	char file_time[100];
+int dump_hab_get_file_name(char *file_time, int ft_size)
+{
 	struct timeval time;
 	unsigned long local_time;
 	struct rtc_time tm;
@@ -399,50 +396,10 @@ int dump_hab_open(void) {
 	local_time = (unsigned int)(time.tv_sec - (sys_tz.tz_minuteswest * 60));
 	rtc_time_to_tm(local_time, &tm);
 
-	snprintf(file_time, sizeof(file_time), "%04d_%02d_%02d-%02d_%02d_%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	snprintf(file_time, ft_size, "%04d_%02d_%02d-%02d_%02d_%02d",
+		tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,
+		tm.tm_min, tm.tm_sec);
 
-	strlcpy(file_path, HAB_PIPE_DUMP_FILE_NAME, sizeof(file_path));
-	strlcat(file_path, file_time, sizeof(file_path));
-	strlcat(file_path, HAB_PIPE_DUMP_FILE_EXT, sizeof(file_path));
-
-	filp = filp_open(file_path, O_CREAT | O_WRONLY, 0600);
-	if (IS_ERR(filp)) {
-		rc = PTR_ERR(filp);
-		pr_err("failed to create file rc %d\n", rc);
-		filp = NULL;
-	} else
-		pr_info("hab pipe dump file opened %s\n", file_path);
-	return rc;
+	return 0;
 }
 
-void dump_hab_close(void) {
-	filp_close(filp, NULL);
-	filp = NULL;
-}
-
-int dump_hab_buf(void *buf, int size) {
-	return kernel_write(filp, buf, size, &filp->f_pos);
-}
-
-void dump_hab() {
-	struct physical_channel *pchan = NULL;
-	int i = 0;
-	char str[8] = {35,35,35,35,35,35,35,35}; /* ## */
-
-	dump_hab_open();
-	for (i = 0; i < hab_driver.ndevices; i++) {
-		struct hab_device *habdev = &hab_driver.devp[i];
-
-		if (habdev->id == MM_GFX || habdev->id == MM_MISC) { /* only care gfx and mis */
-
-			list_for_each_entry(pchan, &habdev->pchannels, node) {
-				if (pchan->vcnt > 0) {
-					pr_info("***** dump pchan %s vcnt %d *****\n", pchan->name, pchan->vcnt);
-					hab_pipe_read_dump(pchan);
-				}
-			}
-			dump_hab_buf(str, 8); /* separator */
-		}
-	}
-	dump_hab_close();
-}

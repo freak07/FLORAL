@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -70,7 +70,8 @@ uint32_t hab_pipe_write(struct hab_pipe_endpoint *ep,
 	uint32_t count1, count2;
 
 	if (!p || num_bytes > space || num_bytes == 0) {
-		pr_err("****can not write to pipe p %p to-write %d space available %d\n", p, num_bytes, space);
+		pr_err("****can not write to pipe p %pK to-write %d space available %d\n",
+			p, num_bytes, space);
 		return 0;
 	}
 
@@ -88,7 +89,8 @@ uint32_t hab_pipe_write(struct hab_pipe_endpoint *ep,
 			ep->tx_info.index = 0;
 	}
 	if (count2 > 0) {/* handle buffer wrapping */
-		memcpy((void *)&sh_buf->data[ep->tx_info.index], p + count1, count2);
+		memcpy((void *)&sh_buf->data[ep->tx_info.index],
+			p + count1, count2);
 		ep->tx_info.wr_count += count2;
 		ep->tx_info.index += count2;
 		if (ep->tx_info.index >= sh_buf->size)
@@ -113,21 +115,21 @@ uint32_t hab_pipe_read(struct hab_pipe_endpoint *ep,
 		unsigned char *p, uint32_t size, uint32_t clear)
 {
 	struct hab_shared_buf *sh_buf = ep->rx_info.sh_buf;
-	uint32_t avail = sh_buf->wr_count - sh_buf->rd_count; /* mb has to guarantee wr_count is updated after contents are written out */
+	/* mb to guarantee wr_count is updated after contents are written */
+	uint32_t avail = sh_buf->wr_count - sh_buf->rd_count;
 	uint32_t count1, count2, to_read;
-	uint32_t index_saved = ep->rx_info.index; /* store the original for retry */
+	uint32_t index_saved = ep->rx_info.index; /* store original for retry */
 
 	if (!p || avail == 0 || size == 0)
 		return 0;
 
 	asm volatile("dmb ishld" ::: "memory");
+	/* error if available is less than size and available is not zero */
+	to_read = (avail < size) ? avail : size;
 
-	to_read = (avail < size) ? avail : size; /* if available is less than size and available is not zero, then this is an error!*/
-
-	if (to_read < size) { /* we can only provide exact read size, not less */
-		pr_err("less data available %d then requested %d\n", avail, size);
-		/* return 0; */
-	}
+	if (to_read < size) /* only provide exact read size, not less */
+		pr_err("less data available %d than requested %d\n",
+			avail, size);
 
 	count1 = (to_read <= (sh_buf->size - ep->rx_info.index)) ? to_read :
 		(sh_buf->size - ep->rx_info.index);
@@ -140,7 +142,8 @@ uint32_t hab_pipe_read(struct hab_pipe_endpoint *ep,
 			ep->rx_info.index = 0;
 	}
 	if (count2 > 0) { /* handle buffer wrapping */
-		memcpy(p + count1, (void *)&sh_buf->data[ep->rx_info.index], count2);
+		memcpy(p + count1, (void *)&sh_buf->data[ep->rx_info.index],
+			count2);
 		ep->rx_info.index += count2;
 	}
 
@@ -150,37 +153,46 @@ uint32_t hab_pipe_read(struct hab_pipe_endpoint *ep,
 		int retry_cnt = 0;
 
 		if (clear && (size == sizeof(*head))) {
-		retry:
+retry:
 
-			if (head->signature != 0xBEE1BEE1) {
+			if (unlikely(head->signature != 0xBEE1BEE1)) {
 				pr_err("hab head corruption detected at %pK buf %pK %08X %08X %08X %08X rd %d wr %d index %X saved %X retry %d\n",
-					   head, &sh_buf->data[0], head->id_type_size, head->session_id, head->signature, head->sequence,
-					   sh_buf->rd_count, sh_buf->wr_count, ep->rx_info.index, index_saved, retry_cnt);
+					head, &sh_buf->data[0],
+					head->id_type_size, head->session_id,
+					head->signature, head->sequence,
+					sh_buf->rd_count, sh_buf->wr_count,
+					ep->rx_info.index, index_saved,
+					retry_cnt);
 				if (retry_cnt++ <= 1000) {
-					memcpy(p, (void *)&sh_buf->data[index_saved], count1);
-					if(count2)
-						memcpy(&p[count1], (void *)&sh_buf->data[ep->rx_info.index - count2], count2);
-
+					memcpy(p, &sh_buf->data[index_saved],
+						count1);
+					if (count2)
+						memcpy(&p[count1],
+				&sh_buf->data[ep->rx_info.index - count2],
+						count2);
 					goto retry;
-				}
-				else {
-					pr_err("quit retry after %d time may fail %X %X %X %X rd %d wr %d index %X\n", retry_cnt,
-						   head->id_type_size, head->session_id, head->signature, head->sequence,
-						   sh_buf->rd_count, sh_buf->wr_count, ep->rx_info.index);
-				}
-
+				} else
+					pr_err("quit retry after %d time may fail %X %X %X %X rd %d wr %d index %X\n",
+						retry_cnt, head->id_type_size,
+						head->session_id,
+						head->signature,
+						head->sequence,
+						sh_buf->rd_count,
+						sh_buf->wr_count,
+						ep->rx_info.index);
 			}
 		}
 
 		/*Must commit data before incremeting count*/
 		asm volatile("dmb ish" ::: "memory");
 		sh_buf->rd_count += count1 + count2;
-
 	}
 	return to_read;
 }
 
-void hab_pipe_rxinfo(struct hab_pipe_endpoint *ep, uint32_t *rd_cnt, uint32_t *wr_cnt, uint32_t *idx) {
+void hab_pipe_rxinfo(struct hab_pipe_endpoint *ep, uint32_t *rd_cnt,
+					uint32_t *wr_cnt, uint32_t *idx)
+{
 	struct hab_shared_buf *sh_buf = ep->rx_info.sh_buf;
 
 	*idx = ep->rx_info.index;

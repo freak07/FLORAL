@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,10 +14,10 @@
 #define HAB_PIPE_H
 
 struct hab_shared_buf {
-	volatile uint32_t rd_count;
-	volatile uint32_t wr_count;
+	uint32_t rd_count; /* volatile cannot be used here */
+	uint32_t wr_count; /* volatile cannot be used here */
 	uint32_t size;
-	volatile unsigned char data[];
+	unsigned char data[]; /* volatile cannot be used here */
 };
 
 /* debug only */
@@ -33,8 +33,8 @@ struct dbg_item {
 #define DBG_ITEM_SIZE 20
 
 struct dbg_items {
-  struct dbg_item it[DBG_ITEM_SIZE];
-  int idx;
+	struct dbg_item it[DBG_ITEM_SIZE];
+	int idx;
 };
 
 struct hab_pipe_endpoint {
@@ -74,7 +74,8 @@ void hab_pipe_write_commit(struct hab_pipe_endpoint *ep);
 uint32_t hab_pipe_read(struct hab_pipe_endpoint *ep,
 		unsigned char *p, uint32_t size, uint32_t clear);
 
-// debug only
-void hab_pipe_rxinfo(struct hab_pipe_endpoint *ep, uint32_t *rd_cnt, uint32_t *wr_cnt, uint32_t *idx);
+/* debug only */
+void hab_pipe_rxinfo(struct hab_pipe_endpoint *ep, uint32_t *rd_cnt,
+		uint32_t *wr_cnt, uint32_t *idx);
 
 #endif /* HAB_PIPE_H */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,6 +21,7 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/mhi.h>
+#include <linux/memblock.h>
 #include "mhi_internal.h"
 
 const char * const mhi_log_level_str[MHI_MSG_LVL_MAX] = {
@@ -1381,6 +1382,11 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	if (!mhi_cntrl->status_cb || !mhi_cntrl->link_status)
 		return -EINVAL;
 
+	if (!mhi_cntrl->iova_stop) {
+		mhi_cntrl->iova_start = memblock_start_of_DRAM();
+		mhi_cntrl->iova_stop = memblock_end_of_DRAM();
+	}
+
 	ret = of_parse_dt(mhi_cntrl, mhi_cntrl->of_node);
 	if (ret)
 		return -EINVAL;
@@ -1609,10 +1615,11 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 			}
 
 			mhi_cntrl->bhie = mhi_cntrl->regs + bhie_off;
+			memset_io(mhi_cntrl->bhie + BHIE_RXVECADDR_LOW_OFFS, 0,
+				  BHIE_RXVECSTATUS_OFFS - BHIE_RXVECADDR_LOW_OFFS + 4);
+		} else {
+			MHI_ERR("Don't do memset_io for qcn7605\n");
 		}
-
-		memset_io(mhi_cntrl->bhie + BHIE_RXVECADDR_LOW_OFFS, 0,
-			  BHIE_RXVECSTATUS_OFFS - BHIE_RXVECADDR_LOW_OFFS + 4);
 
 		if (mhi_cntrl->rddm_image)
 			mhi_rddm_prepare(mhi_cntrl, mhi_cntrl->rddm_image);

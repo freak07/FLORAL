@@ -15,7 +15,9 @@
 
 static unsigned long long xvm_sche_tx_tv_buffer[2];
 
-void pipe_read_trace(struct hab_pipe *pipe, struct hab_pipe_endpoint *ep, int size, int ret) {
+static void pipe_read_trace(struct hab_pipe *pipe, struct hab_pipe_endpoint *ep,
+			int size, int ret)
+{
 	struct hab_shared_buf *sh_buf = ep->rx_info.sh_buf;
 	struct dbg_items *its = (struct dbg_items *)pipe->buf_a;
 	struct dbg_item *it = &its->it[its->idx];
@@ -81,7 +83,9 @@ int physical_channel_send(struct physical_channel *pchan,
 		(unsigned char *)header,
 		sizeof(*header)) != sizeof(*header)) {
 		hab_spin_unlock(&dev->io_lock, irqs_disabled);
-		pr_err("***incompleted pchan send id-type-size %x session %d seq# %d\n", header->id_type_size, header->session_id, header->sequence);
+		pr_err("***incompleted pchan send id-type-size %x session %d seq# %d\n",
+			header->id_type_size, header->session_id,
+			header->sequence);
 		return -EIO;
 	}
 
@@ -96,7 +100,9 @@ int physical_channel_send(struct physical_channel *pchan,
 			pstat->tx_usec = tv.tv_usec;
 		} else {
 			hab_spin_unlock(&dev->io_lock, irqs_disabled);
-			pr_err("***incompleted pchan send prof id-type-size %x session %d seq# %d\n", header->id_type_size, header->session_id, header->sequence);
+			pr_err("***incompleted pchan send prof id-type-size %x session %d seq# %d\n",
+				header->id_type_size, header->session_id,
+				header->sequence);
 			return -EINVAL;
 		}
 	} else if (HAB_HEADER_GET_TYPE(*header)
@@ -112,7 +118,9 @@ int physical_channel_send(struct physical_channel *pchan,
 			(unsigned char *)payload,
 			sizebytes) != sizebytes) {
 			hab_spin_unlock(&dev->io_lock, irqs_disabled);
-			pr_err("***incompleted pchan send id-type-size %x session %d seq# %d\n", header->id_type_size, header->session_id, header->sequence);
+			pr_err("***incompleted pchan send id-type-size %x session %d seq# %d\n",
+				header->id_type_size, header->session_id,
+				header->sequence);
 			return -EIO;
 		}
 	}
@@ -128,14 +136,6 @@ int physical_channel_send(struct physical_channel *pchan,
 	return 0;
 }
 
-void memcpy_4loop(char * dst, char *src, int size) {
-  int i = 0;
-
-  for (i=0; i<size; i++) {
-	dst[i] = src[i];
-  }
-}
-
 void physical_channel_rx_dispatch(unsigned long data)
 {
 	struct hab_header header;
@@ -147,17 +147,17 @@ void physical_channel_rx_dispatch(unsigned long data)
 	hab_spin_lock(&pchan->rxbuf_lock, irqs_disabled);
 	i = 0;
 	while (1) {
-			uint32_t rd, wr, idx;
-			int ret;
+		uint32_t rd, wr, idx;
+		int ret;
 
-			ret = hab_pipe_read(dev->pipe_ep,
+		ret = hab_pipe_read(dev->pipe_ep,
 			(unsigned char *)&header,
 			sizeof(header), 1); /* clear head after read */
 
 		/* debug */
 		pipe_read_trace(dev->pipe, dev->pipe_ep, sizeof(header), ret);
 
-		if ( ret != sizeof(header))
+		if (ret != sizeof(header))
 			break; /* no data available */
 
 		hab_pipe_rxinfo(dev->pipe_ep, &rd, &wr, &idx);
@@ -168,12 +168,16 @@ void physical_channel_rx_dispatch(unsigned long data)
 				header.session_id,
 				header.sequence, i);
 
-			pr_err("!!!!! rxinfo rd %d wr %d index %X\n", rd, wr, idx);
+			pr_err("!!!!! rxinfo rd %d wr %d index %X\n",
+				rd, wr, idx);
 
-			memcpy(dev->side_buf, (void *)&dev->pipe_ep->rx_info.sh_buf->data[0], dev->pipe_ep->rx_info.sh_buf->size);
+			memcpy(dev->side_buf,
+				(void *)&dev->pipe_ep->rx_info.sh_buf->data[0],
+				dev->pipe_ep->rx_info.sh_buf->size);
 
 			hab_spin_unlock(&pchan->rxbuf_lock, irqs_disabled);
-			dump_hab_wq(dev); /* cannot run in interrupt-off context */
+			/* cannot run in elevated context */
+			dump_hab_wq(dev);
 			hab_spin_lock(&pchan->rxbuf_lock, irqs_disabled);
 		}
 

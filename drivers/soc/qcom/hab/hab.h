@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -305,6 +305,10 @@ struct hab_driver {
 	int ctx_cnt;
 	spinlock_t drvlock;
 
+	struct list_head imp_list;
+	int imp_cnt;
+	spinlock_t imp_lock;
+
 	struct local_vmid settings; /* parser results */
 
 	int b_server_dom;
@@ -370,10 +374,17 @@ struct export_desc {
 	unsigned char       payload[1];
 } __packed;
 
+struct export_desc_super {
+	struct kref refcount;
+	void *platform_data;
+	unsigned long offset;
+	struct export_desc  exp;
+};
+
 int hab_vchan_open(struct uhab_context *ctx,
 		unsigned int mmid, int32_t *vcid,
 		int32_t timeout, uint32_t flags);
-void hab_vchan_close(struct uhab_context *ctx,
+int hab_vchan_close(struct uhab_context *ctx,
 		int32_t vcid);
 long hab_vchan_send(struct uhab_context *ctx,
 		int vcid,
@@ -396,32 +407,40 @@ int hab_mem_import(struct uhab_context *ctx,
 		struct hab_import *param, int kernel);
 int hab_mem_unexport(struct uhab_context *ctx,
 		struct hab_unexport *param, int kernel);
+void habmem_export_get(struct export_desc_super *exp_super);
+int habmem_export_put(struct export_desc_super *exp_super);
+
 int hab_mem_unimport(struct uhab_context *ctx,
 		struct hab_unimport *param, int kernel);
 
 void habmem_remove_export(struct export_desc *exp);
 
 /* memory hypervisor framework plugin I/F */
-void *habmm_hyp_allocate_grantable(int page_count,
-		uint32_t *sizebytes);
+struct export_desc_super *habmem_add_export(
+		struct virtual_channel *vchan,
+		int sizebytes,
+		uint32_t flags);
 
-int habmem_hyp_grant_user(unsigned long address,
+int habmem_hyp_grant_user(struct virtual_channel *vchan,
+		unsigned long address,
 		int page_count,
 		int flags,
 		int remotedom,
-		void *ppdata,
 		int *compressed,
-		int *compressed_size);
+		int *compressed_size,
+		int *export_id);
 
-int habmem_hyp_grant(unsigned long address,
+int habmem_hyp_grant(struct virtual_channel *vchan,
+		unsigned long address,
 		int page_count,
 		int flags,
 		int remotedom,
-		void *ppdata,
 		int *compressed,
-		int *compressed_size);
+		int *compressed_size,
+		int *export_id);
 
 int habmem_hyp_revoke(void *expdata, uint32_t count);
+int habmem_exp_release(struct export_desc_super *exp_super);
 
 void *habmem_imp_hyp_open(void);
 void habmem_imp_hyp_close(void *priv, int kernel);
@@ -589,10 +608,11 @@ static inline void hab_write_unlock(rwlock_t *lock, int irqs_disabled)
 /* Global singleton HAB instance */
 extern struct hab_driver hab_driver;
 
+int dump_hab_get_file_name(char *file_time, int ft_size);
 int dump_hab_open(void);
 void dump_hab_close(void);
 int dump_hab_buf(void *buf, int size);
 void hab_pipe_read_dump(struct physical_channel *pchan);
 void dump_hab(void);
-void dump_hab_wq(void * hyp_data);
+void dump_hab_wq(void *hyp_data);
 #endif /* __HAB_H */

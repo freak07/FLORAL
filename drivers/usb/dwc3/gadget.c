@@ -2418,6 +2418,7 @@ static int dwc3_gadget_vbus_session(struct usb_gadget *_gadget, int is_active)
 	}
 
 	enable_irq(dwc->irq);
+
 	return 0;
 }
 

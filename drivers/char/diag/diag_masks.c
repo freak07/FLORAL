@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1020,7 +1020,7 @@ static int diag_cmd_set_all_msg_mask(unsigned char *src_buf, int src_len,
 			info = diag_md_session_get_peripheral(DIAG_LOCAL_PROC,
 								APPS_DATA);
 			ret_val = diag_save_user_msg_mask(info);
-			if (ret_val)
+			if (ret_val < 0)
 				pr_err("diag: unable to save msg mask to update userspace clients err:%d\n",
 					ret_val);
 			mutex_unlock(&driver->md_session_lock);
@@ -1832,8 +1832,7 @@ static int __diag_mask_init(struct diag_mask_info *mask_info, int mask_len,
 			return -ENOMEM;
 		}
 		kmemleak_not_leak(mask_info->update_buf);
-		mask_info->update_buf_client = kzalloc(MAX_USERSPACE_BUF_SIZ,
-							GFP_KERNEL);
+		mask_info->update_buf_client = vzalloc(MAX_USERSPACE_BUF_SIZ);
 		if (!mask_info->update_buf_client) {
 			kfree(mask_info->update_buf);
 			mask_info->update_buf = NULL;
@@ -1841,7 +1840,6 @@ static int __diag_mask_init(struct diag_mask_info *mask_info, int mask_len,
 			mask_info->ptr = NULL;
 			return -ENOMEM;
 		}
-		kmemleak_not_leak(mask_info->update_buf_client);
 		mask_info->update_buf_client_len = 0;
 	}
 	return 0;
@@ -1857,7 +1855,7 @@ static void __diag_mask_exit(struct diag_mask_info *mask_info)
 	mask_info->ptr = NULL;
 	kfree(mask_info->update_buf);
 	mask_info->update_buf = NULL;
-	kfree(mask_info->update_buf_client);
+	vfree(mask_info->update_buf_client);
 	mask_info->update_buf_client = NULL;
 	mutex_unlock(&mask_info->lock);
 }
@@ -2055,7 +2053,7 @@ static void diag_msg_mask_exit(void)
 	}
 	kfree(msg_mask.update_buf);
 	msg_mask.update_buf = NULL;
-	kfree(msg_mask.update_buf_client);
+	vfree(msg_mask.update_buf_client);
 	msg_mask.update_buf_client = NULL;
 	mutex_unlock(&driver->msg_mask_lock);
 }
@@ -2135,7 +2133,7 @@ static void diag_log_mask_exit(void)
 	}
 
 	kfree(log_mask.update_buf);
-	kfree(log_mask.update_buf_client);
+	vfree(log_mask.update_buf_client);
 	log_mask.update_buf_client = NULL;
 }
 
@@ -2191,6 +2189,7 @@ static void diag_event_mask_exit(void)
 {
 	kfree(event_mask.ptr);
 	kfree(event_mask.update_buf);
+	vfree(event_mask.update_buf_client);
 }
 
 int diag_copy_to_user_msg_mask(char __user *buf, size_t count,
