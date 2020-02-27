@@ -245,7 +245,7 @@ static int hab_vchans_empty(int vmid)
 				if (!hab_vchans_per_pchan_empty(pchan)) {
 					empty = 0;
 					spin_unlock_bh(&hab_dev->pchan_lock);
-					pr_debug("vmid %d %s's vchans are not closed\n",
+					pr_info("vmid %d %s's vchans are not closed\n",
 							vmid, pchan->name);
 					break;
 				}
