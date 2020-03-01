@@ -4469,6 +4469,32 @@ static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
 	return 0;
 }
 
+#ifdef CONFIG_UCI
+// special try locking version...
+int dsi_panel_try_update_hbm(struct dsi_panel *panel, enum hbm_mode_type hbm_mode)
+{
+        int rc = 0;
+
+        if (!panel)
+                return -EINVAL;
+
+        if (!panel->bl_config.hbm)
+                return 0;
+
+        if (!mutex_trylock(&panel->panel_lock)) {
+                usleep_range(1000, 2000);
+                if (!mutex_trylock(&panel->panel_lock)) {
+                        return -EINVAL;
+                }
+        }
+        rc = dsi_panel_update_hbm_locked(panel, hbm_mode);
+        mutex_unlock(&panel->panel_lock);
+        if (rc)
+                return rc;
+
+        return backlight_update_status(panel->bl_config.bl_device);
+}
+#endif
 int dsi_panel_update_hbm(struct dsi_panel *panel, enum hbm_mode_type hbm_mode)
 {
 	int rc = 0;
