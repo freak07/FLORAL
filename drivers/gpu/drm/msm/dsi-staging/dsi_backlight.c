@@ -96,7 +96,7 @@ extern void uci_force_sde_update(void);
 
 static void uci_sys_listener(void) {
 	if (screen_wake_by_user) {
-		int new_lux_level = uci_get_sys_property_int_mm("lux_level", 0, 0, 27000);
+		int new_lux_level = uci_get_sys_property_int_mm("lux_level", 0, 0, 270000);
 		if (!uci_hbm_switch) {  // hbm switch is off..
 			if (last_hbm_mode) { // and it's set to hbm already in driver.. switch it off
 				uci_switch_hbm(0);
@@ -115,7 +115,7 @@ static void uci_sys_listener(void) {
 		uci_lux_level = new_lux_level;
 	}
 	if (is_lp_mode_on && lp_kcal_overlay_dynamic) {
-		int new_lux_level = uci_get_sys_property_int_mm("lux_level_detailed", 0, 0, 27000);
+		int new_lux_level = uci_get_sys_property_int_mm("lux_level_detailed", 0, 0, 270000);
 		pr_info("%s [aod_dimmer] is_lp_mode_on - sys - new lux level %d\n",__func__,new_lux_level);
 		if (lp_kcal_overlay && new_lux_level <=10) {
 			int lvl = lp_kcal_overlay_level + new_lux_level;
