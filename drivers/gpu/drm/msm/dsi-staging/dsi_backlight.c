@@ -69,7 +69,7 @@ static int uci_switch_hbm(int on) {
 	}
 
 	panel = container_of(bl_g, struct dsi_panel, bl_config);
-	dsi_panel_update_hbm(panel, hbm_mode);
+	dsi_panel_try_update_hbm(panel, hbm_mode);
 
 	pr_info("%s %d\n",__func__,on);
 	last_hbm_mode = hbm_mode;
@@ -170,7 +170,6 @@ static DECLARE_WORK(call_uci_sys_work, call_uci_sys);
 
 static void call_switch_hbm(struct work_struct * call_switch_hbm_work)
 {
-	last_hbm_mode = false;
 	uci_switch_hbm(0);
 }
 static DECLARE_WORK(call_switch_hbm_work, call_switch_hbm);
@@ -184,22 +183,31 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		uci_lux_level = -1;
 		screen_wake_by_user = false;
 		screen_on = false;
-		schedule_work(&call_switch_hbm_work);
+		//schedule_work(&call_switch_hbm_work); // don't call this, it will switch off by itself
+
+		// after a screen off, last_hbm should be OFF as it turns off by itself
+		last_hbm_mode = false;
         }
         if ((!strcmp(event,NTF_EVENT_LOCKED) && !!num_param)) { // locked
 		uci_lux_level = -1;
 		screen_wake_by_user = false;
-		schedule_work(&call_switch_hbm_work);
+		//schedule_work(&call_switch_hbm_work); // don't call this, it will switch off by itself
 	}
         if (!strcmp(event,NTF_EVENT_WAKE_BY_USER)) {
 		// screen just on...set lux level -1, so HBM will be set again if needed...
 		uci_lux_level = -1;
 		screen_on = true;
 		screen_wake_by_user = true;
+
+		// after a screen off, last_hbm should be OFF as it turns off by itself
+		last_hbm_mode = false;
 	}
 	if (!strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
 		uci_lux_level = -1;
 		screen_on = true;
+
+		// after a screen off, last_hbm should be OFF as it turns off by itself
+		last_hbm_mode = false;
 	}
         if (!strcmp(event,NTF_EVENT_INPUT)) {
 		//event -> wake by user is sure...trigger sys listener
