@@ -1071,6 +1071,26 @@ static int sdxprairie_setup_hw(struct mdm_ctrl *mdm,
 	return ret;
 }
 
+static int marmot_setup_hw(struct mdm_ctrl *mdm,
+					const struct mdm_ops *ops,
+					struct platform_device *pdev)
+{
+	int ret;
+
+	/* Same configuration as that of sdx50, except for the name */
+	ret = sdx50m_setup_hw(mdm, ops, pdev);
+	if (ret) {
+		dev_err(mdm->dev, "Hardware setup failed for marmot\n");
+		esoc_mdm_log("Hardware setup failed for marmot\n");
+		return ret;
+	}
+
+	mdm->esoc->name = MARMOT_LABEL;
+	esoc_mdm_log("Hardware setup done for marmot\n");
+
+	return ret;
+}
+
 static int sdxchitwan_setup_hw(struct mdm_ctrl *mdm,
 					const struct mdm_ops *ops,
 					struct platform_device *pdev)
@@ -1122,6 +1142,12 @@ static struct mdm_ops sdxchitwan_ops = {
 	.pon_ops = &sdx50m_pon_ops,
 };
 
+static struct mdm_ops marmot_ops = {
+	.clink_ops = &mdm_cops,
+	.config_hw = marmot_setup_hw,
+	.pon_ops = &sdx50m_pon_ops,
+};
+
 static const struct of_device_id mdm_dt_match[] = {
 	{ .compatible = "qcom,ext-mdm9x55",
 		.data = &mdm9x55_ops, },
@@ -1131,6 +1157,8 @@ static const struct of_device_id mdm_dt_match[] = {
 		.data = &sdxprairie_ops, },
 	{ .compatible = "qcom,ext-sdxchitwan",
 		.data = &sdxchitwan_ops, },
+	{ .compatible = "qcom,ext-marmot",
+		.data = &marmot_ops, },
 	{},
 };
 MODULE_DEVICE_TABLE(of, mdm_dt_match);

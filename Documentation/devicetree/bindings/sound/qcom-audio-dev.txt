@@ -2368,6 +2368,20 @@ sound-9330 {
 				"msm-dai-q6-dev.225", "msm-dai-q6-dev.241",
 				"msm-dai-q6-dev.240", "msm-dai-q6-dev.32771",
 				"msm-dai-q6-dev.32772", "msm-dai-q6-dev.32773";
+
+* HANA55 ASoC Machine driver
+
+Required properties:
+- compatible : "qcom,sm8150-asoc-snd-hana55".
+- qcom,model : The user-visible name of this sound card.
+
+Example:
+
+    snd_934x {
+           compatible = "qcom,sm8150-asoc-snd-hana55";
+           qcom,model = "sm8150-hana55-snd-card";
+           qcom,quat-mi2s-gpios = <&quat_mi2s_gpios>;
+    };
 		asoc-codec = <&stub_codec>;
 		asoc-codec-names = "msm-stub-codec.1";
 	};
