@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2983,16 +2983,19 @@ static QDF_STATUS reg_send_scheduler_msg_nb(struct wlan_objmgr_psoc *psoc,
 
 static QDF_STATUS reg_send_11d_flush_cbk(struct scheduler_msg *msg)
 {
-	struct wlan_objmgr_psoc *psoc = msg->bodyptr;
+	struct reg_11d_scan_msg *scan_msg_11d = msg->bodyptr;
+	struct wlan_objmgr_psoc *psoc = scan_msg_11d->psoc;
 
 	wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
+	qdf_mem_free(scan_msg_11d);
 
 	return QDF_STATUS_SUCCESS;
 }
 
 static QDF_STATUS reg_send_11d_msg_cbk(struct scheduler_msg *msg)
 {
-	struct wlan_objmgr_psoc *psoc = msg->bodyptr;
+	struct reg_11d_scan_msg *scan_msg_11d = msg->bodyptr;
+	struct wlan_objmgr_psoc *psoc = scan_msg_11d->psoc;
 	struct wlan_lmac_if_reg_tx_ops *tx_ops;
 	struct reg_start_11d_scan_req start_req;
 	struct reg_stop_11d_scan_req stop_req;
@@ -3014,7 +3017,7 @@ static QDF_STATUS reg_send_11d_msg_cbk(struct scheduler_msg *msg)
 		goto end;
 	}
 
-	if (psoc_priv_obj->enable_11d_supp) {
+	if (scan_msg_11d->enable_11d_supp) {
 		start_req.vdev_id = psoc_priv_obj->vdev_id_for_11d_scan;
 		start_req.scan_period_msec = psoc_priv_obj->scan_11d_interval;
 		start_req.start_interval_msec = 0;
@@ -3027,32 +3030,33 @@ static QDF_STATUS reg_send_11d_msg_cbk(struct scheduler_msg *msg)
 	}
 
 end:
+	qdf_mem_free(scan_msg_11d);
 	wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
 	return QDF_STATUS_SUCCESS;
 }
 
-static QDF_STATUS reg_sched_11d_msg(struct wlan_objmgr_psoc *psoc)
+static QDF_STATUS reg_sched_11d_msg(struct reg_11d_scan_msg *scan_msg_11d)
 {
 	struct scheduler_msg msg = {0};
 	QDF_STATUS status;
 
-	status = wlan_objmgr_psoc_try_get_ref(psoc, WLAN_REGULATORY_SB_ID);
+	status = wlan_objmgr_psoc_try_get_ref(scan_msg_11d->psoc,
+					      WLAN_REGULATORY_SB_ID);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		reg_err("error taking psoc ref cnt");
 		return status;
 	}
 
-	msg.bodyptr = psoc;
+	msg.bodyptr = scan_msg_11d;
 	msg.callback = reg_send_11d_msg_cbk;
 	msg.flush_callback = reg_send_11d_flush_cbk;
 
 	status = scheduler_post_message(QDF_MODULE_ID_REGULATORY,
 					QDF_MODULE_ID_REGULATORY,
 					QDF_MODULE_ID_TARGET_IF, &msg);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		wlan_objmgr_psoc_release_ref(psoc, WLAN_REGULATORY_SB_ID);
-		reg_err("scheduler msg posting failed");
-	}
+	if (QDF_IS_STATUS_ERROR(status))
+		wlan_objmgr_psoc_release_ref(scan_msg_11d->psoc,
+					     WLAN_REGULATORY_SB_ID);
 
 	return status;
 }
@@ -3163,6 +3167,7 @@ static void reg_run_11d_state_machine(struct wlan_objmgr_psoc *psoc)
 	bool temp_11d_support;
 	struct wlan_regulatory_psoc_priv_obj *psoc_priv_obj;
 	bool world_mode;
+	struct reg_11d_scan_msg *scan_msg_11d;
 
 	psoc_priv_obj = wlan_objmgr_psoc_get_comp_private_obj(psoc,
 						 WLAN_UMAC_COMP_REGULATORY);
@@ -3190,10 +3195,24 @@ static void reg_run_11d_state_machine(struct wlan_objmgr_psoc *psoc)
 		psoc_priv_obj->enable_11d_supp =
 			psoc_priv_obj->enable_11d_supp_original;
 
-	reg_debug("inside 11d state machine");
+	reg_debug("inside 11d state machine:tmp %d 11d_supp %d org %d set %d pri %d cnt %d vdev %d",
+		  temp_11d_support,
+		  psoc_priv_obj->enable_11d_supp,
+		  psoc_priv_obj->enable_11d_supp_original,
+		  psoc_priv_obj->user_ctry_set,
+		  psoc_priv_obj->user_ctry_priority,
+		  psoc_priv_obj->master_vdev_cnt,
+		  psoc_priv_obj->vdev_id_for_11d_scan);
+
 	if ((temp_11d_support != psoc_priv_obj->enable_11d_supp) &&
 	    (psoc_priv_obj->is_11d_offloaded)) {
-		reg_sched_11d_msg(psoc);
+		scan_msg_11d = qdf_mem_malloc(sizeof(*scan_msg_11d));
+		if (!scan_msg_11d)
+			return;
+		scan_msg_11d->psoc = psoc;
+		scan_msg_11d->enable_11d_supp =
+					psoc_priv_obj->enable_11d_supp;
+		reg_sched_11d_msg(scan_msg_11d);
 	}
 }
 
