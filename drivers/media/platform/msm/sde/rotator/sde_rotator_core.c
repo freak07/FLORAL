@@ -3374,6 +3374,7 @@ int sde_rotator_runtime_idle(struct device *dev)
 int sde_rotator_pm_suspend(struct device *dev)
 {
 	struct sde_rot_mgr *mgr;
+	int i;
 
 	mgr = sde_rot_mgr_from_device(dev);
 
@@ -3388,9 +3389,20 @@ int sde_rotator_pm_suspend(struct device *dev)
 	sde_rotator_suspend_cancel_rot_work(mgr);
 	mgr->minimum_bw_vote = 0;
 	sde_rotator_update_perf(mgr);
+ 	mgr->pm_rot_enable_clk_cnt = mgr->rot_enable_clk_cnt;
+
+	if (mgr->pm_rot_enable_clk_cnt) {
+		for (i = 0; i < mgr->pm_rot_enable_clk_cnt; i++)
+			sde_rotator_clk_ctrl(mgr, false);
+
+		sde_rotator_update_clk(mgr);
+	}
+
 	SDEROT_DBG("end pm system active %d\n",
 			atomic_read(&mgr->device_suspended));
 	ATRACE_END("pm_system_active");
+	SDEROT_EVTLOG(mgr->pm_rot_enable_clk_cnt,
+			 atomic_read(&mgr->device_suspended));
 	sde_rot_mgr_unlock(mgr);
 	return 0;
 }
@@ -3402,6 +3414,7 @@ int sde_rotator_pm_suspend(struct device *dev)
 int sde_rotator_pm_resume(struct device *dev)
 {
 	struct sde_rot_mgr *mgr;
+	int i;
 
 	mgr = sde_rot_mgr_from_device(dev);
 
@@ -3421,11 +3434,20 @@ int sde_rotator_pm_resume(struct device *dev)
 
 	SDEROT_DBG("PM system resume\n");
 	sde_rot_mgr_lock(mgr);
-	SDEROT_DBG("begin pm system active %d\n",
-			atomic_read(&mgr->device_suspended));
-	ATRACE_BEGIN("pm_system_active");
+	SDEROT_DBG("begin pm active %d clk_cnt %d\n",
+	 atomic_read(&mgr->device_suspended), mgr->pm_rot_enable_clk_cnt);
+	ATRACE_BEGIN("pm_active");
+	SDEROT_EVTLOG(mgr->pm_rot_enable_clk_cnt,
+			 atomic_read(&mgr->device_suspended));
 	atomic_dec(&mgr->device_suspended);
 	sde_rotator_update_perf(mgr);
+
+	if (mgr->pm_rot_enable_clk_cnt) {
+		sde_rotator_update_clk(mgr);
+		for (i = 0; i < mgr->pm_rot_enable_clk_cnt; i++)
+			sde_rotator_clk_ctrl(mgr, true);
+	}
+
 	sde_rot_mgr_unlock(mgr);
 	return 0;
 }

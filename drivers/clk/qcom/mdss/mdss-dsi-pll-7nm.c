@@ -1573,9 +1573,10 @@ static struct clk_regmap_mux dsi0pll_byteclk_mux = {
 	.clkr = {
 		.hw.init = &(struct clk_init_data){
 			.name = "dsi0_phy_pll_out_byteclk",
-			.parent_names = (const char *[]){"dsi0pll_byteclk_src"},
-			.num_parents = 1,
-			.flags = CLK_SET_RATE_PARENT,
+			.parent_names = (const char *[]){"dsi0pll_byteclk_src",
+				"dsi0pll_cphy_byteclk_src"},
+			.num_parents = 2,
+			.flags = (CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT),
 			.ops = &clk_regmap_mux_closest_ops,
 		},
 	},
@@ -1587,9 +1588,10 @@ static struct clk_regmap_mux dsi1pll_byteclk_mux = {
 	.clkr = {
 		.hw.init = &(struct clk_init_data){
 			.name = "dsi1_phy_pll_out_byteclk",
-			.parent_names = (const char *[]){"dsi1pll_byteclk_src"},
-			.num_parents = 1,
-			.flags = CLK_SET_RATE_PARENT,
+			.parent_names = (const char *[]){"dsi1pll_byteclk_src",
+				"dsi1pll_cphy_byteclk_src"},
+			.num_parents = 2,
+			.flags = (CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT),
 			.ops = &clk_regmap_mux_closest_ops,
 		},
 	},
@@ -1665,9 +1667,10 @@ static struct clk_regmap_mux dsi0pll_pclk_mux = {
 	.clkr = {
 		.hw.init = &(struct clk_init_data){
 			.name = "dsi0_phy_pll_out_dsiclk",
-			.parent_names = (const char *[]){"dsi0pll_pclk_src"},
-			.num_parents = 1,
-			.flags = CLK_SET_RATE_PARENT,
+			.parent_names = (const char *[]){"dsi0pll_pclk_src",
+					"dsi0pll_cphy_pclk_src"},
+			.num_parents = 2,
+			.flags = (CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT),
 			.ops = &clk_regmap_mux_closest_ops,
 		},
 	},
@@ -1679,9 +1682,10 @@ static struct clk_regmap_mux dsi1pll_pclk_mux = {
 	.clkr = {
 		.hw.init = &(struct clk_init_data){
 			.name = "dsi1_phy_pll_out_dsiclk",
-			.parent_names = (const char *[]){"dsi1pll_pclk_src"},
-			.num_parents = 1,
-			.flags = CLK_SET_RATE_PARENT,
+			.parent_names = (const char *[]){"dsi1pll_pclk_src",
+					"dsi1pll_cphy_pclk_src"},
+			.num_parents = 2,
+			.flags = (CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT),
 			.ops = &clk_regmap_mux_closest_ops,
 		},
 	},
