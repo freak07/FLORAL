@@ -1395,7 +1395,7 @@ static int msm_pcm_volume_ctl_get(struct snd_kcontrol *kcontrol,
 	soc_prtd = substream->private_data;
 	if (!substream->runtime || !soc_prtd) {
 		pr_debug("%s substream runtime or private_data not found\n",
-				 __func__);
+				__func__);
 		return 0;
 	}
 
@@ -1692,9 +1692,6 @@ static int msm_pcm_chmap_ctl_get(struct snd_kcontrol *kcontrol,
 		pr_err("%s: platform data is NULL\n", __func__);
 		return -EINVAL;
 	}
-
-	memset(ucontrol->value.integer.value, 0,
-		sizeof(ucontrol->value.integer.value));
 
 	mutex_lock(&pdata->lock);
 	prtd = substream->runtime->private_data;
