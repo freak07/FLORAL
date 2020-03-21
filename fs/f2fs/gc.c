@@ -121,18 +121,18 @@ static int gc_thread_func(void *data)
 		if (sbi->gc_mode == GC_URGENT || sbi->rapid_gc) {
 			if (!sbi->rapid_gc)
 				wait_ms = gc_th->urgent_sleep_time;
-			down_write(&sbi->gc_lock);
+			mutex_lock(&sbi->gc_mutex);
 			goto do_gc;
 		}
 
-		if (!down_write_trylock(&sbi->gc_lock)) {
+		if (!mutex_trylock(&sbi->gc_mutex)) {
 			stat_other_skip_bggc_count(sbi);
 			goto next;
 		}
 
 		if (!is_idle(sbi, GC_TIME)) {
 			increase_sleep_time(gc_th, &wait_ms);
-			up_write(&sbi->gc_lock);
+			mutex_unlock(&sbi->gc_mutex);
 			stat_io_skip_bggc_count(sbi);
 			goto next;
 		}
@@ -1561,7 +1561,7 @@ stop:
 				reserved_segments(sbi),
 				prefree_segments(sbi));
 
-	up_write(&sbi->gc_lock);
+	mutex_unlock(&sbi->gc_mutex);
 
 	put_gc_inode(&gc_list);
 
@@ -1607,9 +1607,9 @@ static int free_segment_range(struct f2fs_sb_info *sbi, unsigned int start,
 			.iroot = RADIX_TREE_INIT(GFP_NOFS),
 		};
 
-		down_write(&sbi->gc_lock);
+		mutex_lock(&sbi->gc_mutex);
 		do_garbage_collect(sbi, segno, &gc_list, FG_GC);
-		up_write(&sbi->gc_lock);
+		mutex_unlock(&sbi->gc_mutex);
 		put_gc_inode(&gc_list);
 
 		if (get_valid_blocks(sbi, segno, true))
