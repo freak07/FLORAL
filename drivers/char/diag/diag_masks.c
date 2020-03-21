@@ -2231,9 +2231,9 @@ int diag_copy_to_user_log_mask(char __user *buf, size_t count,
 	if (!mask_info)
 		return -EIO;
 
-	if (!mask_info->ptr || !mask_info->update_buf_client_len) {
-		pr_err("diag: In %s, invalid input mask_info->ptr: %pK, mask_info->update_buf: %pK\n",
-			__func__, mask_info->ptr, mask_info->update_buf);
+	if (!mask_info->ptr || !mask_info->update_buf_client) {
+		pr_err("diag: In %s, invalid input mask_info->ptr: %pK, mask_info->update_buf_client: %pK\n",
+			__func__, mask_info->ptr, mask_info->update_buf_client);
 		return -EINVAL;
 	}
 
