@@ -27,10 +27,6 @@
 #include "dsi_parser.h"
 #include "sde_trace.h"
 
-#ifdef CONFIG_KLAPSE
-#include <linux/klapse.h>
-#endif
-
 /**
  * topology is currently defined by a set of following 3 values:
  * 1. num of layer mixers
@@ -3225,12 +3221,12 @@ static int drm_panel_get_timings(struct drm_panel *panel,
 			t->vfront_porch.typ = m.timing.v_front_porch;
 			t->vback_porch.typ = m.timing.v_back_porch;
 			t->vsync_len.typ = m.timing.v_sync_width;
-			t->flags = (m.timing.h_sync_polarity ?
+			t->flags = m.timing.h_sync_polarity ?
 				   DISPLAY_FLAGS_HSYNC_HIGH :
-				   DISPLAY_FLAGS_HSYNC_LOW )|
-				   (m.timing.v_sync_polarity ?
+				   DISPLAY_FLAGS_HSYNC_LOW |
+				   m.timing.v_sync_polarity ?
 				   DISPLAY_FLAGS_VSYNC_HIGH :
-				   DISPLAY_FLAGS_VSYNC_LOW);
+				   DISPLAY_FLAGS_VSYNC_LOW;
 
 			t->pixelclock.max = t->pixelclock.typ;
 			t->hactive.max = t->hactive.typ;
@@ -4473,32 +4469,6 @@ static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
 	return 0;
 }
 
-#ifdef CONFIG_UCI
-// special try locking version...
-int dsi_panel_try_update_hbm(struct dsi_panel *panel, enum hbm_mode_type hbm_mode)
-{
-        int rc = 0;
-
-        if (!panel)
-                return -EINVAL;
-
-        if (!panel->bl_config.hbm)
-                return 0;
-
-        if (!mutex_trylock(&panel->panel_lock)) {
-                usleep_range(1000, 2000);
-                if (!mutex_trylock(&panel->panel_lock)) {
-                        return -EINVAL;
-                }
-        }
-        rc = dsi_panel_update_hbm_locked(panel, hbm_mode);
-        mutex_unlock(&panel->panel_lock);
-        if (rc)
-                return rc;
-
-        return backlight_update_status(panel->bl_config.bl_device);
-}
-#endif
 int dsi_panel_update_hbm(struct dsi_panel *panel, enum hbm_mode_type hbm_mode)
 {
 	int rc = 0;

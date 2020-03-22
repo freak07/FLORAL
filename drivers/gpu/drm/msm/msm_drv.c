@@ -61,8 +61,6 @@
 #define MSM_VERSION_MINOR	2
 #define MSM_VERSION_PATCHLEVEL	0
 
-static struct kmem_cache *kmem_vblank_work_pool;
-
 static void msm_fb_output_poll_changed(struct drm_device *dev)
 {
 	struct msm_drm_private *priv = NULL;
@@ -256,7 +254,7 @@ static void vblank_ctrl_worker(struct kthread_work *work)
 	else
 		kms->funcs->disable_vblank(kms, priv->crtcs[cur_work->crtc_id]);
 
-	kmem_cache_free(kmem_vblank_work_pool, cur_work);
+	kfree(cur_work);
 }
 
 static int vblank_ctrl_queue_work(struct msm_drm_private *priv,
@@ -267,7 +265,7 @@ static int vblank_ctrl_queue_work(struct msm_drm_private *priv,
 	if (!priv || crtc_id >= priv->num_crtcs)
 		return -EINVAL;
 
-	cur_work = kmem_cache_zalloc(kmem_vblank_work_pool, GFP_ATOMIC);
+	cur_work = kzalloc(sizeof(*cur_work), GFP_ATOMIC);
 	if (!cur_work)
 		return -ENOMEM;
 
@@ -716,14 +714,6 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 	ret = msm_init_vram(ddev);
 	if (ret)
 		goto fail;
-
-	if (!dev->dma_parms) {
-		dev->dma_parms = devm_kzalloc(dev, sizeof(*dev->dma_parms),
-					      GFP_KERNEL);
-		if (!dev->dma_parms)
-			return -ENOMEM;
-	}
-	dma_set_max_seg_size(dev, DMA_BIT_MASK(32));
 
 	switch (get_mdp_ver(pdev)) {
 	case KMS_MDP4:
@@ -2167,7 +2157,8 @@ static int add_gpu_components(struct device *dev,
 	if (!np)
 		return 0;
 
-	drm_of_component_match_add(dev, matchptr, compare_of, np);
+	if (of_device_is_available(np))
+		drm_of_component_match_add(dev, matchptr, compare_of, np);
 
 	of_node_put(np);
 
@@ -2285,7 +2276,6 @@ static int __init msm_drm_register(void)
 		return -EINVAL;
 
 	DBG("init");
-	kmem_vblank_work_pool = KMEM_CACHE(vblank_work, SLAB_HWCACHE_ALIGN | SLAB_PANIC);
 	msm_smmu_driver_init();
 	msm_dsi_register();
 	msm_edp_register();

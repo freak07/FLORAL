@@ -349,7 +349,7 @@ int sde_wb_get_mode_info(struct drm_connector *connector,
 		hdisplay = max(hdisplay, wb_dev->modes[i].hdisplay);
 
 	topology = &mode_info->topology;
-	topology->num_lm = (max_mixer_width <= hdisplay) ? dual_lm : single_lm;
+	topology->num_lm = (max_mixer_width < hdisplay) ? dual_lm : single_lm;
 	topology->num_enc = no_enc;
 	topology->num_intf = single_intf;
 

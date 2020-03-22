@@ -1001,7 +1001,7 @@ clk_enable_fail:
 }
 EXPORT_SYMBOL(sde_rsc_client_vote);
 
-#if 0
+#if defined(CONFIG_DEBUG_FS)
 void sde_rsc_debug_dump(u32 mux_sel)
 {
 	struct sde_rsc_priv *rsc;
