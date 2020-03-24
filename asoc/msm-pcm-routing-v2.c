@@ -67,6 +67,7 @@ static struct cal_type_data *cal_data[MAX_ROUTING_CAL_TYPES];
 static int fm_switch_enable;
 static int hfp_switch_enable;
 static int a2dp_switch_enable;
+static int sco_switch_enable;
 static int int0_mi2s_switch_enable;
 static int int4_mi2s_switch_enable;
 static int pri_mi2s_switch_enable;
@@ -2408,6 +2409,34 @@ static int msm_routing_a2dp_switch_mixer_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
+static int msm_routing_sco_switch_mixer_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.integer.value[0] = sco_switch_enable;
+	pr_debug("%s: SCO Switch enable %ld\n", __func__,
+		  ucontrol->value.integer.value[0]);
+	return 0;
+}
+
+static int msm_routing_sco_switch_mixer_put(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_dapm_widget *widget =
+		snd_soc_dapm_kcontrol_widget(kcontrol);
+	struct snd_soc_dapm_update *update = NULL;
+
+	pr_debug("%s: SCO Switch enable %ld\n", __func__,
+		  ucontrol->value.integer.value[0]);
+	sco_switch_enable = ucontrol->value.integer.value[0];
+	if (sco_switch_enable)
+		snd_soc_dapm_mixer_update_power(widget->dapm, kcontrol,
+						1, update);
+	else
+		snd_soc_dapm_mixer_update_power(widget->dapm, kcontrol,
+						0, update);
+	return 1;
+}
+
 static int msm_routing_get_int0_mi2s_switch_mixer(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
@@ -4090,6 +4119,10 @@ static int msm_routing_ec_ref_rx_put(struct snd_kcontrol *kcontrol,
 		msm_route_ec_ref_rx = 37;
 		ec_ref_port_id = AFE_PORT_ID_TERTIARY_TDM_RX;
 		break;
+	case 38:
+		msm_route_ec_ref_rx = 38;
+		ec_ref_port_id = AFE_PORT_ID_SECONDARY_TDM_RX;
+		break;
 	default:
 		msm_route_ec_ref_rx = 0; /* NONE */
 		pr_err("%s EC ref rx %ld not valid\n",
@@ -4117,7 +4150,7 @@ static const char *const ec_ref_rx[] = { "None", "SLIM_RX", "I2S_RX",
 	"WSA_CDC_DMA_TX_0", "WSA_CDC_DMA_TX_1", "WSA_CDC_DMA_TX_2",
 	"SLIM_7_RX", "RX_CDC_DMA_RX_0", "RX_CDC_DMA_RX_1", "RX_CDC_DMA_RX_2",
 	"RX_CDC_DMA_RX_3", "TX_CDC_DMA_TX_0", "TERT_TDM_RX_2", "SEC_TDM_TX_0",
-	"TERT_TDM_RX_0",
+	"TERT_TDM_RX_0", "SEC_TDM_RX_0",
 };
 
 static const struct soc_enum msm_route_ec_ref_rx_enum[] = {
@@ -17218,6 +17251,11 @@ static const struct snd_kcontrol_new a2dp_slim7_switch_mixer_controls =
 	0, 1, 0, msm_routing_a2dp_switch_mixer_get,
 	msm_routing_a2dp_switch_mixer_put);
 
+static const struct snd_kcontrol_new sco_slim7_switch_mixer_controls =
+	SOC_SINGLE_EXT("Switch", SND_SOC_NOPM,
+	0, 1, 0, msm_routing_sco_switch_mixer_get,
+	msm_routing_sco_switch_mixer_put);
+
 static const struct snd_kcontrol_new adsp_ssr_trigger_controls =
 	SOC_SINGLE_EXT("Switch", SND_SOC_NOPM,
 	0, 1, 0, adsp_ssr_trigger_status_get,
@@ -19294,6 +19332,8 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 				&quat_mi2s_rx_switch_mixer_controls),
 	SND_SOC_DAPM_SWITCH("QUIN_MI2S_RX_DL_HL", SND_SOC_NOPM, 0, 0,
 				&quin_mi2s_rx_switch_mixer_controls),
+	SND_SOC_DAPM_SWITCH("SCO_SLIM7_DL_HL", SND_SOC_NOPM, 0, 0,
+				&sco_slim7_switch_mixer_controls),
 	SND_SOC_DAPM_SWITCH("HFP_PRI_AUX_UL_HL", SND_SOC_NOPM, 0, 0,
 				&hfp_pri_aux_switch_mixer_controls),
 	SND_SOC_DAPM_SWITCH("HFP_AUX_UL_HL", SND_SOC_NOPM, 0, 0,
@@ -22234,6 +22274,8 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"SLIMBUS_4_RX", NULL, "SLIMBUS4_DL_HL"},
 	{"SLIMBUS6_DL_HL", "Switch", "SLIM0_DL_HL"},
 	{"SLIMBUS_6_RX", NULL, "SLIMBUS6_DL_HL"},
+	{"SCO_SLIM7_DL_HL", "Switch", "SLIM7_DL_HL"},
+	{"SLIMBUS_7_RX", NULL, "SCO_SLIM7_DL_HL"},
 	{"SLIM0_UL_HL", NULL, "SLIMBUS_0_TX"},
 	{"SLIM1_UL_HL", NULL, "SLIMBUS_1_TX"},
 	{"SLIM3_UL_HL", NULL, "SLIMBUS_3_TX"},
