@@ -56,6 +56,7 @@
 #include <wlan_action_oui_ucfg_api.h>
 #include <wlan_utility.h>
 #include "wlan_mlme_main.h"
+#include "wlan_scan_utils_api.h"
 
 #define MAX_PWR_FCC_CHAN_12 8
 #define MAX_PWR_FCC_CHAN_13 2
@@ -1030,6 +1031,37 @@ static void csr_add_social_channels(tpAniSirGlobal mac,
 }
 #endif
 
+/**
+ * csr_scan_event_handler() - callback for scan event
+ * @vdev: wlan objmgr vdev pointer
+ * @event: scan event
+ * @arg: global mac context pointer
+ *
+ * Return: void
+ */
+static void csr_scan_event_handler(struct wlan_objmgr_vdev *vdev,
+					    struct scan_event *event,
+					    void *arg)
+{
+	bool success = false;
+	QDF_STATUS lock_status;
+	tpAniSirGlobal pMac = arg;
+
+	if (!pMac)
+		return;
+
+	if (!util_is_scan_completed(event, &success))
+		return;
+
+	lock_status = sme_acquire_global_lock(&pMac->sme);
+	if (QDF_IS_STATUS_ERROR(lock_status))
+		return;
+
+	if (pMac->scan.pending_channel_list_req)
+		csr_update_channel_list(pMac);
+	sme_release_global_lock(&pMac->sme);
+}
+
 QDF_STATUS csr_update_channel_list(tpAniSirGlobal pMac)
 {
 	tSirUpdateChanList *pChanList;
@@ -1045,12 +1077,31 @@ QDF_STATUS csr_update_channel_list(tpAniSirGlobal pMac)
 	uint16_t cnt = 0;
 	uint8_t  channel;
 	bool is_unsafe_chan;
+	enum scm_scan_status scan_status;
+	QDF_STATUS lock_status;
 	qdf_device_t qdf_ctx = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
 
 	if (!qdf_ctx) {
 		sme_err("qdf_ctx is NULL");
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	lock_status = sme_acquire_global_lock(&pMac->sme);
+	if (QDF_IS_STATUS_ERROR(lock_status))
+		return lock_status;
+
+	if (pMac->roam.configParam.enable_pending_list_req) {
+		scan_status = ucfg_scan_get_pdev_status(pMac->pdev);
+		if (scan_status == SCAN_IS_ACTIVE ||
+		    scan_status == SCAN_IS_ACTIVE_AND_PENDING) {
+			pMac->scan.pending_channel_list_req = true;
+			sme_release_global_lock(&pMac->sme);
+			sme_debug("scan in progress postpone channel list req ");
+			return QDF_STATUS_SUCCESS;
+		}
+		pMac->scan.pending_channel_list_req = false;
+	}
+	sme_release_global_lock(&pMac->sme);
 
 	pld_get_wlan_unsafe_channel(qdf_ctx->dev, unsafe_chan,
 		    &unsafe_chan_cnt,
@@ -1251,6 +1302,14 @@ QDF_STATUS csr_start(tpAniSirGlobal pMac)
 						pMac->psoc,
 						"CSR", csr_scan_callback, pMac);
 		ucfg_scan_set_enable(pMac->psoc, true);
+
+		if (pMac->roam.configParam.enable_pending_list_req) {
+			status = ucfg_scan_register_event_handler(pMac->pdev,
+					csr_scan_event_handler, pMac);
+
+			if (QDF_IS_STATUS_ERROR(status))
+				sme_err("scan event registration failed ");
+		}
 	} while (0);
 	return status;
 }
@@ -1259,6 +1318,10 @@ QDF_STATUS csr_stop(tpAniSirGlobal pMac)
 {
 	uint32_t sessionId;
 
+	if (pMac->roam.configParam.enable_pending_list_req)
+		ucfg_scan_unregister_event_handler(pMac->pdev,
+						   csr_scan_event_handler,
+						   pMac);
 	ucfg_scan_set_enable(pMac->psoc, false);
 	ucfg_scan_unregister_requester(pMac->psoc, pMac->scan.requester_id);
 
@@ -3386,6 +3449,8 @@ QDF_STATUS csr_change_default_config_param(tpAniSirGlobal pMac,
 		csr_update_he_config_param(pMac, pParam);
 		csr_set_11k_offload_config_param(&pMac->roam.configParam,
 						 pParam);
+		pMac->roam.configParam.enable_pending_list_req =
+					pParam->enable_pending_list_req;
 	}
 	return status;
 }
@@ -3740,6 +3805,8 @@ QDF_STATUS csr_get_config_param(tpAniSirGlobal pMac, tCsrConfigParam *pParam)
 			pMac->roam.configParam.wlm_latency_flags[i];
 	}
 
+	pParam->enable_pending_list_req =
+				pMac->roam.configParam.enable_pending_list_req;
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -13295,6 +13362,94 @@ void csr_roam_wait_for_key_time_out_handler(void *pv)
 }
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
+QDF_STATUS csr_fast_reassoc(tHalHandle hal, struct csr_roam_profile *profile,
+			    const tSirMacAddr bssid, int channel,
+			    uint8_t vdev_id, const tSirMacAddr connected_bssid)
+{
+	QDF_STATUS status;
+	struct wma_roam_invoke_cmd *fastreassoc;
+	struct scheduler_msg msg = {0};
+	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
+	struct csr_roam_session *session;
+	struct csr_roam_profile *roam_profile;
+
+	session = CSR_GET_SESSION(mac_ctx, vdev_id);
+	if (!session || !session->pCurRoamProfile) {
+		sme_err("session %d not found", vdev_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!csr_is_conn_state_connected(mac_ctx, vdev_id)) {
+		sme_debug("Not in connected state, Roam Invoke not sent");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	roam_profile = session->pCurRoamProfile;
+	if (roam_profile->driver_disabled_roaming) {
+		sme_debug("roaming status in driver %d",
+			  roam_profile->driver_disabled_roaming);
+		return QDF_STATUS_E_FAILURE;
+	}
+	fastreassoc = qdf_mem_malloc(sizeof(*fastreassoc));
+	if (NULL == fastreassoc) {
+		sme_err("qdf_mem_malloc failed for fastreassoc");
+		return QDF_STATUS_E_NOMEM;
+	}
+	/* if both are same then set the flag */
+	if (!qdf_mem_cmp(connected_bssid, bssid, ETH_ALEN)) {
+		fastreassoc->is_same_bssid = true;
+		sme_debug("bssid same, bssid[%pM]", bssid);
+	}
+	fastreassoc->vdev_id = vdev_id;
+	fastreassoc->bssid[0] = bssid[0];
+	fastreassoc->bssid[1] = bssid[1];
+	fastreassoc->bssid[2] = bssid[2];
+	fastreassoc->bssid[3] = bssid[3];
+	fastreassoc->bssid[4] = bssid[4];
+	fastreassoc->bssid[5] = bssid[5];
+
+	status = sme_get_beacon_frm(hal, profile, bssid,
+				    &fastreassoc->frame_buf,
+				    &fastreassoc->frame_len,
+				    &channel);
+
+	if (!channel) {
+		sme_err("channel retrieval from BSS desc fails!");
+		qdf_mem_free(fastreassoc);
+		return QDF_STATUS_E_FAULT;
+	}
+
+	fastreassoc->channel = channel;
+	if (QDF_STATUS_SUCCESS != status) {
+		sme_warn("sme_get_beacon_frm failed");
+		fastreassoc->frame_buf = NULL;
+		fastreassoc->frame_len = 0;
+	}
+
+	if (csr_is_auth_type_ese(mac_ctx->roam.roamSession[vdev_id].
+				connectedProfile.AuthType)) {
+		sme_debug("Beacon is not required for ESE");
+		if (fastreassoc->frame_len) {
+			qdf_mem_free(fastreassoc->frame_buf);
+			fastreassoc->frame_buf = NULL;
+			fastreassoc->frame_len = 0;
+		}
+	}
+
+	msg.type = eWNI_SME_ROAM_INVOKE;
+	msg.reserved = 0;
+	msg.bodyptr = fastreassoc;
+	status = scheduler_post_message(QDF_MODULE_ID_SME,
+					QDF_MODULE_ID_PE,
+					QDF_MODULE_ID_PE, &msg);
+	if (QDF_STATUS_SUCCESS != status) {
+		sme_err("Not able to post ROAM_INVOKE_CMD message to PE");
+		qdf_mem_free(fastreassoc);
+	}
+
+	return status;
+}
+
 /**
  * csr_roam_roaming_offload_timer_action() - API to start/stop the timer
  * @mac_ctx: MAC Context

@@ -19645,8 +19645,10 @@ int wlan_hdd_try_disconnect(struct hdd_adapter *adapter)
 				&adapter->roaming_comp_var,
 				msecs_to_jiffies(WLAN_WAIT_TIME_STOP_ROAM));
 			if (!rc) {
-				hdd_err("roaming comp var timed out session Id: %d",
+				hdd_err("roaming_comp_var time out vdev id: %d",
 					adapter->session_id);
+				/* Clear roaming in progress flag */
+				hdd_set_roaming_in_progress(false);
 			}
 			if (adapter->roam_ho_fail) {
 				INIT_COMPLETION(adapter->disconnect_comp_var);
@@ -19764,8 +19766,13 @@ static int wlan_hdd_reassoc_bssid_hint(struct hdd_adapter *adapter,
 		qdf_mem_copy(sta_ctx->requested_bssid.bytes, bssid,
 			     QDF_MAC_ADDR_SIZE);
 
+		hdd_set_roaming_in_progress(true);
+
 		status = hdd_reassoc(adapter, bssid, channel,
 				      CONNECT_CMD_USERSPACE);
+		if (QDF_IS_STATUS_ERROR(status))
+			hdd_set_roaming_in_progress(false);
+
 		hdd_debug("hdd_reassoc: status: %d", status);
 	}
 	return status;
@@ -19903,10 +19910,8 @@ static int __wlan_hdd_cfg80211_connect(struct wiphy *wiphy,
 	 * Check if this is reassoc to same bssid, if reassoc is success, return
 	 */
 	status = wlan_hdd_reassoc_bssid_hint(adapter, req);
-	if (!status) {
-		hdd_set_roaming_in_progress(true);
+	if (!status)
 		return status;
-	}
 
 	/* Try disconnecting if already in connected state */
 	status = wlan_hdd_try_disconnect(adapter);
@@ -20054,8 +20059,10 @@ int wlan_hdd_disconnect(struct hdd_adapter *adapter, u16 reason)
 				&adapter->roaming_comp_var,
 				msecs_to_jiffies(WLAN_WAIT_TIME_STOP_ROAM));
 			if (!rc) {
-				hdd_err("roaming comp var timed out session Id: %d",
+				hdd_err("roaming_comp_var time out vdev Id: %d",
 					adapter->session_id);
+				/* Clear roaming in progress flag */
+				hdd_set_roaming_in_progress(false);
 			}
 			if (adapter->roam_ho_fail) {
 				INIT_COMPLETION(adapter->disconnect_comp_var);

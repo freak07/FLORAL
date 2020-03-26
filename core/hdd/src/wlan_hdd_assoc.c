@@ -1877,11 +1877,13 @@ static QDF_STATUS hdd_dis_connect_handler(struct hdd_adapter *adapter,
 	* eConnectionState_Connecting state mean that connection is in
 	* progress so no need to set state to eConnectionState_NotConnected
 	*/
-	if ((eConnectionState_Connecting != sta_ctx->conn_info.connState)) {
+	if (eConnectionState_Connecting != sta_ctx->conn_info.connState)
 		 hdd_conn_set_connection_state(adapter,
 					       eConnectionState_NotConnected);
-		 hdd_set_roaming_in_progress(false);
-	}
+
+	/* Clear roaming in progress flag */
+	hdd_set_roaming_in_progress(false);
+
 	pmo_ucfg_flush_gtk_offload_req(adapter->vdev);
 
 	if ((QDF_STA_MODE == adapter->device_mode) ||
@@ -5458,9 +5460,9 @@ int hdd_set_csr_auth_type(struct hdd_adapter *adapter,
 
 	roam_profile = hdd_roam_profile(adapter);
 	roam_profile->AuthType.numEntries = 1;
-	hdd_debug("authType = %d RSNAuthType %d wpa_versions %d",
+	hdd_debug("authType = %d RSNAuthType %d wpa_versions %d key_mgmt: 0x%x",
 		  sta_ctx->conn_info.authType, RSNAuthType,
-		  sta_ctx->wpa_versions);
+		  sta_ctx->wpa_versions, key_mgmt);
 
 	switch (sta_ctx->conn_info.authType) {
 	case eCSR_AUTH_TYPE_OPEN_SYSTEM:
@@ -5555,6 +5557,10 @@ int hdd_set_csr_auth_type(struct hdd_adapter *adapter,
 				/* OWE case */
 				roam_profile->AuthType.authType[0] =
 					eCSR_AUTH_TYPE_OWE;
+			} else if (RSNAuthType == eCSR_AUTH_TYPE_SAE) {
+				/* SAE with open authentication case */
+				roam_profile->AuthType.authType[0] =
+					eCSR_AUTH_TYPE_SAE;
 			} else if ((RSNAuthType ==
 				  eCSR_AUTH_TYPE_SUITEB_EAP_SHA256) &&
 				  ((key_mgmt & HDD_AUTH_KEY_MGMT_802_1X)
