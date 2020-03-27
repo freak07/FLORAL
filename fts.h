@@ -57,9 +57,9 @@
   */
 /* **** CODE CONFIGURATION **** */
 #define FTS_TS_DRV_NAME		"fts"	/* driver name */
-#define FTS_TS_DRV_VERSION	"5.2.16.13"	/* driver version string
+#define FTS_TS_DRV_VERSION	"5.2.16.14"	/* driver version string
 							 * */
-#define FTS_TS_DRV_VER		0x0502100D	/* driver version u32 format */
+#define FTS_TS_DRV_VER		0x0502100E	/* driver version u32 format */
 
 /* #define DEBUG */	/* /< define to print more logs in the kernel log
 			 * and better follow the code flow */
@@ -295,6 +295,7 @@ struct fts_hw_platform_data {
 #endif
 	struct drm_panel *panel;
 	u32 initial_panel_index;
+	u32 *force_pi_cfg_ver;
 };
 
 /* Bits for the bus reference mask */
