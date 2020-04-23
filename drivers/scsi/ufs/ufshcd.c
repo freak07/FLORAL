@@ -3111,6 +3111,9 @@ static ssize_t ufshcd_hibern8_on_idle_enable_store(struct device *dev,
 	struct ufs_hba *hba = dev_get_drvdata(dev);
 	u32 value;
 
+	if (!ufshcd_is_hibern8_on_idle_allowed(hba))
+		return count;
+
 	if (kstrtou32(buf, 0, &value))
 		return -EINVAL;
 
@@ -3132,8 +3135,7 @@ static void ufshcd_init_hibern8_on_idle(struct ufs_hba *hba)
 	/* initialize the state variable here */
 	hba->hibern8_on_idle.state = HIBERN8_EXITED;
 
-	if (!ufshcd_is_hibern8_on_idle_allowed(hba) &&
-	    !ufshcd_is_auto_hibern8_supported(hba))
+	if (!ufshcd_is_hibern8_on_idle_allowed(hba))
 		return;
 
 	if (ufshcd_is_auto_hibern8_supported(hba)) {
@@ -3177,8 +3179,7 @@ static void ufshcd_init_hibern8_on_idle(struct ufs_hba *hba)
 
 static void ufshcd_exit_hibern8_on_idle(struct ufs_hba *hba)
 {
-	if (!ufshcd_is_hibern8_on_idle_allowed(hba) &&
-	    !ufshcd_is_auto_hibern8_supported(hba))
+	if (!ufshcd_is_hibern8_on_idle_allowed(hba))
 		return;
 	device_remove_file(hba->dev, &hba->hibern8_on_idle.delay_attr);
 	device_remove_file(hba->dev, &hba->hibern8_on_idle.enable_attr);
@@ -5418,8 +5419,12 @@ out:
 		ufshcd_print_pwr_info(hba);
 		ufshcd_print_host_regs(hba);
 		ufshcd_print_cmd_log(hba);
-		if (hba->crash_on_err)
-			BUG_ON(1);
+		if (hba->crash_on_err ||
+			(!hba->dev_info.pre_eol_info &&
+				!hba->dev_info.lifetime_a &&
+				!hba->dev_info.lifetime_b &&
+				!hba->dev_info.lifetime_c))
+			panic("ufshcd_uic_pwr_ctrl error\n");
 	}
 
 	ufshcd_save_tstamp_of_last_dme_cmd(hba);
@@ -9368,13 +9373,19 @@ static int ufshcd_extcon_unregister(struct ufs_hba *hba)
 static void ufshcd_async_scan(void *data, async_cookie_t cookie)
 {
 	struct ufs_hba *hba = (struct ufs_hba *)data;
+	int ret, retry = 3;
 
 	/*
 	 * Don't allow clock gating and hibern8 enter for faster device
 	 * detection.
 	 */
 	ufshcd_hold_all(hba);
-	ufshcd_probe_hba(hba);
+	ret = ufshcd_probe_hba(hba);
+	while (ret && retry) {
+		pr_err("%s failed. Err = %d. Retry %d\n", __func__, ret, retry);
+		ret = ufshcd_host_reset_and_restore(hba);
+		retry--;
+	}
 	ufshcd_release_all(hba);
 
 	ufshcd_extcon_register(hba);
@@ -11253,7 +11264,7 @@ manual_gc_store(struct device *dev, struct device_attribute *attr,
 			err = -EAGAIN;
 	}
 
-	if (err || !ufshcd_is_auto_hibern8_supported(hba)) {
+	if (err || hrtimer_active(&hba->manual_gc.hrtimer)) {
 		pm_runtime_mark_last_busy(hba->dev);
 		pm_runtime_put_noidle(hba->dev);
 		return count;
@@ -11312,11 +11323,6 @@ static void ufshcd_init_manual_gc(struct ufs_hba *hba)
 	struct ufs_manual_gc *mgc = &hba->manual_gc;
 	char wq_name[sizeof("ufs_mgc_hibern8_work")];
 
-	if (!ufshcd_is_auto_hibern8_supported(hba)) {
-		hba->manual_gc.state = MANUAL_GC_DISABLE;
-		return;
-	}
-
 	mgc->state = MANUAL_GC_ENABLE;
 	mgc->hagc_support = true;
 	mgc->delay_ms = UFSHCD_MANUAL_GC_HOLD_HIBERN8;
@@ -11332,12 +11338,17 @@ static void ufshcd_init_manual_gc(struct ufs_hba *hba)
 
 static void ufshcd_exit_manual_gc(struct ufs_hba *hba)
 {
-	if (!ufshcd_is_auto_hibern8_supported(hba))
-		return;
-
 	hrtimer_cancel(&hba->manual_gc.hrtimer);
 	cancel_work_sync(&hba->manual_gc.hibern8_work);
 	destroy_workqueue(hba->manual_gc.mgc_workq);
+}
+
+static ssize_t host_capabilities_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "0x%lx\n", hba->caps);
 }
 
 static DEVICE_ATTR_RW(rpm_lvl);
@@ -11350,6 +11361,7 @@ static DEVICE_ATTR_RO(rev);
 static DEVICE_ATTR_RO(version);
 static DEVICE_ATTR_RW(manual_gc);
 static DEVICE_ATTR_RW(manual_gc_hold);
+static DEVICE_ATTR_RO(host_capabilities);
 
 static struct attribute *ufshcd_attrs[] = {
 	&dev_attr_rpm_lvl.attr,
@@ -11370,6 +11382,7 @@ static struct attribute *ufshcd_attrs[] = {
 	&ufs_slowio_unmap_cnt.attr.attr,
 	&ufs_slowio_sync_us.attr.attr,
 	&ufs_slowio_sync_cnt.attr.attr,
+	&dev_attr_host_capabilities.attr,
 	NULL
 };
 
@@ -11484,12 +11497,56 @@ static const struct attribute_group ufshcd_health_attr_group = {
 	.attrs = ufshcd_health_attrs,
 };
 
+#define UFS_CTRL_CAP_RO(_name, _uname, zero_based)                             \
+	static ssize_t _name##_show(struct device *dev,                        \
+				    struct device_attribute *attr, char *buf)  \
+	{                                                                      \
+		struct ufs_hba *hba = dev_get_drvdata(dev);                    \
+		u32 value = ((hba->capabilities & MASK##_uname) >>             \
+			     SHIFT##_uname) +                                  \
+			    zero_based;                                        \
+		return snprintf(buf, PAGE_SIZE, "0x%08X\n", value);            \
+	}                                                                      \
+	static DEVICE_ATTR_RO(_name)
+
+UFS_CTRL_CAP_RO(support_crypto, _CRYPTO_SUPPORT, 0);
+UFS_CTRL_CAP_RO(support_uic_dme_test_mode, _UIC_DME_TEST_MODE_SUPPORT, 0);
+UFS_CTRL_CAP_RO(support_ooo_data_delivery, _OUT_OF_ORDER_DATA_DELIVERY_SUPPORT,
+		0);
+UFS_CTRL_CAP_RO(support_64bit_addressing, _64_ADDRESSING_SUPPORT, 0);
+UFS_CTRL_CAP_RO(support_auto_hibernation, _AUTO_HIBERN8_SUPPORT, 0);
+UFS_CTRL_CAP_RO(num_utp_tmr_slots, _TASK_MANAGEMENT_REQUEST_SLOTS, 1);
+UFS_CTRL_CAP_RO(num_outstanding_rtt_requests, _READY_TO_TRANSFER_REQUESTS, 1);
+UFS_CTRL_CAP_RO(num_utp_tr_slots, _TRANSFER_REQUESTS_SLOTS, 1);
+UFS_CTRL_CAP_RO(controller_capabilities, _CONTROLLER_CAPABILITIES_ALL, 0);
+
+static struct attribute *ufs_sysfs_controller_capabilities[] = {
+	&dev_attr_support_crypto.attr,
+	&dev_attr_support_uic_dme_test_mode.attr,
+	&dev_attr_support_ooo_data_delivery.attr,
+	&dev_attr_support_64bit_addressing.attr,
+	&dev_attr_support_auto_hibernation.attr,
+	&dev_attr_num_utp_tmr_slots.attr,
+	&dev_attr_num_outstanding_rtt_requests.attr,
+	&dev_attr_num_utp_tr_slots.attr,
+	&dev_attr_controller_capabilities.attr,
+	NULL,
+};
+
+static const struct attribute_group ufs_sysfs_controller_capabilities_group = {
+	.name = "controller_capabilities",
+	.attrs = ufs_sysfs_controller_capabilities,
+};
+
 static inline void ufshcd_add_sysfs_nodes(struct ufs_hba *hba)
 {
 	if (sysfs_create_group(&hba->dev->kobj, &ufshcd_attr_group))
 		dev_err(hba->dev, "Failed to create default sysfs group\n");
 	if (sysfs_create_group(&hba->dev->kobj, &ufshcd_health_attr_group))
 		dev_err(hba->dev, "Failed to create health sysfs group\n");
+	if (sysfs_create_group(&hba->dev->kobj,
+		&ufs_sysfs_controller_capabilities_group))
+		dev_err(hba->dev, "Failed to create ufs_sysfs_controller_capabilities_group\n");
 #ifdef CONFIG_SCSI_UFS_IMPAIRED
 	ufs_impaired_init_sysfs(hba);
 #endif
