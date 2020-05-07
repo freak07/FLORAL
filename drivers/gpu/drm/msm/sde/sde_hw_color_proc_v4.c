@@ -1,5 +1,4 @@
 /* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
- * Copyright (c) 2018, Pal Zoltan Illes (tbalden) - kcal rgb
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,10 +12,6 @@
 #include <drm/msm_drm_pp.h>
 #include "sde_hw_color_proc_common_v4.h"
 #include "sde_hw_color_proc_v4.h"
-
-#if 1
-#include <linux/uci/uci.h>
-#endif
 
 static int sde_write_3d_gamut(struct sde_hw_blk_reg_map *hw,
 		struct drm_msm_3d_gamut *payload, u32 base,
@@ -208,24 +203,6 @@ void sde_setup_dspp_igcv3(struct sde_hw_dspp *ctx, void *cfg)
 	SDE_REG_WRITE(&ctx->hw, IGC_OPMODE_OFF, IGC_EN);
 }
 
-#if 1
-static bool override = false;
-static int stored_sat = 0;
-static int stored_val = 0;
-static int stored_cont = 0;
-static int stored_r = 0;
-static int stored_g = 0;
-static int stored_b = 0;
-static int stored_enable = 0;
-
-extern void kcal_force_update(void);
-
-static bool first_init = true;
-static void uci_user_listener(void) {
-	kcal_force_update();
-}
-#endif
-
 void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 {
 	struct sde_hw_cp_cfg *hw_cfg = cfg;
@@ -233,52 +210,12 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 	struct drm_msm_pcc_coeff *coeffs = NULL;
 	int i = 0;
 	u32 base = 0;
-#if 1
-	int enable = 0, r=255,g=255,b=255, min = 20;
-	int sat=255, hue=0, cont=255, val = 255;
-	u32 opcode = 0, local_opcode = 0;
-	if (first_init) {
-		uci_add_user_listener(uci_user_listener);
-		first_init = false;
-	}
-#endif
 
 	if (!ctx || !cfg) {
 		DRM_ERROR("invalid param ctx %pK cfg %pK\n", ctx, cfg);
 		return;
 	}
-#if 1
-	//pr_info("%s [CLEANSLATE] kcal setup... \n",__func__);
-        enable = uci_get_user_property_int_mm("kcal_enable", enable, 0, 1);
-        r = uci_get_user_property_int_mm("kcal_red", r, 0, 256);
-        g = uci_get_user_property_int_mm("kcal_green", g, 0, 256);
-        b = uci_get_user_property_int_mm("kcal_blue", b, 0, 256);
-        min = uci_get_user_property_int_mm("kcal_min", min, 0, 256);
-	if (r<min) r= min;
-	if (g<min) g= min;
-	if (b<min) b= min;
-        sat = uci_get_user_property_int_mm("kcal_sat", sat, 128, 383);
-	// don't add HUE, not much useful
-        //hue = uci_get_user_property_int_mm("kcal_hue", hue, 0, 255);
-        cont = uci_get_user_property_int_mm("kcal_cont", cont,128, 383);
-        val = uci_get_user_property_int_mm("kcal_val", val, 128, 383);
-	if (!enable) {
-		// disabled, return to defaults
-		sat = 255;
-		cont = 255;
-		val = 255;
-		hue = 0;
-	}
-	if (override) {
-		sat = stored_sat;
-		cont = stored_cont;
-		val = stored_val;
-		r = stored_r;
-		g = stored_g;
-		b = stored_b;
-		enable = 1;
-	}
-#endif
+
 	if (!hw_cfg->payload) {
 		DRM_DEBUG_DRIVER("disable pcc feature\n");
 		SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->pcc.base, 0);
@@ -292,6 +229,7 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 	}
 
 	pcc_cfg = hw_cfg->payload;
+
 	for (i = 0; i < PCC_NUM_PLANES; i++) {
 		base = ctx->cap->sblk->pcc.base + (i * sizeof(u32));
 		switch (i) {
@@ -328,126 +266,14 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 		}
 
 		SDE_REG_WRITE(&ctx->hw, base + PCC_C_OFF, coeffs->c);
-// ====
-// RED
-#if 1
-		if (enable && i==0) {
-			SDE_REG_WRITE(&ctx->hw, base + PCC_R_OFF, (coeffs->r * r)/256);
-			//pr_info("%s [CLEANSLATE] kcal r = %d\n",__func__,(coeffs->r * r)/256);
-		} else
-#endif
 		SDE_REG_WRITE(&ctx->hw, base + PCC_R_OFF, coeffs->r);
-// GREEN
-#if 1
-		if (enable && i==1) {
-			SDE_REG_WRITE(&ctx->hw, base + PCC_G_OFF, (coeffs->g * g)/256);
-			//pr_info("%s [CLEANSLATE] kcal g = %d\n",__func__,(coeffs->g * g)/256);
-		} else
-#endif
 		SDE_REG_WRITE(&ctx->hw, base + PCC_G_OFF, coeffs->g);
-// BLUE
-#if 1
-		if (enable && i==2) {
-			SDE_REG_WRITE(&ctx->hw, base + PCC_B_OFF, (coeffs->b * b)/256);
-			//pr_info("%s [CLEANSLATE] kcal b = %d\n",__func__,(coeffs->b * b)/256);
-		} else
-#endif
 		SDE_REG_WRITE(&ctx->hw, base + PCC_B_OFF, coeffs->b);
-// =====
 		SDE_REG_WRITE(&ctx->hw, base + PCC_RG_OFF, coeffs->rg);
 		SDE_REG_WRITE(&ctx->hw, base + PCC_RB_OFF, coeffs->rb);
 		SDE_REG_WRITE(&ctx->hw, base + PCC_GB_OFF, coeffs->gb);
 		SDE_REG_WRITE(&ctx->hw, base + PCC_RGB_OFF, coeffs->rgb);
-#if 0
-		pr_info("%s [CLEANSLATE] kcal setup... drm_msm_pcc i %d r %d (rg %d) r_rr %d r_gg %d r_bb %d  \n",__func__, i, coeffs->r, coeffs->rg, pcc_cfg->r_rr, pcc_cfg->r_gg, pcc_cfg->r_bb);
-		pr_info("%s [CLEANSLATE] kcal setup... drm_msm_pcc i %d g %d (rb %d) g_rr %d g_gg %d g_bb %d  \n",__func__, i, coeffs->g, coeffs->rb, pcc_cfg->g_rr, pcc_cfg->g_gg, pcc_cfg->g_bb);
-		pr_info("%s [CLEANSLATE] kcal setup... drm_msm_pcc i %d b %d (gb %d rgb %d) b_rr %d b_gg %d b_bb %d  \n",__func__, i, coeffs->b, coeffs->gb, coeffs->rgb, pcc_cfg->b_rr, pcc_cfg->b_gg, pcc_cfg->b_bb);
-#endif
 	}
-
-#if 1
-
-	opcode = SDE_REG_READ(&ctx->hw, ctx->cap->sblk->hsic.base);
-
-	// HUE
-	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->hsic.base + PA_HUE_OFF,
-		hue & PA_HUE_MASK);
-	local_opcode |= PA_HUE_EN;
-
-	// SATURATION
-	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->hsic.base + PA_SAT_OFF,
-		sat & PA_SAT_MASK);
-	local_opcode |= PA_SAT_EN;
-
-	// VALUE
-	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->hsic.base + PA_VAL_OFF,
-		val & PA_VAL_MASK);
-	local_opcode |= PA_VAL_EN;
-
-	// CONTRAST
-	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->hsic.base + PA_CONT_OFF,
-		cont & PA_CONT_MASK);
-	local_opcode |= PA_CONT_EN;
-
-	opcode |= (local_opcode | PA_EN);
-	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->hsic.base, opcode);
-#endif
 
 	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->pcc.base, PCC_EN);
 }
-
-#if 1
-
-//#define KCAL_RGB
-
-DEFINE_MUTEX(kcal_int_lock);
-
-
-int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b)
-{
-	if (!mutex_trylock(&kcal_int_lock)) {
-		pr_info("%s kad unable to lock\n",__func__);
-		return 0;
-	}
-
-	if (override) {
-		mutex_unlock(&kcal_int_lock);
-		return -1;
-	}
-
-	{
-		pr_info("%s kad lock ### override kcal rgb: sat %d val %d cont %d | r %d g %d b %d\n",__func__, kcal_sat, kcal_val, kcal_cont, r,g,b);
-		stored_sat = kcal_sat;
-		stored_val = kcal_val;
-		stored_cont = kcal_cont;
-		stored_r = r;
-		stored_g = g;
-		stored_b = b;
-		stored_enable = 1;
-		override = true;
-	}
-	mutex_unlock(&kcal_int_lock);
-	return 1;
-}
-EXPORT_SYMBOL(kcal_internal_override);
-void kcal_internal_backup(void)
-{
-}
-EXPORT_SYMBOL(kcal_internal_backup);
-int kcal_internal_restore(bool force_kcal_update)
-{
-	if (!mutex_trylock(&kcal_int_lock)) {
-		pr_info("%s kad unable to lock\n",__func__);
-		return 0;
-	}
-	if (override) {
-		override = false;
-		if (force_kcal_update) kcal_force_update();
-	}
-
-	mutex_unlock(&kcal_int_lock);
-	return 1;
-}
-EXPORT_SYMBOL(kcal_internal_restore);
-
-#endif

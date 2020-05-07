@@ -7,6 +7,7 @@ ccflags-y += -Idrivers/gpu/drm/msm/sde
 ccflags-y += -Idrivers/media/platform/msm/sde/rotator
 ccflags-y += -Idrivers/gpu/drm/msm/hdmi
 ccflags-$(CONFIG_DRM_SDE_SHD) += -Idrivers/gpu/drm/msm/shd
+ccflags-$(CONFIG_DRM_SDE_SHP) += -Idrivers/gpu/drm/msm/shp
 
 msm_drm-y := \
 	dp/dp_usbpd.o \
@@ -42,6 +43,8 @@ msm_drm-y := \
 	sde/sde_connector.o \
 	sde/sde_color_processing.o \
 	sde/sde_vbif.o \
+	sde_dbg.o \
+	sde_dbg_evtlog.o \
 	sde_io_util.o \
 	sde/sde_hw_reg_dma_v1_color_proc.o \
 	sde/sde_hw_color_proc_v4.o \
@@ -194,6 +197,8 @@ msm_drm-$(CONFIG_DRM_SDE_SHD) += shd/shd_drm.o \
 	shd/shd_hw.o \
 	shd/sde_encoder_phys_shd.o
 
+msm_drm-$(CONFIG_DRM_SDE_SHP) += shp/shp_drm.o
+
 msm_drm-$(CONFIG_DRM_MSM) += \
 	msm_atomic.o \
 	msm_drv.o \
@@ -214,5 +219,3 @@ msm_drm-$(CONFIG_DRM_MSM) += \
 	msm_debugfs.o
 
 obj-$(CONFIG_DRM_MSM)	+= msm_drm.o
-
-CFLAGS_sde_crtc.o += -Wframe-larger-than=8192

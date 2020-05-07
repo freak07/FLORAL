@@ -419,6 +419,7 @@ TRACE_EVENT(clock_state,
 					 __entry->count, __entry->rate)
 
 );
+#endif /* CONFIG_COMMON_CLK_MSM */
 
 /*
  * The power domain events are used for power domains transitions

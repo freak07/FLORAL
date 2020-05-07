@@ -27,193 +27,12 @@
 #include "dsi_display.h"
 #include "dsi_panel.h"
 
-#ifdef CONFIG_UCI
-#include <linux/uci/uci.h>
-#endif
-#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
-#include <linux/notification/notification.h>
-#endif
-
 #define BL_NODE_NAME_SIZE 32
 #define BL_BRIGHTNESS_BUF_SIZE 2
 
 #define BL_STATE_STANDBY	BL_CORE_FBBLANK
 #define BL_STATE_LP		BL_CORE_DRIVER1
 #define BL_STATE_LP2		BL_CORE_DRIVER2
-
-#ifdef CONFIG_UCI
-static int backlight_min = 3;
-static bool backlight_dimmer = false;
-static u32 last_brightness;
-static bool first_brightness_set = false;
-#endif
-
-#ifdef CONFIG_UCI
-static struct dsi_backlight_config *bl_g;
-
-static bool last_hbm_mode = false;
-
-static int uci_switch_hbm(int on) {
-	struct dsi_panel *panel = NULL;
-	bool hbm_mode = !!on;
-
-	if (!bl_g->hbm)
-		return -ENOTSUPP;
-
-	if (on && bl_g->bl_device->props.state & BL_CORE_FBBLANK) {
-		return 0;
-	}
-
-	panel = container_of(bl_g, struct dsi_panel, bl_config);
-	dsi_panel_try_update_hbm(panel, hbm_mode);
-
-	pr_info("%s %d\n",__func__,on);
-	last_hbm_mode = hbm_mode;
-	return 0;
-}
-
-static int uci_lux_level = -1;
-static int uci_lux_level_detailed = -1;
-static bool uci_hbm_switch = false;
-static bool uci_hbm_use_ambient_light = false;
-static bool screen_wake_by_user = false;
-static bool screen_on = true;
-
-static bool is_lp_mode_on = false;
-extern int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b);
-extern int kcal_internal_restore(bool forced_update);
-extern void kcal_force_update(void);
-// user params
-static bool lp_kcal_overlay = false;
-static bool lp_kcal_overlay_dynamic = false;
-static int lp_kcal_overlay_level = 50;
-
-extern void uci_force_sde_update(void);
-
-static void uci_sys_listener(void) {
-	if (screen_wake_by_user) {
-		int new_lux_level = uci_get_sys_property_int_mm("lux_level", 0, 0, 270000);
-		if (!uci_hbm_switch) {  // hbm switch is off..
-			if (last_hbm_mode) { // and it's set to hbm already in driver.. switch it off
-				uci_switch_hbm(0);
-			}
-		} else { // hbm switch is on...
-			if (new_lux_level==0 && uci_hbm_use_ambient_light) {
-				if (last_hbm_mode) {
-					uci_switch_hbm(0);
-				}
-			} else { // new lux level is high...let's switch it on
-				if (!last_hbm_mode || uci_lux_level == -1) { //... if it's not yet on...or fresh screen off/on cycle...
-					uci_switch_hbm(1);
-				}
-			}
-		}
-		uci_lux_level = new_lux_level;
-	}
-	if (is_lp_mode_on && lp_kcal_overlay_dynamic) {
-		int new_lux_level = uci_get_sys_property_int_mm("lux_level_detailed", 0, 0, 270000);
-		pr_info("%s [aod_dimmer] is_lp_mode_on - sys - new lux level %d\n",__func__,new_lux_level);
-		if (lp_kcal_overlay && new_lux_level <=10) {
-			int lvl = lp_kcal_overlay_level + new_lux_level;
-			if (kcal_internal_override(254,254,254,lvl,lvl,lvl)>0) {
-				pr_info("%s [aod_dimmer] is_lp_mode_on - sys - force_update - lvl %d\n",__func__,lvl);
-				kcal_force_update();
-				uci_force_sde_update();
-			}
-		} else {
-			kcal_internal_restore(true);
-		}
-		uci_lux_level_detailed = new_lux_level;
-	}
-}
-static int dsi_backlight_update_status(struct backlight_device *bd);
-static void uci_user_listener(void) {
-	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
-	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
-	lp_kcal_overlay = !!uci_get_user_property_int_mm("lp_kcal_overlay", 0, 0, 1);
-	lp_kcal_overlay_dynamic = !!uci_get_user_property_int_mm("lp_kcal_overlay_dynamic", 1, 0, 1);
-	lp_kcal_overlay_level = uci_get_user_property_int_mm("lp_kcal_overlay_level", 50, 20, 60);
-	if (new_hbm_switch!=uci_hbm_switch || new_hbm_use_ambient_light!=uci_hbm_use_ambient_light) {
-		uci_hbm_switch = new_hbm_switch;
-		uci_hbm_use_ambient_light = new_hbm_use_ambient_light;
-		uci_lux_level = -1;
-		uci_sys_listener();
-	}
-	{
-		bool change = false;
-		int on = backlight_dimmer?1:0;
-		int backlight_min_curr = backlight_min;
-
-		backlight_min = uci_get_user_property_int_mm("backlight_min", backlight_min, 2, 128);
-		on = !!uci_get_user_property_int_mm("backlight_dimmer", on, 0, 1);
-
-		if (on != backlight_dimmer || backlight_min_curr != backlight_min) change = true;
-
-		backlight_dimmer = on;
-
-		if (first_brightness_set && change) {
-			if (!(bl_g->bl_device->props.state & BL_CORE_FBBLANK)) {
-				dsi_backlight_update_status(bl_g->bl_device);
-			}
-		}
-	}
-}
-static void call_uci_sys(struct work_struct * call_uci_sys_work)
-{
-	uci_sys_listener();
-}
-static DECLARE_WORK(call_uci_sys_work, call_uci_sys);
-
-static void call_switch_hbm(struct work_struct * call_switch_hbm_work)
-{
-	uci_switch_hbm(0);
-}
-static DECLARE_WORK(call_switch_hbm_work, call_switch_hbm);
-
-static void ntf_listener(char* event, int num_param, char* str_param) {
-        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
-                pr_info("%s dsi_backlight ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
-        }
-
-        if (!strcmp(event,NTF_EVENT_SLEEP)) {
-		uci_lux_level = -1;
-		screen_wake_by_user = false;
-		screen_on = false;
-		//schedule_work(&call_switch_hbm_work); // don't call this, it will switch off by itself
-
-		// after a screen off, last_hbm should be OFF as it turns off by itself
-		last_hbm_mode = false;
-        }
-        if ((!strcmp(event,NTF_EVENT_LOCKED) && !!num_param)) { // locked
-		uci_lux_level = -1;
-		screen_wake_by_user = false;
-		//schedule_work(&call_switch_hbm_work); // don't call this, it will switch off by itself
-	}
-        if (!strcmp(event,NTF_EVENT_WAKE_BY_USER)) {
-		// screen just on...set lux level -1, so HBM will be set again if needed...
-		uci_lux_level = -1;
-		screen_on = true;
-		screen_wake_by_user = true;
-
-		// after a screen off, last_hbm should be OFF as it turns off by itself
-		last_hbm_mode = false;
-	}
-	if (!strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
-		uci_lux_level = -1;
-		screen_on = true;
-
-		// after a screen off, last_hbm should be OFF as it turns off by itself
-		last_hbm_mode = false;
-	}
-        if (!strcmp(event,NTF_EVENT_INPUT)) {
-		//event -> wake by user is sure...trigger sys listener
-		if (screen_on) {
-			screen_wake_by_user = true;
-			schedule_work(&call_uci_sys_work);
-		}
-	}
-}
-#endif
 
 struct dsi_backlight_pwm_config {
 	bool pwm_pmi_control;
@@ -316,11 +135,7 @@ static u32 dsi_backlight_calculate_normal(struct dsi_backlight_config *bl,
 		/* map UI brightness into driver backlight level rounding it */
 		rc = dsi_backlight_lerp(
 			1, bl->brightness_max_level,
-#ifdef CONFIG_UCI
-			backlight_dimmer ? backlight_min : bl->bl_min_level, bl->bl_max_level,
-#else
-			bl->bl_min_level, bl->bl_max_level,
-#endif
+			bl->bl_min_level ? : 1, bl->bl_max_level,
 			brightness, &bl_lvl);
 		if (unlikely(rc))
 			pr_err("failed to linearly interpolate, brightness unmodified\n");
@@ -555,20 +370,10 @@ static u32 dsi_backlight_calculate_hbm(struct dsi_backlight_config *bl,
 		}
 	}
 
-#ifdef CONFIG_UCI
-	{
-		int panel_bri_start = (backlight_dimmer && target_range==0) ? backlight_min : range->panel_bri_start; // normal range (0), backlight dimmer can be applied. Otherwise not (HBM).
-		rc = dsi_backlight_lerp(
-			range->user_bri_start, range->user_bri_end,
-			panel_bri_start, range->panel_bri_end,
-			brightness, &bl_lvl);
-	}
-#else
 	rc = dsi_backlight_lerp(
 		range->user_bri_start, range->user_bri_end,
 		range->panel_bri_start, range->panel_bri_end,
 		brightness, &bl_lvl);
-#endif
 	if (unlikely(rc))
 		pr_err("hbm: failed to linearly interpolate, brightness unmodified\n");
 
@@ -601,7 +406,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 	else
 		bl_lvl = dsi_backlight_calculate_normal(bl, bl_temp);
 
-	pr_info("brightness=%d, bl_scale=%d, ad=%d, bl_lvl=%d, hbm = %d\n",
+	pr_debug("brightness=%d, bl_scale=%d, ad=%d, bl_lvl=%d, hbm = %d\n",
 			brightness, bl->bl_scale, bl->bl_scale_ad, bl_lvl,
 			panel->hbm_mode);
 
@@ -646,12 +451,6 @@ static int dsi_backlight_update_status(struct backlight_device *bd)
 	}
 	bl->bl_actual = bl_lvl;
 	bl->last_state = bd->props.state;
-#ifdef CONFIG_UCI
-	if (bl_lvl>0) {
-		last_brightness = bl_lvl;
-	}
-	first_brightness_set = true;
-#endif
 
 done:
 	mutex_unlock(&bl->state_lock);
@@ -799,9 +598,6 @@ static ssize_t hbm_mode_store(struct device *dev,
 	}
 	pr_debug("hbm_mode set to %d\n", panel->hbm_mode);
 
-#ifdef CONFIG_UCI
-	last_hbm_mode = hbm_mode;
-#endif
 	return count;
 }
 
@@ -822,9 +618,6 @@ static ssize_t hbm_mode_show(struct device *dev,
 
 	panel = container_of(bl, struct dsi_panel, bl_config);
 	hbm_mode = dsi_panel_get_hbm(panel);
-#ifdef CONFIG_UCI
-	last_hbm_mode = hbm_mode;
-#endif
 
 	return snprintf(buf, PAGE_SIZE, "%d\n", hbm_mode);
 }
@@ -918,13 +711,6 @@ static int dsi_backlight_register(struct dsi_backlight_config *bl)
 	if (sysfs_create_groups(&bl->bl_device->dev.kobj, bl_device_groups))
 		pr_warn("unable to create device groups\n");
 
-#ifdef CONFIG_UCI
-	bl_g = bl;
-	uci_add_sys_listener(uci_sys_listener);
-	uci_add_user_listener(uci_user_listener);
-	ntf_add_listener(ntf_listener);
-#endif
-
 	reg = regulator_get_optional(panel->parent, "lab");
 	if (!PTR_ERR_OR_ZERO(reg)) {
 		pr_info("LAB regulator found\n");
@@ -990,41 +776,9 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 		return 0;
 
 	pr_info("power_mode:%d state:0x%0x\n", power_mode, bd->props.state);
-#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
-	if (power_mode==5 || power_mode==1) { // 5 - fully off / 1 - AOD
-		ntf_screen_off();
-	} else if (power_mode==0) { // && bd->props.state!=2) { // 0 ON (state!= 0x02 it's a transient state while getting out of pocket, ON's 'state' value will be 0x80000). 
-				    // Without AOD props state can be 2 as well. Check user inputs instead
-		ntf_screen_on();
-	}
-#endif
 
 	mutex_lock(&bl->state_lock);
 	state = get_state_after_dpms(bl, power_mode);
-#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
-	if (is_lp_mode(state)) {
-		pr_info("%s [aod_dimmer] lp_mode - last_brightness %d\n",__func__,last_brightness);
-		if (lp_kcal_overlay && last_brightness<=7) {
-			if (kcal_internal_override(254,254,254,lp_kcal_overlay_level,lp_kcal_overlay_level,lp_kcal_overlay_level)>0) {
-				kcal_force_update();
-			}
-		} else {
-			kcal_internal_restore(true);
-		}
-		is_lp_mode_on = true;
-		if (lp_kcal_overlay && lp_kcal_overlay_dynamic) {
-			uci_lux_level_detailed = -1;
-			write_uci_out("aod_lp_on");
-		}
-	} else {
-		kcal_internal_restore(true);
-		is_lp_mode_on = false;
-		if (lp_kcal_overlay && lp_kcal_overlay_dynamic) {
-			uci_lux_level_detailed = -1;
-			write_uci_out("aod_lp_off");
-		}
-	}
-#endif
 
 	if (is_lp_mode(state)) {
 		rc = dsi_backlight_update_regulator(bl, state);
