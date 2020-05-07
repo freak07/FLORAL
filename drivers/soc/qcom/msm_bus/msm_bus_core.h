@@ -328,7 +328,7 @@ int msm_bus_noc_hw_init(struct msm_bus_fabric_registration *pdata,
 	struct msm_bus_hw_algorithm *hw_algo);
 int msm_bus_bimc_hw_init(struct msm_bus_fabric_registration *pdata,
 	struct msm_bus_hw_algorithm *hw_algo);
-#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_QCOM_BUS_SCALING)
+#if 0
 void msm_bus_dbg_client_data(struct msm_bus_scale_pdata *pdata, int index,
 	uint32_t cl);
 void msm_bus_dbg_commit_data(const char *fabname, void *cdata,
@@ -369,6 +369,8 @@ msm_bus_dbg_add_client(const struct msm_bus_client_handle *pdata)
 	return 0;
 }
 static inline void msm_bus_dbg_suspend_print_clients(void)
+{
+}
 
 static inline int
 msm_bus_dbg_add_bcm(struct msm_bus_node_device_type *cur_bcm)

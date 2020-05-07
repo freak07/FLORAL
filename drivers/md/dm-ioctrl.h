@@ -10,12 +10,11 @@
  * GNU General Public License for more details.
  */
 
-#include "sdxprairie.dtsi"
+#ifndef DM_IOCTRL_INTERNAL_H
+#define DM_IOCTRL_INTERNAL_H
 
-&mpss_adsp_mem {
-	reg = <0x90800000 0xdc00000>;
-};
+#include <linux/dm-ioctl.h>
 
-&pil_modem {
-	qcom,auto-boot;
-};
+int dm_ioctrl(uint cmd, struct dm_ioctl *param);
+
+#endif
