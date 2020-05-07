@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/gpio.h>
@@ -16,6 +16,7 @@
 #include <linux/clk.h>
 #include <linux/bitops.h>
 #include <soc/snd_event.h>
+#include <dsp/hw-vote-rsc.h>
 #include <linux/pm_runtime.h>
 #include <dsp/audio_notifier.h>
 
@@ -497,6 +498,7 @@ int lpi_pinctrl_suspend(struct device *dev)
 {
 	int ret = 0;
 
+	trace_printk("%s: system suspend\n",  __func__);
 	dev_dbg(dev, "%s: system suspend\n", __func__);
 
 	if ((!pm_runtime_enabled(dev) || !pm_runtime_suspended(dev))) {
@@ -533,6 +535,7 @@ static struct notifier_block service_nb = {
 
 static void lpi_pinctrl_ssr_disable(struct device *dev, void *data)
 {
+	trace_printk("%s: enter\n", __func__);
 	lpi_dev_up = false;
 	lpi_pinctrl_suspend(dev);
 }
@@ -840,7 +843,6 @@ static int lpi_pinctrl_remove(struct platform_device *pdev)
 	gpiochip_remove(&state->chip);
 	mutex_destroy(&state->core_hw_vote_lock);
 	mutex_destroy(&state->slew_access_lock);
-
 	return 0;
 }
 
@@ -867,7 +869,7 @@ int lpi_pinctrl_runtime_resume(struct device *dev)
 	}
 
 	mutex_lock(&state->core_hw_vote_lock);
-	ret = clk_prepare_enable(hw_vote);
+	ret = hw_vote_rsc_enable(hw_vote);
 	if (ret < 0) {
 		pm_runtime_set_autosuspend_delay(dev,
 						 LPI_AUTO_SUSPEND_DELAY_ERROR);
@@ -901,7 +903,7 @@ int lpi_pinctrl_runtime_suspend(struct device *dev)
 
 	mutex_lock(&state->core_hw_vote_lock);
 	if (state->core_hw_vote_status) {
-		clk_disable_unprepare(hw_vote);
+		hw_vote_rsc_disable(hw_vote);
 		state->core_hw_vote_status = false;
 	}
 	mutex_unlock(&state->core_hw_vote_lock);
