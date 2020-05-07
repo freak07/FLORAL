@@ -887,7 +887,7 @@ int ipa3_write_qmapid_wdi3_gsi_pipe(u32 clnt_hdl, u8 qmap_id)
 {
 	int result = 0;
 	struct ipa3_ep_context *ep;
-	union gsi_wdi3_channel_scratch2_reg scratch2_reg;
+	union __packed gsi_wdi3_channel_scratch2_reg scratch2_reg;
 
 	memset(&scratch2_reg, 0, sizeof(scratch2_reg));
 	if (clnt_hdl >= ipa3_ctx->ipa_num_pipes ||

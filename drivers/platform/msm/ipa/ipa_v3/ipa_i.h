@@ -2003,8 +2003,8 @@ struct ipa3_context {
 		gsi_info[IPA_HW_PROTOCOL_MAX];
 	bool ipa_mhi_proxy;
 	bool ipa_wan_skb_page;
-	struct ipa3_app_clock_vote app_clock_vote;
 	struct ipahal_imm_cmd_pyld *coal_cmd_pyld;
+	struct ipa3_app_clock_vote app_clock_vote;
 };
 
 struct ipa3_plat_drv_res {
@@ -2960,8 +2960,6 @@ int ipa3_uc_debug_stats_dealloc(uint32_t prot_id);
 void ipa3_tag_destroy_imm(void *user1, int user2);
 const struct ipa_gsi_ep_config *ipa3_get_gsi_ep_info
 	(enum ipa_client_type client);
-
-bool ipa3_check_idr_if_freed(void *ptr);
 
 int ipa3_wigig_init_i(void);
 int ipa3_wigig_uc_init(

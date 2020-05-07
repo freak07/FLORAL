@@ -114,12 +114,12 @@ static bool msm_msi_snps_handler(struct irq_desc *desc)
 	status ^= (status & mask);
 	writel_relaxed(status, msi_grp->int_status_reg);
 
-		for (i = 0; status; i++, status >>= 1)
-			if (status & 0x1) {
-				res = generic_handle_irq(
-						msi_grp->irqs[i].virq);
-				handled += (res == 1);
-			}
+	for (i = 0; status; i++, status >>= 1)
+		if (status & 0x1) {
+			res = generic_handle_irq(
+                                        msi_grp->irqs[i].virq);
+                        handled += (res == 1);
+                }
 
 	chained_irq_exit(chip, desc);
 	return (handled != 0);

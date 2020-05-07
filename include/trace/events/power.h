@@ -347,6 +347,14 @@ DECLARE_EVENT_CLASS(clock,
 		(unsigned long)__entry->state, (unsigned long)__entry->cpu_id)
 );
 
+DEFINE_EVENT(clock, clock_set_rate,
+
+	TP_PROTO(const char *name, unsigned int state, unsigned int cpu_id),
+
+	TP_ARGS(name, state, cpu_id)
+);
+
+#if defined(CONFIG_COMMON_CLK_MSM)
 DEFINE_EVENT(clock, clock_enable,
 
 	TP_PROTO(const char *name, unsigned int state, unsigned int cpu_id),
@@ -355,13 +363,6 @@ DEFINE_EVENT(clock, clock_enable,
 );
 
 DEFINE_EVENT(clock, clock_disable,
-
-	TP_PROTO(const char *name, unsigned int state, unsigned int cpu_id),
-
-	TP_ARGS(name, state, cpu_id)
-);
-
-DEFINE_EVENT(clock, clock_set_rate,
 
 	TP_PROTO(const char *name, unsigned int state, unsigned int cpu_id),
 

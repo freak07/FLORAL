@@ -123,8 +123,8 @@
 #define IPA_IOCTL_FNR_COUNTER_DEALLOC           75
 #define IPA_IOCTL_FNR_COUNTER_QUERY             76
 #define IPA_IOCTL_GET_NAT_IN_SRAM_INFO          77
-#define IPA_IOCTL_APP_CLOCK_VOTE                78
-#define IPA_IOCTL_GET_PHERIPHERAL_EP_INFO       79
+#define IPA_IOCTL_GET_PHERIPHERAL_EP_INFO       78
+#define IPA_IOCTL_APP_CLOCK_VOTE                79
 
 /**
  * max size of the header to be inserted
@@ -2976,13 +2976,13 @@ struct ipa_odl_modem_config {
 				IPA_IOCTL_GET_NAT_IN_SRAM_INFO, \
 				struct ipa_nat_in_sram_info)
 
-#define IPA_IOC_APP_CLOCK_VOTE _IOWR(IPA_IOC_MAGIC, \
-				IPA_IOCTL_APP_CLOCK_VOTE, \
-				uint32_t)
-
 #define IPA_IOC_GET_PHERIPHERAL_EP_INFO _IOWR(IPA_IOC_MAGIC, \
 				IPA_IOCTL_GET_PHERIPHERAL_EP_INFO, \
 				struct ipa_ioc_get_ep_info)
+
+#define IPA_IOC_APP_CLOCK_VOTE _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_APP_CLOCK_VOTE, \
+				uint32_t)
 
 /*
  * unique magic number of the Tethering bridge ioctls

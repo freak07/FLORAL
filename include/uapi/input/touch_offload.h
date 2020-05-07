@@ -2,10 +2,6 @@
 #ifndef _UAPI_TOUCH_OFFLOAD_H
 #define _UAPI_TOUCH_OFFLOAD_H
 
-// TODO(spfetsch): can major/minor be ignored?
-#define TOUCH_OFFLOAD_MAJOR 73
-#define TOUCH_OFFLOAD_MINOR 5
-
 #define TOUCH_OFFLOAD_MAGIC '7'
 
 /* Bus interface type */
@@ -99,11 +95,11 @@ struct TouchOffloadConfig {
  * index - unique, sequential frame index
  * timestamp - frame timestamp in nanoseconds
  */
-struct __attribute__((packed)) TouchOffloadFrameHeader {
+struct TouchOffloadFrameHeader {
 	__u32 frame_size;
 	__u64 index;
 	__u64 timestamp;
-};
+} __attribute__((packed));
 
 /* CoordStatus
  *
@@ -130,7 +126,7 @@ enum CoordStatus {
  * y - y component of touch location
  * status - type of touch
  */
-struct __attribute__((packed)) TouchOffloadCoord {
+struct TouchOffloadCoord {
 	__u16 x;
 	__u16 y;
 	enum CoordStatus status;
@@ -138,17 +134,17 @@ struct __attribute__((packed)) TouchOffloadCoord {
 	// major, minor, id
 	// touch type: coord, cancel, palm, etc
 	// explicit up event vs. down?
-};
+} __attribute__((packed));
 
 /* TouchOffloadDataCoord
  *
  * size_bytes - number of bytes per coordinate channel frame
  * coords - array of MAX_COORD coordinates
  */
-struct __attribute__((packed)) TouchOffloadDataCoord {
+struct TouchOffloadDataCoord {
 	__u32 size_bytes;
 	struct TouchOffloadCoord coords[MAX_COORDS];
-};
+} __attribute__((packed));
 #define TOUCH_OFFLOAD_FRAME_SIZE_COORD (sizeof(struct TouchOffloadDataCoord))
 
 /* TouchOffloadData2d
@@ -158,12 +154,12 @@ struct __attribute__((packed)) TouchOffloadDataCoord {
  * rx_size - number of rx channels
  * data - pointer to raw touch data buffer
  */
-struct __attribute__((packed)) TouchOffloadData2d {
+struct TouchOffloadData2d {
 	__u32 size_bytes;
 	__u16 tx_size;
 	__u16 rx_size;
 	__u8 data[1];
-};
+} __attribute__((packed));
 #define TOUCH_OFFLOAD_DATA_SIZE_2D(rx, tx) (sizeof(__u16)*(rx)*(tx))
 #define TOUCH_OFFLOAD_FRAME_SIZE_2D(rx, tx) \
 	(sizeof(struct TouchOffloadData2d) - 1 + \
@@ -176,12 +172,12 @@ struct __attribute__((packed)) TouchOffloadData2d {
  * rx_size - number of rx channels
  * data - pointer to raw touch data buffer
  */
-struct __attribute__((packed)) TouchOffloadData1d {
+struct TouchOffloadData1d {
 	__u32 size_bytes;
 	__u16 tx_size;
 	__u16 rx_size;
 	__u8 data[1];
-};
+} __attribute__((packed));
 #define TOUCH_OFFLOAD_DATA_SIZE_1D(rx, tx) (sizeof(__u16)*((rx)+(tx)))
 #define TOUCH_OFFLOAD_FRAME_SIZE_1D(rx, tx) \
 	(sizeof(struct TouchOffloadData1d) - 1 + \

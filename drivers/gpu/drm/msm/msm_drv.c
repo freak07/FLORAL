@@ -61,8 +61,6 @@
 #define MSM_VERSION_MINOR	2
 #define MSM_VERSION_PATCHLEVEL	0
 
-static struct kmem_cache *kmem_vblank_work_pool;
-
 static void msm_fb_output_poll_changed(struct drm_device *dev)
 {
 	struct msm_drm_private *priv = NULL;
@@ -256,7 +254,7 @@ static void vblank_ctrl_worker(struct kthread_work *work)
 	else
 		kms->funcs->disable_vblank(kms, priv->crtcs[cur_work->crtc_id]);
 
-	kmem_cache_free(kmem_vblank_work_pool, cur_work);
+	kfree(cur_work);
 }
 
 static int vblank_ctrl_queue_work(struct msm_drm_private *priv,
@@ -267,7 +265,7 @@ static int vblank_ctrl_queue_work(struct msm_drm_private *priv,
 	if (!priv || crtc_id >= priv->num_crtcs)
 		return -EINVAL;
 
-	cur_work = kmem_cache_zalloc(kmem_vblank_work_pool, GFP_ATOMIC);
+	cur_work = kzalloc(sizeof(*cur_work), GFP_ATOMIC);
 	if (!cur_work)
 		return -ENOMEM;
 
@@ -1426,7 +1424,8 @@ static int msm_drm_object_supports_event(struct drm_device *dev,
 	int ret = -EINVAL;
 	struct drm_mode_object *arg_obj;
 
-	arg_obj = drm_mode_object_find(dev, req->object_id, req->object_type);
+	arg_obj = drm_mode_object_find(dev, NULL,
+				req->object_id, req->object_type);
 	if (!arg_obj)
 		return -ENOENT;
 
@@ -1453,7 +1452,8 @@ static int msm_register_event(struct drm_device *dev,
 	struct msm_kms *kms = priv->kms;
 	struct drm_mode_object *arg_obj;
 
-	arg_obj = drm_mode_object_find(dev, req->object_id, req->object_type);
+	arg_obj = drm_mode_object_find(dev, NULL,
+				req->object_id, req->object_type);
 	if (!arg_obj)
 		return -ENOENT;
 
@@ -1716,7 +1716,7 @@ int msm_ioctl_rmfb2(struct drm_device *dev, void *data,
 	if (!drm_core_check_feature(dev, DRIVER_MODESET))
 		return -EINVAL;
 
-	fb = drm_framebuffer_lookup(dev, *id);
+	fb = drm_framebuffer_lookup(dev, file_priv, *id);
 	if (!fb)
 		return -ENOENT;
 
@@ -2194,11 +2194,11 @@ static int msm_pdev_probe(struct platform_device *pdev)
 
 	ret = add_display_components(&pdev->dev, &match);
 	if (ret)
-		return ret;
+		goto fail;
 
 	ret = add_gpu_components(&pdev->dev, &match);
 	if (ret)
-		return ret;
+		goto fail;
 
 	if (!match)
 		return -ENODEV;
@@ -2206,7 +2206,16 @@ static int msm_pdev_probe(struct platform_device *pdev)
 	device_enable_async_suspend(&pdev->dev);
 
 	pdev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
-	return component_master_add_with_match(&pdev->dev, &msm_drm_ops, match);
+
+	ret = component_master_add_with_match(&pdev->dev, &msm_drm_ops, match);
+	if (ret)
+		goto fail;
+
+	return 0;
+
+fail:
+	of_platform_depopulate(&pdev->dev);
+	return ret;
 }
 
 static int msm_pdev_remove(struct platform_device *pdev)
@@ -2278,7 +2287,6 @@ static int __init msm_drm_register(void)
 		return -EINVAL;
 
 	DBG("init");
-	kmem_vblank_work_pool = KMEM_CACHE(vblank_work, SLAB_HWCACHE_ALIGN | SLAB_PANIC);
 	msm_smmu_driver_init();
 	msm_dsi_register();
 	msm_edp_register();

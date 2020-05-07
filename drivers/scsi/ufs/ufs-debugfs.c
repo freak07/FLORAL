@@ -1458,141 +1458,6 @@ DEFINE_SIMPLE_ATTRIBUTE(ufsdbg_dbg_print_en_ops,
 			ufsdbg_dbg_print_en_set,
 			"%llu\n");
 
-static ssize_t ufsdbg_req_stats_write(struct file *filp,
-		const char __user *ubuf, size_t cnt, loff_t *ppos)
-{
-	struct ufs_hba *hba = filp->f_mapping->host->i_private;
-	int val;
-	int ret;
-	unsigned long flags;
-
-	ret = kstrtoint_from_user(ubuf, cnt, 0, &val);
-	if (ret) {
-		dev_err(hba->dev, "%s: Invalid argument\n", __func__);
-		return ret;
-	}
-
-	spin_lock_irqsave(hba->host->host_lock, flags);
-	ufshcd_init_req_stats(hba);
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-
-	return cnt;
-}
-
-static int ufsdbg_req_stats_show(struct seq_file *file, void *data)
-{
-	struct ufs_hba *hba = (struct ufs_hba *)file->private;
-	int i;
-	unsigned long flags;
-
-	/* Header */
-	seq_printf(file, "\t%-10s %-10s %-10s %-10s %-10s %-10s %-10s",
-		"All", "Read", "Write", "Read(urg)", "Write(urg)", "Flush",
-		"Discard");
-
-	spin_lock_irqsave(hba->host->host_lock, flags);
-
-	seq_printf(file, "\n%s:\t", "Min");
-	for (i = 0; i < TS_NUM_STATS; i++)
-		seq_printf(file, "%-10llu ", hba->ufs_stats.req_stats[i].min);
-	seq_printf(file, "\n%s:\t", "Max");
-	for (i = 0; i < TS_NUM_STATS; i++)
-		seq_printf(file, "%-10llu ", hba->ufs_stats.req_stats[i].max);
-	seq_printf(file, "\n%s:\t", "Avg.");
-	for (i = 0; i < TS_NUM_STATS; i++)
-		seq_printf(file, "%-10llu ",
-			div64_u64(hba->ufs_stats.req_stats[i].sum,
-				hba->ufs_stats.req_stats[i].count));
-	seq_printf(file, "\n%s:\t", "Count");
-	for (i = 0; i < TS_NUM_STATS; i++)
-		seq_printf(file, "%-10llu ", hba->ufs_stats.req_stats[i].count);
-	seq_puts(file, "\n");
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-
-	return 0;
-}
-
-static int ufsdbg_req_stats_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, ufsdbg_req_stats_show, inode->i_private);
-}
-
-static const struct file_operations ufsdbg_req_stats_desc = {
-	.open		= ufsdbg_req_stats_open,
-	.read		= seq_read,
-	.write		= ufsdbg_req_stats_write,
-	.release	= single_release,
-};
-
-static ssize_t ufsdbg_io_stats_write(struct file *filp,
-		const char __user *ubuf, size_t cnt, loff_t *ppos)
-{
-	struct ufs_hba *hba = filp->f_mapping->host->i_private;
-	unsigned long flags;
-
-	spin_lock_irqsave(hba->host->host_lock, flags);
-	hba->ufs_stats.io_read.max_diff_req_count = 0;
-	hba->ufs_stats.io_read.max_diff_total_bytes = 0;
-	hba->ufs_stats.io_readwrite.max_diff_req_count = 0;
-	hba->ufs_stats.io_readwrite.max_diff_total_bytes = 0;
-	hba->ufs_stats.io_write.max_diff_req_count = 0;
-	hba->ufs_stats.io_write.max_diff_total_bytes = 0;
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-
-	return cnt;
-}
-
-static int ufsdbg_io_stats_show(struct seq_file *file, void *data)
-{
-	struct ufs_hba *hba = (struct ufs_hba *)file->private;
-	unsigned long flags;
-
-	seq_printf(file, "\t\t%-10s %-10s %-10s %-10s %-10s %-10s\n",
-		"ReadCnt", "ReadBytes", "WriteCnt", "WriteBytes", "RWCnt",
-		"RWBytes");
-
-	spin_lock_irqsave(hba->host->host_lock, flags);
-	seq_printf(file,
-		"Started: \t%-10llu %-10llu %-10llu %-10llu %-10llu %-10llu\n",
-		hba->ufs_stats.io_read.req_count_started,
-		hba->ufs_stats.io_read.total_bytes_started,
-		hba->ufs_stats.io_write.req_count_started,
-		hba->ufs_stats.io_write.total_bytes_started,
-		hba->ufs_stats.io_readwrite.req_count_started,
-		hba->ufs_stats.io_readwrite.total_bytes_started);
-	seq_printf(file,
-		"Completed: \t%-10llu %-10llu %-10llu %-10llu %-10llu %-10llu\n",
-		hba->ufs_stats.io_read.req_count_completed,
-		hba->ufs_stats.io_read.total_bytes_completed,
-		hba->ufs_stats.io_write.req_count_completed,
-		hba->ufs_stats.io_write.total_bytes_completed,
-		hba->ufs_stats.io_readwrite.req_count_completed,
-		hba->ufs_stats.io_readwrite.total_bytes_completed);
-	seq_printf(file,
-		"MaxDiff: \t%-10llu %-10llu %-10llu %-10llu %-10llu %-10llu\n",
-		hba->ufs_stats.io_read.max_diff_req_count,
-		hba->ufs_stats.io_read.max_diff_total_bytes,
-		hba->ufs_stats.io_write.max_diff_req_count,
-		hba->ufs_stats.io_write.max_diff_total_bytes,
-		hba->ufs_stats.io_readwrite.max_diff_req_count,
-		hba->ufs_stats.io_readwrite.max_diff_total_bytes);
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-
-	return 0;
-}
-
-static int ufsdbg_io_stats_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, ufsdbg_io_stats_show, inode->i_private);
-}
-
-static const struct file_operations ufsdbg_io_stats_desc = {
-	.open		= ufsdbg_io_stats_open,
-	.read		= seq_read,
-	.write		= ufsdbg_io_stats_write,
-	.release        = single_release,
-};
-
 static int ufsdbg_reset_controller_show(struct seq_file *file, void *data)
 {
 	seq_puts(file, "echo 1 > /sys/kernel/debug/.../reset_controller\n");
@@ -1735,16 +1600,6 @@ void ufsdbg_add_debugfs(struct ufs_hba *hba)
 		goto err;
 	}
 
-	hba->debugfs_files.err_stats =
-		debugfs_create_file("err_stats", S_IRUSR | S_IWUSR,
-					   hba->debugfs_files.stats_folder, hba,
-					   &ufsdbg_err_stats_fops);
-	if (!hba->debugfs_files.err_stats) {
-		dev_err(hba->dev, "%s:  NULL err_stats file, exiting",
-			__func__);
-		goto err;
-	}
-
 	if (ufshcd_init_statistics(hba)) {
 		dev_err(hba->dev, "%s: Error initializing statistics",
 			__func__);
@@ -1816,28 +1671,6 @@ void ufsdbg_add_debugfs(struct ufs_hba *hba)
 	if (!hba->debugfs_files.dbg_print_en) {
 		dev_err(hba->dev,
 			"%s:  failed create dbg_print_en debugfs entry\n",
-			__func__);
-		goto err;
-	}
-
-	hba->debugfs_files.req_stats =
-		debugfs_create_file("req_stats", S_IRUSR | S_IWUSR,
-			hba->debugfs_files.stats_folder, hba,
-			&ufsdbg_req_stats_desc);
-	if (!hba->debugfs_files.req_stats) {
-		dev_err(hba->dev,
-			"%s:  failed create req_stats debugfs entry\n",
-			__func__);
-		goto err;
-	}
-
-	hba->debugfs_files.io_stats =
-		debugfs_create_file("io_stats", 0600,
-			hba->debugfs_files.stats_folder, hba,
-			&ufsdbg_io_stats_desc);
-	if (!hba->debugfs_files.io_stats) {
-		dev_err(hba->dev,
-			"%s:  failed create io_stats debugfs entry\n",
 			__func__);
 		goto err;
 	}

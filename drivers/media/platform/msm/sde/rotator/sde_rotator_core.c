@@ -3398,9 +3398,9 @@ int sde_rotator_pm_suspend(struct device *dev)
 		sde_rotator_update_clk(mgr);
 	}
 
-	SDEROT_DBG("end pm system active %d\n",
-			atomic_read(&mgr->device_suspended));
-	ATRACE_END("pm_system_active");
+	ATRACE_END("pm_active");
+	SDEROT_DBG("end pm active %d clk_cnt %d\n",
+	 atomic_read(&mgr->device_suspended), mgr->pm_rot_enable_clk_cnt);
 	SDEROT_EVTLOG(mgr->pm_rot_enable_clk_cnt,
 			 atomic_read(&mgr->device_suspended));
 	sde_rot_mgr_unlock(mgr);

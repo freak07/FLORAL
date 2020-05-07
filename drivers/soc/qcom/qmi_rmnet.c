@@ -511,6 +511,9 @@ struct rmnet_bearer_map *qmi_rmnet_get_bearer_noref(struct qos_info *qos_info,
 }
 
 #else
+static inline void qmi_rmnet_clean_flow_list(struct qos_info *qos)
+{
+}
 static inline void
 qmi_rmnet_update_flow_map(struct rmnet_flow_map *itm,
 			  struct rmnet_flow_map *new_map)

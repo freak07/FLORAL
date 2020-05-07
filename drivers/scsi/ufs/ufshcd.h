@@ -3,9 +3,9 @@
  *
  * This code is based on drivers/scsi/ufs/ufshcd.h
  * Copyright (C) 2011-2013 Samsung India Software Operations
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  * Copyright (c) 2017-2018 Samsung Electronics Co., Ltd.
  * Copyright (C) 2018, Google, Inc.
+ * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * Authors:
  *	Santosh Yaraganavi <santosh.sy@samsung.com>
@@ -609,6 +609,7 @@ struct debugfs_files {
 	struct fault_attr fail_attr;
 #endif
 };
+#endif
 
 /* tag stats statistics types */
 enum ts_types {
@@ -621,6 +622,13 @@ enum ts_types {
 	TS_FLUSH		= 5,
 	TS_DISCARD		= 6,
 	TS_NUM_STATS		= 7,
+};
+
+enum req_show_types {
+	SHOW_IO_MIN = 0,
+	SHOW_IO_MAX = 1,
+	SHOW_IO_AVG = 2,
+	SHOW_IO_SUM = 3,
 };
 
 /**
@@ -654,7 +662,6 @@ struct ufshcd_io_stat {
 	u64 max_diff_req_count;
 	u64 max_diff_total_bytes;
 };
-#endif
 
 enum ufshcd_ctx {
 	QUEUE_CMD,
@@ -692,7 +699,6 @@ struct ufshcd_clk_ctx {
  * @dme_err: tracks dme errors
  */
 struct ufs_stats {
-#ifdef CONFIG_DEBUG_FS
 	bool enabled;
 	u64 **tag_stats;
 	int q_depth;
@@ -703,7 +709,6 @@ struct ufs_stats {
 	struct ufshcd_io_stat io_write;
 	struct ufshcd_io_stat io_readwrite;
 
-#endif
 	u32 last_intr_status;
 	ktime_t last_intr_ts;
 	struct ufshcd_clk_ctx clk_hold;
@@ -1412,14 +1417,10 @@ static inline bool ufshcd_is_embedded_dev(struct ufs_hba *hba)
 	return false;
 }
 
-#ifdef CONFIG_DEBUG_FS
 static inline void ufshcd_init_req_stats(struct ufs_hba *hba)
 {
 	memset(hba->ufs_stats.req_stats, 0, sizeof(hba->ufs_stats.req_stats));
 }
-#else
-static inline void ufshcd_init_req_stats(struct ufs_hba *hba) {}
-#endif
 
 /* Expose Query-Request API */
 int ufshcd_query_flag(struct ufs_hba *hba, enum query_opcode opcode,
@@ -1705,5 +1706,4 @@ static inline int ufshcd_vops_crypto_engine_get_req_status(struct ufs_hba *hba)
 #define UFSHCD_DEFAULT_SLOWIO_WRITE_US	(10000000) /* 10 seconds */
 #define UFSHCD_DEFAULT_SLOWIO_UNMAP_US	(30000000) /* 30 seconds */
 #define UFSHCD_DEFAULT_SLOWIO_SYNC_US	(10000000) /* 10 seconds */
-
 #endif /* End of Header */

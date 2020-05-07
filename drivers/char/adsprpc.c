@@ -310,6 +310,7 @@ struct fastrpc_apps {
 	struct smq_invoke_ctx *ctxtable[FASTRPC_CTX_MAX];
 	bool legacy_remote_heap;
 	struct wakeup_source *wake_source;
+	int in_hib;
 };
 
 struct fastrpc_mmap {

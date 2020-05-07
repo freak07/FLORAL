@@ -1109,7 +1109,17 @@ static int debugfs_dump_info_read(struct seq_file *seq, void *data)
 			   mode->htotal, mode->vtotal, mode->vrefresh,
 			   mode->clock, priv_info->clk_rate_hz,
 			   mode->type & DRM_MODE_TYPE_PREFERRED ? "*" : "");
-	}
+        }
+
+		seq_puts(seq, "\tList of modes:\n");
+		list_for_each_entry(mode, &conn->modes, head) {
+			struct dsi_display_mode_priv_info *priv_info;
+			priv_info = (typeof(priv_info)) mode->private;
+			seq_printf(seq, "\t\t%dx%d@%d drm_clk:%u dsi_clk:%llu %s\n",
+				mode->htotal, mode->vtotal, mode->vrefresh,
+				mode->clock, priv_info->clk_rate_hz,
+				mode->type & DRM_MODE_TYPE_PREFERRED ? "*" : "");
+		}
 
 	return 0;
 }
@@ -1275,7 +1285,7 @@ static ssize_t debugfs_esd_trigger_check(struct file *file,
 		atomic_read(&display->panel->esd_recovery_pending))
 		return user_len;
 
-	buf = kzalloc(user_len, GFP_KERNEL);
+	buf = kzalloc(user_len + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -1330,7 +1340,7 @@ static ssize_t debugfs_alter_esd_check_mode(struct file *file,
 	if (*ppos)
 		return 0;
 
-	buf = kzalloc(len, GFP_KERNEL);
+	buf = kzalloc(len + 1, GFP_KERNEL);
 	if (ZERO_OR_NULL_PTR(buf))
 		return -ENOMEM;
 
@@ -3601,13 +3611,11 @@ static int dsi_display_parse_dt(struct dsi_display *display)
 	/* Parse TE data */
 	dsi_display_parse_te_data(display);
 
-	/* Parse all external bridges from port 0 */
-	display_for_each_ctrl(i, display) {
+	/* Parse all external bridges config, endpoint0 */
+	for (i = 0; i < MAX_EXT_BRIDGE_PORT_CONFIG; i++) {
 		display->ext_bridge[i].node_of =
 			of_graph_get_remote_node(of_node, 0, i);
-		if (display->ext_bridge[i].node_of)
-			display->ext_bridge_cnt++;
-		else
+		if (!display->ext_bridge[i].node_of)
 			break;
 	}
 
@@ -3645,7 +3653,7 @@ static int dsi_display_res_init(struct dsi_display *display)
 	display->panel = dsi_panel_get(&display->pdev->dev,
 				display->panel_of,
 				display->parser_node,
-				display->display_type,
+				display->dsi_type,
 				display->cmdline_topology);
 	if (IS_ERR_OR_NULL(display->panel)) {
 		rc = PTR_ERR(display->panel);
@@ -4321,6 +4329,7 @@ static int dsi_display_get_dfps_timing(struct dsi_display *display,
 	struct dsi_display_mode per_ctrl_mode;
 	struct dsi_mode_info *timing;
 	struct dsi_ctrl *m_ctrl;
+	u32 overlap_pixels = 0;
 
 	int rc = 0;
 
@@ -4355,6 +4364,7 @@ static int dsi_display_get_dfps_timing(struct dsi_display *display,
 	}
 	/* TODO: Remove this direct reference to the dsi_ctrl */
 	timing = &per_ctrl_mode.timing;
+	overlap_pixels = per_ctrl_mode.priv_info->overlap_pixels;
 
 	switch (dfps_caps.type) {
 	case DSI_DFPS_IMMEDIATE_VFP:
@@ -4372,7 +4382,7 @@ static int dsi_display_get_dfps_timing(struct dsi_display *display,
 				curr_refresh_rate,
 				timing->refresh_rate,
 				DSI_V_TOTAL(timing),
-				DSI_H_TOTAL_DSC(timing),
+				DSI_H_TOTAL_DSC(timing) + overlap_pixels,
 				timing->h_front_porch,
 				&adj_mode->timing.h_front_porch);
 		if (!rc)
@@ -4912,7 +4922,7 @@ static int dsi_display_bind(struct device *dev,
 	char *client1 = "dsi_clk_client";
 	char *client2 = "mdp_event_client";
 	char dsi_client_name[DSI_CLIENT_NAME_SIZE];
-	int i, rc = 0;
+	int i, j, rc = 0;
 
 	if (!dev || !pdev || !master) {
 		pr_err("invalid param(s), dev %pK, pdev %pK, master %pK\n",
@@ -4933,14 +4943,17 @@ static int dsi_display_bind(struct device *dev,
 		return 0;
 
 	/* defer bind if ext bridge driver is not loaded */
-	if (display->panel && display->panel->host_config.ext_bridge_mode) {
-		for (i = 0; i < display->ext_bridge_cnt; i++) {
-			if (!of_drm_find_bridge(
-					display->ext_bridge[i].node_of)) {
-				pr_debug("defer for bridge[%d] %s\n", i,
-				  display->ext_bridge[i].node_of->full_name);
-				return -EPROBE_DEFER;
-			}
+	for (i = 0; i < display->panel->host_config.ext_bridge_num; i++) {
+		j = display->panel->host_config.ext_bridge_map[i];
+		if (!display->ext_bridge[j].node_of) {
+			pr_err("invalid ext bridge node\n");
+			return -EINVAL;
+		}
+
+		if (!of_drm_find_bridge(display->ext_bridge[j].node_of)) {
+			pr_debug("defer for bridge[%d] %s\n", j,
+				display->ext_bridge[j].node_of->full_name);
+			return -EPROBE_DEFER;
 		}
 	}
 
@@ -5286,7 +5299,6 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 
 	for (i = 0; i < count; i++) {
 		struct device_node *np;
-		const char *disp_type = NULL;
 
 		np = of_parse_phandle(node, disp_list, i);
 		name = of_get_property(np, "label", NULL);
@@ -5294,16 +5306,6 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 			pr_err("display name not defined\n");
 			continue;
 		}
-
-		disp_type = of_get_property(np, "qcom,display-type", NULL);
-		if (!disp_type) {
-			pr_err("display type not defined for %s\n", name);
-			continue;
-		}
-
-		/* primary/secondary display should match with current dsi */
-		if (strcmp(dsi_type, disp_type))
-			continue;
 
 		if (boot_disp->boot_disp_en) {
 			if (!strcmp(boot_disp->name, name)) {
@@ -5334,6 +5336,7 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 	display->name = name;
 	display->pdev = pdev;
 	display->boot_disp = boot_disp;
+	display->dsi_type = dsi_type;
 
 	dsi_display_parse_cmdline_topology(display, index);
 
@@ -5560,7 +5563,7 @@ static int dsi_display_ext_get_info(struct drm_connector *connector,
 
 	info->is_connected = connector->status != connector_status_disconnected;
 
-	if (!strcmp(display->display_type, "primary"))
+	if (!strcmp(display->dsi_type, "primary"))
 		info->is_primary = true;
 	else
 		info->is_primary = false;
@@ -5601,11 +5604,9 @@ static struct dsi_display_ext_bridge *dsi_display_ext_get_bridge(
 {
 	struct msm_drm_private *priv;
 	struct sde_kms *sde_kms;
-	struct list_head *connector_list;
-	struct drm_connector *conn_iter;
-	struct sde_connector *sde_conn;
 	struct dsi_display *display;
-	int i;
+	int i, j, k;
+	u32 bridge_num;
 
 	if (!bridge || !bridge->encoder) {
 		SDE_ERROR("invalid argument\n");
@@ -5614,16 +5615,14 @@ static struct dsi_display_ext_bridge *dsi_display_ext_get_bridge(
 
 	priv = bridge->dev->dev_private;
 	sde_kms = to_sde_kms(priv->kms);
-	connector_list = &sde_kms->dev->mode_config.connector_list;
 
-	list_for_each_entry(conn_iter, connector_list, head) {
-		sde_conn = to_sde_connector(conn_iter);
-		if (sde_conn->encoder == bridge->encoder) {
-			display = sde_conn->display;
-			display_for_each_ctrl(i, display) {
-				if (display->ext_bridge[i].bridge == bridge)
-					return &display->ext_bridge[i];
-			}
+	for (i = 0; i < sde_kms->dsi_display_count; i++) {
+		display = sde_kms->dsi_displays[i];
+		bridge_num = display->panel->host_config.ext_bridge_num;
+		for (j = 0; j < bridge_num; j++) {
+			k = display->panel->host_config.ext_bridge_map[j];
+			if (display->ext_bridge[k].bridge == bridge)
+				return &display->ext_bridge[k];
 		}
 	}
 
@@ -5787,12 +5786,10 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 	struct drm_bridge *prev_bridge = bridge;
 	int rc = 0, i;
 
-	if (display->panel && !display->panel->host_config.ext_bridge_mode)
-		return 0;
-
-	for (i = 0; i < display->ext_bridge_cnt; i++) {
+	for (i = 0; i < display->panel->host_config.ext_bridge_num; i++) {
+		int j = display->panel->host_config.ext_bridge_map[i];
 		struct dsi_display_ext_bridge *ext_bridge_info =
-				&display->ext_bridge[i];
+				&display->ext_bridge[j];
 
 		/* return if ext bridge is already initialized */
 		if (ext_bridge_info->bridge)
@@ -5806,7 +5803,7 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 		}
 
 		/* override functions for mode adjustment */
-		if (display->ext_bridge_cnt > 1) {
+		if (display->panel->host_config.ext_bridge_num > 1) {
 			ext_bridge_info->bridge_funcs = *ext_bridge->funcs;
 			if (ext_bridge->funcs->mode_fixup)
 				ext_bridge_info->bridge_funcs.mode_fixup =
@@ -5851,7 +5848,7 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 		if (!display->ext_conn ||
 		    !display->ext_conn->funcs ||
 		    !display->ext_conn->helper_private ||
-		    display->ext_bridge_cnt > 1) {
+		    display->panel->host_config.ext_bridge_num > 1) {
 			display->ext_conn = NULL;
 			continue;
 		}
@@ -5922,7 +5919,7 @@ int dsi_display_get_info(struct drm_connector *connector,
 	info->is_connected = true;
 	info->is_primary = false;
 
-	if (!strcmp(display->display_type, "primary"))
+	if (!strcmp(display->dsi_type, "primary"))
 		info->is_primary = true;
 
 	info->width_mm = phy_props.panel_width_mm;
@@ -6180,6 +6177,10 @@ int dsi_display_get_modes(struct dsi_display *display,
 			panel_mode.pixel_clk_khz *= display->ctrl_count;
 		}
 
+		/* pixel overlap is not supported for single dsi panels */
+		if (display->ctrl_count == 1)
+			panel_mode.priv_info->overlap_pixels = 0;
+
 		start = array_idx;
 
 		for (i = 0; i < num_dfps_rates; i++) {
@@ -6345,12 +6346,14 @@ int dsi_display_find_mode(struct dsi_display *display,
 }
 
 /**
- * dsi_display_validate_mode_change() - Validate if varaible refresh case.
+ * dsi_display_validate_mode_change() - Validate mode change case.
  * @display:     DSI display handle.
- * @cur_dsi_mode:   Current DSI mode.
- * @mode:        Mode value structure to be validated.
+ * @cur_mode:    Current mode.
+ * @adj_mode:    Mode to be set.
  *               MSM_MODE_FLAG_SEAMLESS_VRR flag is set if there
  *               is change in fps but vactive and hactive are same.
+ *               DSI_MODE_FLAG_DYN_CLK flag is set if there
+ *               is change in clk but vactive and hactive are same.
  * Return: error code.
  */
 int dsi_display_validate_mode_change(struct dsi_display *display,
@@ -6374,42 +6377,38 @@ int dsi_display_validate_mode_change(struct dsi_display *display,
 	mutex_lock(&display->display_lock);
 
 	if ((cur_mode->timing.v_active == adj_mode->timing.v_active) &&
-	    (cur_mode->timing.h_active == adj_mode->timing.h_active)) {
+		(cur_mode->timing.h_active == adj_mode->timing.h_active)) {
 		/* dfps change use case */
 		if (cur_mode->timing.refresh_rate !=
 		    adj_mode->timing.refresh_rate) {
 			dsi_panel_get_dfps_caps(display->panel, &dfps_caps);
-			if (!dfps_caps.dfps_support) {
-				pr_debug("switching to %d FPS with mode switch\n",
-					adj_mode->timing.refresh_rate);
-				adj_mode->dsi_mode_flags |= DSI_MODE_FLAG_DMS_FPS;
-				goto error;
+			if (dfps_caps.dfps_support) {
+				pr_debug("Mode switch is seamless variable refresh\n");
+				adj_mode->dsi_mode_flags |= DSI_MODE_FLAG_VRR;
+				SDE_EVT32(cur_mode->timing.refresh_rate,
+					adj_mode->timing.refresh_rate,
+					cur_mode->timing.h_front_porch,
+					adj_mode->timing.h_front_porch);
 			}
-			pr_debug("Mode switch is seamless variable refresh\n");
-			adj_mode->dsi_mode_flags |= DSI_MODE_FLAG_VRR;
-			SDE_EVT32(cur_mode->timing.refresh_rate,
-				  adj_mode->timing.refresh_rate,
-				  cur_mode->timing.h_front_porch,
-				  adj_mode->timing.h_front_porch);
 		}
 
 		/* dynamic clk change use case */
 		if (cur_mode->pixel_clk_khz != adj_mode->pixel_clk_khz) {
 			dyn_clk_caps = &(display->panel->dyn_clk_caps);
-			if (!dyn_clk_caps->dyn_clk_support) {
-				pr_err("dyn clk change not supported\n");
-				rc = -ENOTSUPP;
-				goto error;
+			if (dyn_clk_caps->dyn_clk_support) {
+				pr_debug("dynamic clk change detected\n");
+				if (adj_mode->dsi_mode_flags
+						& DSI_MODE_FLAG_VRR) {
+					pr_err("dfps and dyn clk not supported in same commit\n");
+					rc = -ENOTSUPP;
+					goto error;
+				}
+
+				adj_mode->dsi_mode_flags |=
+						DSI_MODE_FLAG_DYN_CLK;
+				SDE_EVT32(cur_mode->pixel_clk_khz,
+						adj_mode->pixel_clk_khz);
 			}
-			if (adj_mode->dsi_mode_flags & DSI_MODE_FLAG_VRR) {
-				pr_err("dfps and dyn clk not supported in same commit\n");
-				rc = -ENOTSUPP;
-				goto error;
-			}
-		pr_debug("dynamic clk change detected\n");
-		adj_mode->dsi_mode_flags |= DSI_MODE_FLAG_DYN_CLK;
-		SDE_EVT32(cur_mode->pixel_clk_khz,
-				adj_mode->pixel_clk_khz);
 		}
 	}
 

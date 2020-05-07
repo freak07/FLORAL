@@ -29,7 +29,6 @@
 #include "dsi_phy.h"
 #include "dsi_panel.h"
 
-#define MAX_DSI_CTRLS_PER_DISPLAY             2
 #define DSI_CLIENT_NAME_SIZE		20
 #define MAX_CMDLINE_PARAM_LEN	 512
 #define MAX_CMD_PAYLOAD_SIZE	256
@@ -148,6 +147,7 @@ struct dsi_display_ext_bridge {
  * @ext_conn:         Pointer to external connector attached to DSI connector
  * @name:             Name of the display.
  * @display_type:     Display type as defined in device tree.
+ * @dsi_type:         Display label as defined in device tree.
  * @list:             List pointer.
  * @is_active:        Is display active.
  * @is_cont_splash_enabled:  Is continuous splash enabled
@@ -161,7 +161,6 @@ struct dsi_display_ext_bridge {
  * @panel:            Handle to DSI panel.
  * @panel_of:         pHandle to DSI panel.
  * @ext_bridge:       External bridge information for DSI display.
- * @ext_bridge_cnt:   Number of external bridges
  * @modes:            Array of probed DSI modes
  * @type:             DSI display type.
  * @clk_master_idx:   The master controller for controlling clocks. This is an
@@ -199,6 +198,7 @@ struct dsi_display {
 
 	const char *name;
 	const char *display_type;
+	const char *dsi_type;
 	struct list_head list;
 	bool is_cont_splash_enabled;
 	bool sw_te_using_wd;
@@ -218,8 +218,7 @@ struct dsi_display {
 	struct device *panel_info_dev;
 
 	/* external bridge */
-	struct dsi_display_ext_bridge ext_bridge[MAX_DSI_CTRLS_PER_DISPLAY];
-	u32 ext_bridge_cnt;
+	struct dsi_display_ext_bridge ext_bridge[MAX_EXT_BRIDGE_PORT_CONFIG];
 
 	struct dsi_display_mode *modes;
 
