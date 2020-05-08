@@ -2471,56 +2471,6 @@ struct ipa_wan_msg {
 };
 
 /**
- * struct ipacm_socksv5_info - To hold information about socksv5 connections
- * @ip_type: ip type
- * @ipv4_src: ipv4 src address
- * @ipv4_dst: ipv4 dst address
- * @ipv6_src: ipv6 src address
- * @ipv6_dst: ipv6 dst address
- * @src_port: src port number
- * @dst_port: dst port number
- * @index: the uc activation tbl index
- */
-
-struct ipacm_socksv5_info {
-	/* ip-type */
-	enum ipa_ip_type ip_type;
-
-	/* ipv4 */
-	uint32_t ipv4_src;
-	uint32_t ipv4_dst;
-
-	/* ipv6 */
-	uint32_t ipv6_src[4];
-	uint32_t ipv6_dst[4];
-
-	/* 2B src/dst port */
-	uint16_t src_port;
-	uint16_t dst_port;
-
-	/* uc-tbl index */
-	uint16_t index;
-};
-
-/**
- * struct ipa_socksv5_msg - To hold information about socksv5 client
- * @ul_in: uplink connection info
- * @dl_in: downlink connection info
- * @handle: used for ipacm to distinguish connections
- *
- * CnE need to pass the name of default wan iface when connected/disconnected.
- * CNE need to pass the gw info in wlan AP+STA mode.
- * netmgr need to pass the name of wan eMBMS iface when connected.
- */
-struct ipa_socksv5_msg {
-	struct ipacm_socksv5_info ul_in;
-	struct ipacm_socksv5_info dl_in;
-
-	/* handle (index) */
-	uint16_t handle;
-};
-
-/**
  * struct ipa_ioc_rm_dependency - parameters for add/delete dependency
  * @resource_name: name of dependent resource
  * @depends_on_name: name of its dependency
