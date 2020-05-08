@@ -82,6 +82,9 @@ const char *ipa3_event_name[] = {
 	__stringify(IPA_GSB_DISCONNECT),
 	__stringify(IPA_COALESCE_ENABLE),
 	__stringify(IPA_COALESCE_DISABLE),
+	__stringify(IPA_PDN_DEFAULT_MODE_CONFIG),
+	__stringify(IPA_PDN_IP_COLLISION_MODE_CONFIG),
+	__stringify(IPA_PDN_IP_PASSTHROUGH_MODE_CONFIG),
 };
 
 const char *ipa3_hdr_l2_type_name[] = {
