@@ -461,7 +461,6 @@ enum ipa_client_type {
 	(client) == IPA_CLIENT_Q6_UL_NLO_DATA_CONS || \
 	(client) == IPA_CLIENT_Q6_UL_NLO_ACK_CONS || \
 	(client) == IPA_CLIENT_Q6_QBAP_STATUS_CONS || \
-	(client) == IPA_CLIENT_Q6_CV2X_CONS || \
 	(client) == IPA_CLIENT_Q6_AUDIO_DMA_MHI_CONS)
 
 #define IPA_CLIENT_IS_Q6_PROD(client) \
@@ -471,7 +470,6 @@ enum ipa_client_type {
 	(client) == IPA_CLIENT_Q6_DECOMP_PROD || \
 	(client) == IPA_CLIENT_Q6_DECOMP2_PROD || \
 	(client) == IPA_CLIENT_Q6_DL_NLO_DATA_PROD || \
-	(client) == IPA_CLIENT_Q6_CV2X_PROD || \
 	(client) == IPA_CLIENT_Q6_AUDIO_DMA_MHI_PROD)
 
 #define IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client) \
@@ -482,7 +480,6 @@ enum ipa_client_type {
 	(client) == IPA_CLIENT_Q6_UL_NLO_DATA_CONS || \
 	(client) == IPA_CLIENT_Q6_UL_NLO_ACK_CONS || \
 	(client) == IPA_CLIENT_Q6_QBAP_STATUS_CONS || \
-	(client) == IPA_CLIENT_Q6_CV2X_CONS || \
 	(client) == IPA_CLIENT_Q6_AUDIO_DMA_MHI_CONS)
 
 #define IPA_CLIENT_IS_Q6_ZIP_CONS(client) \
@@ -494,7 +491,6 @@ enum ipa_client_type {
 	(client) == IPA_CLIENT_Q6_WAN_PROD || \
 	(client) == IPA_CLIENT_Q6_CMD_PROD || \
 	(client) == IPA_CLIENT_Q6_DL_NLO_DATA_PROD || \
-	(client) == IPA_CLIENT_Q6_CV2X_PROD || \
 	(client) == IPA_CLIENT_Q6_AUDIO_DMA_MHI_PROD)
 
 #define IPA_CLIENT_IS_Q6_ZIP_PROD(client) \
