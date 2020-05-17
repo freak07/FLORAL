@@ -34,6 +34,21 @@
 
 #include <trace/events/power.h>
 
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+#endif
+
+#if 1
+// default 1, touchboost is stock behavior
+static int touchboost = 1;
+#endif
+
+#ifdef CONFIG_UCI
+static void uci_user_listener(void) {
+    touchboost = !!uci_get_user_property_int_mm("touchboost", 1,0,1);
+}
+#endif
+
 static LIST_HEAD(cpufreq_policy_list);
 
 static inline bool policy_is_inactive(struct cpufreq_policy *policy)
@@ -686,6 +701,36 @@ static ssize_t show_scaling_cur_freq(struct cpufreq_policy *policy, char *buf)
 static int cpufreq_set_policy(struct cpufreq_policy *policy,
 				struct cpufreq_policy *new_policy);
 
+#if 1
+
+// touch boost min freq to be skipped...
+#define SKIP_MIN_LITTLE 1113600
+#define SKIP_MIN_BIG 1286400
+
+static int should_skip_min(struct cpufreq_policy *cur_policy, struct cpufreq_policy *new_policy) {
+	if (!touchboost) {
+		// touchboosting inactive, look for high MIN freq setting calls
+		// coming from INTERACTIVE state of power hal / user space thru the scale freq paths.
+		// Skip those specific MIN freqs of Touch boosting, so lower idle freqs can still be used more
+		// if they suffice for the load. Could spare some voltage.
+		int cur_min_freq = cur_policy->min;
+		int new_min_freq = new_policy->min;
+		int cur_u_freq = cur_policy->user_policy.min;
+		int new_u_freq = new_policy->user_policy.min;
+		bool core_BIG = cur_u_freq == SKIP_MIN_BIG || cur_u_freq == 0;
+		pr_info("%s evaluating : core_BIG %d . cur %d new %d user cur %d new %d\n",
+			__func__, core_BIG, cur_min_freq, new_min_freq, cur_u_freq, new_u_freq);
+		if (cur_min_freq<new_min_freq && ((!core_BIG && new_min_freq == SKIP_MIN_LITTLE) || (core_BIG && new_min_freq == SKIP_MIN_BIG))) {
+			pr_info("%s skipping scale MIN set : core_BIG %d . cur %d new %d user cur %d new %d\n",
+				__func__, core_BIG, cur_min_freq, new_min_freq, cur_u_freq, new_u_freq);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+#endif
+
 /**
  * cpufreq_per_cpu_attr_write() / store_##file_name() - sysfs write access
  */
@@ -708,6 +753,10 @@ static ssize_t store_##file_name					\
 		return -EINVAL;						\
 									\
 	temp = new_policy.object;					\
+	if (&policy->object == &policy->min && 				\
+		should_skip_min(policy, &new_policy))			\
+		return count;						\
+									\
 	ret = cpufreq_set_policy(policy, &new_policy);		\
 	if (!ret)							\
 		policy->user_policy.object = temp;			\
@@ -2628,6 +2677,10 @@ static int __init cpufreq_core_init(void)
 
 	cpufreq_global_kobject = kobject_create_and_add("cpufreq", &cpu_subsys.dev_root->kobj);
 	BUG_ON(!cpufreq_global_kobject);
+
+#ifdef CONFIG_UCI
+	uci_add_user_listener(uci_user_listener);
+#endif
 
 	return 0;
 }
