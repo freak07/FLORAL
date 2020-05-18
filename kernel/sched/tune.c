@@ -11,6 +11,19 @@
 #include "sched.h"
 #include "tune.h"
 
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+
+#define TB_DEBUG
+
+// default 1, touchboost is stock behavior
+static int touchboost = 1;
+
+static void uci_user_listener(void) {
+    touchboost = !!uci_get_user_property_int_mm("touchboost", 1,0,1);
+}
+#endif
+
 bool schedtune_initialized = false;
 extern struct reciprocal_value schedtune_spc_rdiv;
 
@@ -628,6 +641,35 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	if (boost < 0 || boost > 100)
 		return -EINVAL;
 
+#ifdef CONFIG_UCI
+#ifndef TB_DEBUG
+	if (!touchboost)
+		pr_debug("%s [touchboost] new val: %d curr val: %d\n",__func__, boost, st->boost);
+	}
+#endif
+#ifdef TB_DEBUG
+	// debug logs only...
+	if (!touchboost)
+	{
+		char name_buf[NAME_MAX + 1];
+		cgroup_name(st->css.cgroup, name_buf, sizeof(name_buf));
+		pr_info("%s [touchboost] name: %s . new val: %d curr val: %d\n",__func__, name_buf, boost, st->boost);
+	}
+#endif
+	// if stock touchboosting is OFF, we deviate here from stock schedtune boost settings:
+	// in case of 'top-app' - '30' (>=10) to '10' downgrade of boost, move to 0 instead, to spare higher cpu freqs.
+	if (!touchboost && st->boost >= 10 && boost == 10) {
+		char name_buf[NAME_MAX + 1];
+		char *st_name = "top-app";
+		cgroup_name(st->css.cgroup, name_buf, sizeof(name_buf));
+		if (strncmp(name_buf, st_name, strlen(st_name)) == 0) {
+			pr_info("%s [touchboost] Override to 0 boost --> name: %s . new val: %d curr val: %d\n",__func__, name_buf, boost, st->boost);
+			st->boost = 0;
+		} else {
+			st->boost = boost;
+		}
+	} else
+#endif
 	st->boost = boost;
 
 	/* Update CPU boost */
@@ -820,6 +862,9 @@ schedtune_init(void)
 {
 	schedtune_spc_rdiv = reciprocal_value(100);
 	schedtune_init_cgroups();
+#ifdef CONFIG_UCI
+	uci_add_user_listener(uci_user_listener);
+#endif
 	return 0;
 }
 postcore_initcall(schedtune_init);
