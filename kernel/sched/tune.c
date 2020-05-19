@@ -14,13 +14,19 @@
 #ifdef CONFIG_UCI
 #include <linux/uci/uci.h>
 
+// default boost value in power hal json for idling
+#define DEFAULT_FW_BOOST_VALUE 10
+
 #define TB_DEBUG
 
 // default 1, touchboost is stock behavior
 static int touchboost = 1;
+// devide boost writes by this value (1-5)
+static int touchboost_divider = 1;
 
 static void uci_user_listener(void) {
     touchboost = !!uci_get_user_property_int_mm("touchboost", 1,0,1);
+    touchboost_divider = uci_get_user_property_int_mm("touchboost_divider", 1,1,5);
 }
 #endif
 
@@ -656,15 +662,22 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 		pr_info("%s [touchboost] name: %s . new val: %d curr val: %d\n",__func__, name_buf, boost, st->boost);
 	}
 #endif
-	// if stock touchboosting is OFF, we deviate here from stock schedtune boost settings:
-	// in case of 'top-app' - '30' (>=10) to '10' downgrade of boost, move to 0 instead, to spare higher cpu freqs.
-	if (!touchboost && st->boost >= 10 && boost == 10) {
+	// if stock touchboosting is OFF, we deviate here from stock schedtune boost settings...
+	if (!touchboost && boost > 0) {
 		char name_buf[NAME_MAX + 1];
 		char *st_name = "top-app";
 		cgroup_name(st->css.cgroup, name_buf, sizeof(name_buf));
 		if (strncmp(name_buf, st_name, strlen(st_name)) == 0) {
-			pr_info("%s [touchboost] Override to 0 boost --> name: %s . new val: %d curr val: %d\n",__func__, name_buf, boost, st->boost);
-			st->boost = 0;
+			// in case of 'top-app' - '30' (>=10) to '10' downgrade of boost, move to 0 instead, to spare higher cpu freqs.
+			if ((st->boost * touchboost_divider >= DEFAULT_FW_BOOST_VALUE) && boost == DEFAULT_FW_BOOST_VALUE) {
+				pr_info("%s [touchboost] Override to 0 boost --> name: %s . new val: %d curr val: %d\n",__func__, name_buf, boost, st->boost);
+				st->boost = 0;
+			} else {
+				// otherwise set a divided value...
+				s64 set_value = boost / touchboost_divider;
+				pr_info("%s [touchboost] Divide - to %d boost --> name: %s . new val: %d curr val: %d\n",__func__, set_value, name_buf, boost, st->boost);
+				st->boost = set_value;
+			}
 		} else {
 			st->boost = boost;
 		}
