@@ -16,6 +16,7 @@
 
 // default boost value in power hal json for idling
 #define DEFAULT_FW_BOOST_VALUE 10
+#define TB_DIV_MAX 5
 
 #define TB_DEBUG
 
@@ -26,7 +27,7 @@ static int touchboost_divider = 1;
 
 static void uci_user_listener(void) {
     touchboost = !!uci_get_user_property_int_mm("touchboost", 1,0,1);
-    touchboost_divider = uci_get_user_property_int_mm("touchboost_divider", 1,1,5);
+    touchboost_divider = uci_get_user_property_int_mm("touchboost_divider", 1,1,TB_DIV_MAX);
 }
 #endif
 
@@ -673,8 +674,8 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 				pr_info("%s [touchboost] Override to 0 boost --> name: %s . new val: %d curr val: %d\n",__func__, name_buf, boost, st->boost);
 				st->boost = 0;
 			} else {
-				// otherwise set a divided value...
-				s64 set_value = boost / touchboost_divider;
+				// otherwise set a divided value... (for max divider simply set 1)
+				s64 set_value = touchboost_divider == TB_DIV_MAX ? 1 : (boost / touchboost_divider);
 				pr_info("%s [touchboost] Divide - to %d boost --> name: %s . new val: %d curr val: %d\n",__func__, set_value, name_buf, boost, st->boost);
 				st->boost = set_value;
 			}
