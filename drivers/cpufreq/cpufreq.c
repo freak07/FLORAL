@@ -706,8 +706,9 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 // touch boost min freq to be skipped...
 #define SKIP_MIN_LITTLE 1113600
 #define SKIP_MIN_BIG 1286400
+#define REPLACE_MIN_LITTLE 844800
 
-static int should_skip_min(struct cpufreq_policy *cur_policy, struct cpufreq_policy *new_policy) {
+static int skip_or_tune_min_freq(struct cpufreq_policy *cur_policy, struct cpufreq_policy *new_policy) {
 	if (!touchboost) {
 		// touchboosting inactive, look for high MIN freq setting calls
 		// coming from INTERACTIVE state of power hal / user space thru the scale freq paths.
@@ -723,6 +724,12 @@ static int should_skip_min(struct cpufreq_policy *cur_policy, struct cpufreq_pol
 		if (cur_min_freq<new_min_freq && ((!core_BIG && new_min_freq == SKIP_MIN_LITTLE) || (core_BIG && new_min_freq == SKIP_MIN_BIG))) {
 			pr_info("%s skipping scale MIN set : core_BIG %d . cur %d new %d user cur %d new %d\n",
 				__func__, core_BIG, cur_min_freq, new_min_freq, cur_u_freq, new_u_freq);
+			if (!core_BIG) {
+				// in case of little cluster, don't skip, but replace MIN freq with a lower one
+				// to skip frame drops when full system idles without even mild load.
+				new_policy->min = REPLACE_MIN_LITTLE;
+				return 0;
+			}
 			return 1;
 		}
 	}
@@ -754,7 +761,7 @@ static ssize_t store_##file_name					\
 									\
 	temp = new_policy.object;					\
 	if (&policy->object == &policy->min && 				\
-		should_skip_min(policy, &new_policy))			\
+		skip_or_tune_min_freq(policy, &new_policy))		\
 		return count;						\
 									\
 	ret = cpufreq_set_policy(policy, &new_policy);		\
