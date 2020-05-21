@@ -240,7 +240,12 @@ struct drm_msm_igc_lut {
 	__u32 c1[IGC_TBL_LEN];
 	__u32 c2[IGC_TBL_LEN];
 	__u32 strength;
+	__u32 c0_last;
+	__u32 c1_last;
+	__u32 c2_last;
 };
+
+#define LAST_LUT 2
 
 #define HIST_V_SIZE 256
 /**
