@@ -18,6 +18,8 @@
 #define DEFAULT_FW_BOOST_VALUE 10
 #define TB_DIV_MAX 5
 
+static unsigned long log_boost_effect = 0;
+
 #define TB_DEBUG
 
 // default 1, touchboost is stock behavior
@@ -51,6 +53,9 @@ struct schedtune {
 
 	/* Boost value for tasks on that SchedTune CGroup */
 	int boost;
+#ifdef CONFIG_UCI
+	int boost_from_user;
+#endif
 
 #ifdef CONFIG_SCHED_WALT
 	/* Toggle ability to override sched boost enabled */
@@ -281,6 +286,16 @@ schedtune_cpu_update(int cpu, u64 now)
 	boost_max = max(boost_max, 0);
 	bg->boost_max = boost_max;
 	bg->boost_ts = boost_ts;
+#ifdef TB_DEBUG_TRACE
+	{
+		static int last_value = -1;
+		if (jiffies - log_boost_effect < 10 && boost_max!=last_value) {
+			pr_info("%s [cleanslate] set cpu boost to %d\n", __func__, boost_max);
+			last_value = boost_max;
+		}
+	}
+#endif
+
 }
 
 static int
@@ -291,6 +306,16 @@ schedtune_boostgroup_update(int idx, int boost)
 	int old_boost;
 	int cpu;
 	u64 now;
+
+#ifdef TB_DEBUG_TRACE
+	{
+		static int last_value = -1;
+		if (jiffies - log_boost_effect < 10 && boost!=last_value) {
+			pr_info("%s [cleanslate] set boostgroup boost to %d\n", __func__, boost);
+			last_value = boost;
+		}
+	}
+#endif
 
 	/* Update per CPU boost groups */
 	for_each_possible_cpu(cpu) {
@@ -569,6 +594,15 @@ int schedtune_task_boost(struct task_struct *p)
 	st = task_schedtune(p);
 	task_boost = st->boost;
 	rcu_read_unlock();
+#ifdef TB_DEBUG_TRACE
+	{
+		static int last_value = -1;
+		if (jiffies - log_boost_effect < 10 && task_boost!=last_value) {
+			pr_info("%s [cleanslate] set task boost to %d\n", __func__, task_boost);
+			last_value = task_boost;
+		}
+	}
+#endif
 
 	return task_boost;
 }
@@ -612,8 +646,12 @@ static s64
 boost_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct schedtune *st = css_st(css);
+#ifdef CONFIG_UCI
+	return st->boost_from_user;
+#else
 
 	return st->boost;
+#endif
 }
 
 #ifdef CONFIG_SCHED_WALT
@@ -670,7 +708,7 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 		cgroup_name(st->css.cgroup, name_buf, sizeof(name_buf));
 		if (strncmp(name_buf, st_name, strlen(st_name)) == 0) {
 			// in case of 'top-app' - '30' (>=10) to '10' downgrade of boost, move to 0 instead, to spare higher cpu freqs.
-			if ((st->boost * touchboost_divider >= DEFAULT_FW_BOOST_VALUE) && boost == DEFAULT_FW_BOOST_VALUE) {
+			if (st->boost_from_user >= DEFAULT_FW_BOOST_VALUE && boost == DEFAULT_FW_BOOST_VALUE) {
 				pr_info("%s [touchboost] Override to 0 boost --> name: %s . new val: %d curr val: %d\n",__func__, name_buf, boost, st->boost);
 				st->boost = 0;
 			} else {
@@ -679,12 +717,16 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 				pr_info("%s [touchboost] Divide - to %d boost --> name: %s . new val: %d curr val: %d\n",__func__, set_value, name_buf, boost, st->boost);
 				st->boost = set_value;
 			}
+			log_boost_effect = jiffies;
 		} else {
 			st->boost = boost;
 		}
 	} else
 #endif
 	st->boost = boost;
+#ifdef CONFIG_UCI
+	st->boost_from_user = boost;
+#endif
 
 	/* Update CPU boost */
 	schedtune_boostgroup_update(st->idx, st->boost);
