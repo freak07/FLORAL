@@ -312,7 +312,7 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 }
 
 bool is_uci_path(const char *file_name) {
-	if (!file_name) return false;
+	if (file_name==NULL) return false;
 	if (!strcmp(file_name, UCI_USER_FILE)) return true;
 	if (!strcmp(file_name, UCI_SYS_FILE)) return true;
 	if (!strcmp(file_name, UCI_KERNEL_FILE)) return true;
@@ -322,7 +322,7 @@ bool is_uci_path(const char *file_name) {
 EXPORT_SYMBOL(is_uci_path);
 
 bool is_uci_file(const char *file_name) {
-	if (!file_name) return false;
+	if (file_name==NULL) return false;
 	if (!strcmp(file_name, UCI_USER_FILE_END)) return true;
 	if (!strcmp(file_name, UCI_SYS_FILE_END)) return true;
 	if (!strcmp(file_name, UCI_KERNEL_FILE_END)) return true;
