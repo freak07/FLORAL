@@ -26,6 +26,10 @@
 #include "sde_trace.h"
 #include "sde_connector.h"
 
+#ifdef CONFIG_UCI
+static struct dsi_panel *g_panel = NULL;
+static struct panel_switch_data *g_pdata = NULL;
+#endif
 
 #define TE_TIMEOUT_MS	50
 
@@ -175,6 +179,12 @@ static void panel_switch_to_mode(struct panel_switch_data *pdata,
 	SDE_ATRACE_END(__func__);
 }
 
+#ifdef CONFIG_UCI
+int forced_freq_value = 60;
+int stored_freq_value = 60;
+static bool forced_freq = false;
+#endif
+
 static void panel_switch_worker(struct kthread_work *work)
 {
 	struct panel_switch_data *pdata;
@@ -207,6 +217,15 @@ static void panel_switch_worker(struct kthread_work *work)
 	SDE_ATRACE_BEGIN(__func__);
 
 	pr_debug("switching mode to %dhz\n", mode->timing.refresh_rate);
+#if 0
+	pr_info("switching mode to %dhz\n", mode->timing.refresh_rate);
+#endif
+#ifdef CONFIG_UCI
+	if (!forced_freq) {
+		forced_freq_value = mode->timing.refresh_rate;
+		stored_freq_value = mode->timing.refresh_rate;
+	}
+#endif
 
 	te_listen_cnt = pdata->switch_te_listen_count;
 	if (te_listen_cnt) {
@@ -304,6 +323,23 @@ display_mode_from_user(const struct dsi_panel *panel,
 	return display_mode_from_cmdline(panel, strim(modestr));
 }
 
+#ifdef CONFIG_UCI
+static struct dsi_display_mode *find_mode_for_refresh_rate(struct dsi_panel *panel,
+	u32 refresh_rate)
+{
+	struct dsi_display_mode *mode;
+	int i;
+
+	for_each_display_mode(i, mode, panel)
+		if (mode->timing.refresh_rate == refresh_rate) {
+			return mode;
+		}
+
+	return NULL;
+}
+
+#endif
+
 static void panel_queue_switch(struct panel_switch_data *pdata,
 			       const struct dsi_display_mode *new_mode)
 {
@@ -313,12 +349,74 @@ static void panel_queue_switch(struct panel_switch_data *pdata,
 	kthread_flush_work(&pdata->switch_work);
 
 	mutex_lock(&pdata->panel->panel_lock);
+#ifdef CONFIG_UCI
+	if (forced_freq && g_panel!=NULL && (pdata->panel == g_panel)) {
+		struct dsi_display_mode *new_mode_forced = find_mode_for_refresh_rate(g_panel,forced_freq_value);
+		pr_info("%s [cleanslate] switcing to FORCED rate: %d ... starting work. \n",__func__, new_mode_forced->timing.refresh_rate);
+		pdata->display_mode = new_mode_forced;
+	} else {
+		stored_freq_value = new_mode->timing.refresh_rate;
+		forced_freq_value = stored_freq_value;
+		pr_info("%s [cleanslate] storing and switching to rate: %d ... starting work. \n",__func__, new_mode->timing.refresh_rate);
+#endif
 	pdata->display_mode = new_mode;
+#ifdef CONFIG_UCI
+	}
+#endif
 	pdata->switch_pending = true;
 	mutex_unlock(&pdata->panel->panel_lock);
 
 	kthread_queue_work(&pdata->worker, &pdata->switch_work);
 }
+
+#ifdef CONFIG_UCI
+
+static void uci_forced_panel_queue_switch_work_func(struct work_struct * uci_forced_panel_queue_switch_work)
+{
+	if (g_panel!=NULL) {
+		struct dsi_display_mode *new_mode = find_mode_for_refresh_rate(g_panel,forced_freq_value);
+		pr_debug("%s WORK forced freq %d\n",__func__,forced_freq_value);
+		if (new_mode!=NULL) panel_queue_switch(g_pdata, new_mode);
+	}
+}
+static DECLARE_DELAYED_WORK(uci_forced_panel_queue_switch_work, uci_forced_panel_queue_switch_work_func);
+
+static void uci_release_panel_queue_switch_work_func(struct work_struct * uci_release_panel_queue_switch_work)
+{
+	if (g_panel!=NULL) {
+		struct dsi_display_mode *restore_mode = find_mode_for_refresh_rate(g_panel,stored_freq_value);
+		pr_debug("%s WORK release forced freq %d to %d \n",__func__,forced_freq_value,stored_freq_value);
+		if (restore_mode!=NULL) panel_queue_switch(g_pdata, restore_mode);
+	}
+}
+static DECLARE_WORK(uci_release_panel_queue_switch_work, uci_release_panel_queue_switch_work_func);
+
+void uci_set_forced_freq(int freq) {
+	pr_debug("%s forced freq %d\n",__func__,freq);
+	if (g_panel!=NULL && (freq == 60 || freq == 90)) {
+		if (forced_freq == true && forced_freq_value == freq) {
+			return;
+		}
+		forced_freq_value = freq;
+		forced_freq = true;
+		{
+			schedule_delayed_work(&uci_forced_panel_queue_switch_work, 0);
+		}
+	}
+}
+EXPORT_SYMBOL(uci_set_forced_freq);
+
+void uci_release_forced_freq(void) {
+	if (g_panel!=NULL) {
+		if (forced_freq) {
+			pr_info("%s [cleanslate] release forced freq %d to %d \n",__func__,forced_freq_value,stored_freq_value);
+			forced_freq = false;
+			schedule_work(&uci_release_panel_queue_switch_work);
+		}
+	}
+}
+EXPORT_SYMBOL(uci_release_forced_freq);
+#endif
 
 static int panel_switch(struct dsi_panel *panel)
 {
@@ -327,6 +425,14 @@ static int panel_switch(struct dsi_panel *panel)
 	if (!panel->cur_mode)
 		return -EINVAL;
 
+#ifdef CONFIG_UCI
+	pr_info("%s [cleanslate] storing rate: %d . \n",__func__, panel->cur_mode->timing.refresh_rate);
+	stored_freq_value = panel->cur_mode->timing.refresh_rate;
+	if (stored_freq_value!=forced_freq_value && forced_freq) {
+		// delayed work, to make sure screen turned on and switch to 60hz can be done...
+		schedule_delayed_work(&uci_forced_panel_queue_switch_work,10);
+	}
+#endif
 	SDE_ATRACE_BEGIN(__func__);
 	panel_queue_switch(pdata, panel->cur_mode);
 	SDE_ATRACE_END(__func__);
@@ -1712,6 +1818,12 @@ int dsi_panel_switch_init(struct dsi_panel *panel)
 		return -ENOENT;
 
 	pdata->funcs = funcs;
+#ifdef CONFIG_UCI
+	if (g_pdata==NULL) {
+		g_pdata = pdata;
+		g_panel = panel;
+	}
+#endif
 
 	return 0;
 }

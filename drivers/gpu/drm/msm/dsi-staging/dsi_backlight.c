@@ -49,6 +49,11 @@ static bool first_brightness_set = false;
 #endif
 
 #ifdef CONFIG_UCI
+extern void uci_set_forced_freq(int freq);
+extern void uci_release_forced_freq(void);
+#endif
+
+#ifdef CONFIG_UCI
 static struct dsi_backlight_config *bl_g;
 
 static bool last_hbm_mode = false;
@@ -88,6 +93,21 @@ static bool lp_kcal_overlay = false;
 static bool lp_kcal_overlay_dynamic = false;
 static int lp_kcal_overlay_level = 50;
 
+// forced freq settngs
+static u32 last_brightness_for_forced = 100;
+static bool forced_panel_freq_below_backlight = false;
+static int forced_panel_freq_below_backlight_value = 9;
+
+static void check_forced_panel_freq(void) {
+	if (forced_panel_freq_below_backlight &&
+			last_brightness_for_forced <= forced_panel_freq_below_backlight_value) {
+		uci_set_forced_freq(60);
+	} else {
+		uci_release_forced_freq();
+	}
+}
+
+//
 extern void uci_force_sde_update(void);
 
 static void uci_sys_listener(void) {
@@ -127,9 +147,21 @@ static void uci_sys_listener(void) {
 	}
 }
 static int dsi_backlight_update_status(struct backlight_device *bd);
+
 static void uci_user_listener(void) {
+
 	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
+
+	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
+	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
+	if (new_forced_panel_freq_below_backlight!=forced_panel_freq_below_backlight ||
+		new_forced_panel_freq_below_backlight_value!=forced_panel_freq_below_backlight_value) {
+		forced_panel_freq_below_backlight = new_forced_panel_freq_below_backlight;
+		forced_panel_freq_below_backlight_value = new_forced_panel_freq_below_backlight_value;
+		check_forced_panel_freq();
+	}
+
 	lp_kcal_overlay = !!uci_get_user_property_int_mm("lp_kcal_overlay", 0, 0, 1);
 	lp_kcal_overlay_dynamic = !!uci_get_user_property_int_mm("lp_kcal_overlay_dynamic", 1, 0, 1);
 	lp_kcal_overlay_level = uci_get_user_property_int_mm("lp_kcal_overlay_level", 50, 20, 60);
@@ -197,6 +229,9 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 
 		// after a screen off, last_hbm should be OFF as it turns off by itself
 		last_hbm_mode = false;
+
+		// forced freq mode call
+		check_forced_panel_freq();
 	}
 	if (!strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
 		uci_lux_level = -1;
@@ -204,6 +239,9 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 
 		// after a screen off, last_hbm should be OFF as it turns off by itself
 		last_hbm_mode = false;
+
+		// forced freq mode call
+		check_forced_panel_freq();
 	}
         if (!strcmp(event,NTF_EVENT_INPUT)) {
 		//event -> wake by user is sure...trigger sys listener
@@ -604,6 +642,10 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 	pr_info("brightness=%d, bl_scale=%d, ad=%d, bl_lvl=%d, hbm = %d\n",
 			brightness, bl->bl_scale, bl->bl_scale_ad, bl_lvl,
 			panel->hbm_mode);
+#ifdef CONFIG_UCI
+	last_brightness_for_forced = brightness;
+	check_forced_panel_freq();
+#endif
 
 	return bl_lvl;
 }
