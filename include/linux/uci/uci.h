@@ -17,6 +17,13 @@
 #define UCI_HOSTS_FILE "/storage/emulated/0/hosts_k"
 #define UCI_HOSTS_FILE_END "hosts_k"
 
+// pstore files to grant access to, without superuser elevation
+#define UCI_PSTORE_FILE_0 "/sys/fs/pstore/console-ramoops"
+#define UCI_PSTORE_FILE_1 "/sys/fs/pstore/console-ramoops-0"
+
+#define UCI_PSTORE_FILE_0_END "console-ramoops"
+#define UCI_PSTORE_FILE_1_END "console-ramoops-0"
+
 extern bool is_uci_path(const char *file_name);
 extern bool is_uci_file(const char *file_name);
 
