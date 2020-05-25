@@ -49,8 +49,8 @@ static bool first_brightness_set = false;
 #endif
 
 #ifdef CONFIG_UCI
-extern void uci_set_forced_freq(int freq);
-extern void uci_release_forced_freq(void);
+extern void uci_set_forced_freq(int freq, bool force_mode_change);
+extern void uci_release_forced_freq(bool force_mode_change);
 #endif
 
 #ifdef CONFIG_UCI
@@ -98,12 +98,12 @@ static u32 last_brightness_for_forced = 100;
 static bool forced_panel_freq_below_backlight = false;
 static int forced_panel_freq_below_backlight_value = 9;
 
-static void check_forced_panel_freq(void) {
+static void check_forced_panel_freq(bool force_mode_change) {
 	if (forced_panel_freq_below_backlight &&
 			last_brightness_for_forced <= forced_panel_freq_below_backlight_value) {
-		uci_set_forced_freq(60);
+		uci_set_forced_freq(60, force_mode_change);
 	} else {
-		uci_release_forced_freq();
+		uci_release_forced_freq(force_mode_change);
 	}
 }
 
@@ -148,18 +148,30 @@ static void uci_sys_listener(void) {
 }
 static int dsi_backlight_update_status(struct backlight_device *bd);
 
+// should the gamma values be tweaked at 90hz (60hz - 90hz green tint removal)
+static bool replace_gamma_table = false;
+bool get_replace_gamma_table(void) {
+	return replace_gamma_table;
+}
+EXPORT_SYMBOL(get_replace_gamma_table);
+
 static void uci_user_listener(void) {
 
 	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
 
+	bool new_replace_gamma_table = !!uci_get_user_property_int_mm("replace_gamma_table", 0, 0, 1);
+
 	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
 	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
 	if (new_forced_panel_freq_below_backlight!=forced_panel_freq_below_backlight ||
-		new_forced_panel_freq_below_backlight_value!=forced_panel_freq_below_backlight_value) {
+		new_forced_panel_freq_below_backlight_value!=forced_panel_freq_below_backlight_value ||
+		new_replace_gamma_table!=replace_gamma_table) {
+		bool force_mode_change = new_replace_gamma_table!=replace_gamma_table;
+		replace_gamma_table = new_replace_gamma_table;
 		forced_panel_freq_below_backlight = new_forced_panel_freq_below_backlight;
 		forced_panel_freq_below_backlight_value = new_forced_panel_freq_below_backlight_value;
-		check_forced_panel_freq();
+		check_forced_panel_freq(force_mode_change);
 	}
 
 	lp_kcal_overlay = !!uci_get_user_property_int_mm("lp_kcal_overlay", 0, 0, 1);
@@ -231,7 +243,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		last_hbm_mode = false;
 
 		// forced freq mode call
-		check_forced_panel_freq();
+		check_forced_panel_freq(true);
 	}
 	if (!strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
 		uci_lux_level = -1;
@@ -241,7 +253,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		last_hbm_mode = false;
 
 		// forced freq mode call
-		check_forced_panel_freq();
+		check_forced_panel_freq(true);
 	}
         if (!strcmp(event,NTF_EVENT_INPUT)) {
 		//event -> wake by user is sure...trigger sys listener
@@ -644,7 +656,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 			panel->hbm_mode);
 #ifdef CONFIG_UCI
 	last_brightness_for_forced = brightness;
-	check_forced_panel_freq();
+	check_forced_panel_freq(false);
 #endif
 
 	return bl_lvl;

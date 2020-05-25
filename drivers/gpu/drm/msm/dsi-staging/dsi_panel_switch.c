@@ -12,7 +12,9 @@
  *
  */
 
+#ifndef CONFIG_UCI
 #define pr_fmt(fmt)	"%s: " fmt, __func__
+#endif
 
 #include <linux/atomic.h>
 #include <linux/completion.h>
@@ -29,6 +31,8 @@
 #ifdef CONFIG_UCI
 static struct dsi_panel *g_panel = NULL;
 static struct panel_switch_data *g_pdata = NULL;
+
+extern bool get_replace_gamma_table(void);
 #endif
 
 #define TE_TIMEOUT_MS	50
@@ -391,10 +395,10 @@ static void uci_release_panel_queue_switch_work_func(struct work_struct * uci_re
 }
 static DECLARE_WORK(uci_release_panel_queue_switch_work, uci_release_panel_queue_switch_work_func);
 
-void uci_set_forced_freq(int freq) {
+void uci_set_forced_freq(int freq, bool force_mode_change) {
 	pr_debug("%s forced freq %d\n",__func__,freq);
 	if (g_panel!=NULL && (freq == 60 || freq == 90)) {
-		if (forced_freq == true && forced_freq_value == freq) {
+		if (force_mode_change != true && forced_freq == true && forced_freq_value == freq) {
 			return;
 		}
 		forced_freq_value = freq;
@@ -406,9 +410,9 @@ void uci_set_forced_freq(int freq) {
 }
 EXPORT_SYMBOL(uci_set_forced_freq);
 
-void uci_release_forced_freq(void) {
+void uci_release_forced_freq(bool force_mode_change) {
 	if (g_panel!=NULL) {
-		if (forced_freq) {
+		if (forced_freq || force_mode_change) {
 			pr_info("%s [cleanslate] release forced freq %d to %d \n",__func__,forced_freq_value,stored_freq_value);
 			forced_freq = false;
 			schedule_work(&uci_release_panel_queue_switch_work);
@@ -890,6 +894,43 @@ struct s6e3hc2_panel_data {
 	u8 *gamma_data[S6E3HC2_NUM_GAMMA_TABLES];
 };
 
+#ifdef CONFIG_UCI
+#if 0
+static void s6e3hc2_gamma_printk(const struct dsi_display_mode *mode)
+{
+	const struct s6e3hc2_panel_data *priv_data;
+	int i, j;
+
+	if (!mode || !mode->priv_info)
+		return;
+
+	pr_info("%s\n=== %dhz Mode Gamma ===\n",
+		   __func__,mode->timing.refresh_rate);
+
+	priv_data = mode->priv_info->switch_data;
+
+	if (!priv_data) {
+		pr_info("%s No data available!\n",__func__);
+		return;
+	}
+
+	for (i = 0; i < S6E3HC2_NUM_GAMMA_TABLES; i++) {
+		const size_t len = s6e3hc2_gamma_tables[i].len;
+		const u8 cmd = s6e3hc2_gamma_tables[i].cmd;
+		const u8 *buf = priv_data->gamma_data[i] + 1;
+
+		pr_info("0x%02X:", cmd);
+		for (j = 0; j < len; j++) {
+			if (j && (j % 8) == 0)
+				pr_info("\n     ");
+			pr_info(" %02X", buf[j]);
+		}
+		pr_info("\n");
+	}
+}
+#endif
+#endif
+
 /*
  * s6e3hc2_gamma_update() expects DD-IC to be in unlocked state, so
  * to make sure there are unlock/lock commands when calling this func.
@@ -900,6 +941,15 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 	struct s6e3hc2_switch_data *sdata;
 	struct s6e3hc2_panel_data *priv_data;
 	int i;
+
+#ifdef CONFIG_UCI
+	bool should_override_gamma_to_60 = false;
+	struct dsi_display_mode *mode_60 = get_replace_gamma_table() ? find_mode_for_refresh_rate(g_panel,60) : NULL;
+	struct s6e3hc2_panel_data *priv_data_60 = NULL;
+	if (mode_60 != NULL && pdata->panel == g_panel) {
+		priv_data_60 = mode_60->priv_info->switch_data;
+	}
+#endif
 
 	sdata = container_of(pdata, struct s6e3hc2_switch_data, base);
 	if (sdata->gamma_state != GAMMA_STATE_READ)
@@ -912,18 +962,38 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 	if (unlikely(!priv_data))
 		return;
 
+#ifdef CONFIG_UCI
+#if 0
+	s6e3hc2_gamma_printk(mode);
+#endif
+	if (priv_data_60 != NULL && mode->timing.refresh_rate == 90) {
+		pr_info("%s gamma to be overridden with 60hz values.\n",__func__);
+		should_override_gamma_to_60 = true;
+	}
+#endif
 	for (i = 0; i < S6E3HC2_NUM_GAMMA_TABLES; i++) {
 		const struct s6e3hc2_gamma_info *info =
 				&s6e3hc2_gamma_tables[i];
 		/* extra byte for the dsi command */
 		const size_t len = info->len + 1;
 		const void *data = priv_data->gamma_data[i];
+#ifdef CONFIG_UCI
+		const void *data_60 = priv_data_60->gamma_data[i];
+#endif
 		const bool send_last =
 				!(info->flags & GAMMA_CMD_GROUP_WITH_NEXT);
 
 		if (WARN(!data, "Gamma table #%d not read\n", i))
 			continue;
 
+#ifdef CONFIG_UCI
+		if (should_override_gamma_to_60) {
+			if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data_60, len,
+						send_last)))
+				pr_warn("failed sending gamma cmd 0x%02x\n",
+					s6e3hc2_gamma_tables[i].cmd);
+		} else
+#endif
 		if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data, len,
 					send_last)))
 			pr_warn("failed sending gamma cmd 0x%02x\n",
