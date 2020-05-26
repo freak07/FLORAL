@@ -90,6 +90,7 @@ extern int kcal_internal_restore(bool forced_update);
 extern void kcal_force_update(void);
 // user params
 static bool lp_kcal_overlay = false;
+static bool lp_kcal_overlay_always = false;
 static bool lp_kcal_overlay_dynamic = false;
 static int lp_kcal_overlay_level = 50;
 
@@ -98,7 +99,7 @@ static u32 last_brightness_for_forced = 100;
 static bool forced_panel_freq_below_backlight = false;
 static int forced_panel_freq_below_backlight_value = 9;
 
-static void check_forced_panel_freq(bool force_mode_change) {
+static void check_forced_panel_mode_updates(bool force_mode_change) {
 	if (forced_panel_freq_below_backlight &&
 			last_brightness_for_forced <= forced_panel_freq_below_backlight_value) {
 		uci_set_forced_freq(60, force_mode_change);
@@ -155,26 +156,41 @@ bool get_replace_gamma_table(void) {
 }
 EXPORT_SYMBOL(get_replace_gamma_table);
 
+static bool replace_gamma_table_average = false;
+bool get_replace_gamma_table_average(void) {
+	return replace_gamma_table_average;
+}
+EXPORT_SYMBOL(get_replace_gamma_table_average);
+
+
 static void uci_user_listener(void) {
 
 	bool new_hbm_switch = !!uci_get_user_property_int_mm("hbm_switch", 0, 0, 1);
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
 
 	bool new_replace_gamma_table = !!uci_get_user_property_int_mm("replace_gamma_table", 0, 0, 1);
+	bool new_replace_gamma_table_average = !!uci_get_user_property_int_mm("replace_gamma_table_average", 0, 0, 1);
 
 	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
 	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
+
+	// if any panel freq / gamma related user config changed, do the check...
 	if (new_forced_panel_freq_below_backlight!=forced_panel_freq_below_backlight ||
 		new_forced_panel_freq_below_backlight_value!=forced_panel_freq_below_backlight_value ||
-		new_replace_gamma_table!=replace_gamma_table) {
-		bool force_mode_change = new_replace_gamma_table!=replace_gamma_table;
+		new_replace_gamma_table!=replace_gamma_table ||
+		new_replace_gamma_table_average!=replace_gamma_table_average) {
+
+		bool force_mode_change = new_replace_gamma_table!=replace_gamma_table ||
+			new_replace_gamma_table_average!=replace_gamma_table_average;
 		replace_gamma_table = new_replace_gamma_table;
+		replace_gamma_table_average = new_replace_gamma_table_average;
 		forced_panel_freq_below_backlight = new_forced_panel_freq_below_backlight;
 		forced_panel_freq_below_backlight_value = new_forced_panel_freq_below_backlight_value;
-		check_forced_panel_freq(force_mode_change);
+		check_forced_panel_mode_updates(force_mode_change);
 	}
 
 	lp_kcal_overlay = !!uci_get_user_property_int_mm("lp_kcal_overlay", 0, 0, 1);
+	lp_kcal_overlay_always = !!uci_get_user_property_int_mm("lp_kcal_overlay_always", 1, 0, 1);
 	lp_kcal_overlay_dynamic = !!uci_get_user_property_int_mm("lp_kcal_overlay_dynamic", 1, 0, 1);
 	lp_kcal_overlay_level = uci_get_user_property_int_mm("lp_kcal_overlay_level", 50, 20, 60);
 	if (new_hbm_switch!=uci_hbm_switch || new_hbm_use_ambient_light!=uci_hbm_use_ambient_light) {
@@ -243,7 +259,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		last_hbm_mode = false;
 
 		// forced freq mode call
-		check_forced_panel_freq(true);
+		check_forced_panel_mode_updates(true);
 	}
 	if (!strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
 		uci_lux_level = -1;
@@ -253,7 +269,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		last_hbm_mode = false;
 
 		// forced freq mode call
-		check_forced_panel_freq(true);
+		check_forced_panel_mode_updates(true);
 	}
         if (!strcmp(event,NTF_EVENT_INPUT)) {
 		//event -> wake by user is sure...trigger sys listener
@@ -656,7 +672,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 			panel->hbm_mode);
 #ifdef CONFIG_UCI
 	last_brightness_for_forced = brightness;
-	check_forced_panel_freq(false);
+	check_forced_panel_mode_updates(false);
 #endif
 
 	return bl_lvl;
@@ -1056,8 +1072,9 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 	state = get_state_after_dpms(bl, power_mode);
 #ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
 	if (is_lp_mode(state)) {
-		pr_info("%s [aod_dimmer] lp_mode - last_brightness %d\n",__func__,last_brightness);
-		if (lp_kcal_overlay && last_brightness<=7) {
+		pr_info("%s [aod_dimmer] lp_mode - last_brightness %d - lp_kcal_overlay_always %d\n",__func__,last_brightness,lp_kcal_overlay_always);
+		if (lp_kcal_overlay && (last_brightness<=7 || lp_kcal_overlay_always)) {
+			// last screen-fully-on screen brightness is low, or overlay_always is true, let's do it..
 			if (kcal_internal_override(254,254,254,lp_kcal_overlay_level,lp_kcal_overlay_level,lp_kcal_overlay_level)>0) {
 				kcal_force_update();
 			}
