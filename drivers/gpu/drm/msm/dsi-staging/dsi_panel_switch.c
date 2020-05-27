@@ -35,7 +35,7 @@ static struct dsi_panel *g_panel = NULL;
 static struct panel_switch_data *g_pdata = NULL;
 
 extern bool get_replace_gamma_table(void);
-extern bool get_replace_gamma_table_average(void);
+extern int get_replace_gamma_table_index(void);
 
 #endif
 
@@ -989,6 +989,7 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 		// but here using values form dsi_custom_gamma_table
 		const void *data_60 = dsi_custom_gamma_table.gamma_90hz_table[i];
 		const void *data_60_2 = dsi_custom_2_gamma_table.gamma_90hz_table[i];
+		const void *data_60_3 = dsi_custom_3_gamma_table.gamma_90hz_table[i];
 #endif
 		const bool send_last =
 				!(info->flags & GAMMA_CMD_GROUP_WITH_NEXT);
@@ -998,8 +999,14 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 
 #ifdef CONFIG_UCI
 		if (should_override_gamma_to_60) {
-			if (get_replace_gamma_table_average()) {
+			if (get_replace_gamma_table_index()==1) {
 				if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data_60_2, len,
+							send_last)))
+					pr_warn("failed sending gamma cmd 0x%02x\n",
+						s6e3hc2_gamma_tables[i].cmd);
+			} else
+			if (get_replace_gamma_table_index()==2) {
+				if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data_60_3, len,
 							send_last)))
 					pr_warn("failed sending gamma cmd 0x%02x\n",
 						s6e3hc2_gamma_tables[i].cmd);

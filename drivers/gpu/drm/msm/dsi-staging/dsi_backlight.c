@@ -42,6 +42,10 @@
 #define BL_STATE_LP2		BL_CORE_DRIVER2
 
 #ifdef CONFIG_UCI
+
+// above this panel brightness block GAMMA tweak replacements
+#define REPLACE_GAMMA_MAXIMUM_BRIGHTNESS 15
+#define REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS 1
 static int backlight_min = 3;
 static bool backlight_dimmer = false;
 static u32 last_brightness;
@@ -93,6 +97,11 @@ static bool lp_kcal_overlay = false;
 static bool lp_kcal_overlay_always = false;
 static bool lp_kcal_overlay_dynamic = false;
 static int lp_kcal_overlay_level = 50;
+
+// should the gamma values be tweaked at 90hz (60hz - 90hz green tint removal)
+static bool replace_gamma_table = false;
+// on pixel4xl variant freq will cause flicker with replaced gamma tables. Above a light level, gamma table replacement should be off
+static bool replace_gamma_table_variable_freq_off = false;
 
 // forced freq settngs
 static u32 last_brightness_for_forced = 100;
@@ -149,18 +158,19 @@ static void uci_sys_listener(void) {
 }
 static int dsi_backlight_update_status(struct backlight_device *bd);
 
-// should the gamma values be tweaked at 90hz (60hz - 90hz green tint removal)
-static bool replace_gamma_table = false;
 bool get_replace_gamma_table(void) {
-	return replace_gamma_table;
+	// return true if gamma table is on, and brightness level is low enough for constant 90hz!
+	//	(varaible freq rate would cause flicker on brighter levels)
+	return replace_gamma_table && !replace_gamma_table_variable_freq_off;
 }
 EXPORT_SYMBOL(get_replace_gamma_table);
 
-static bool replace_gamma_table_average = false;
-bool get_replace_gamma_table_average(void) {
-	return replace_gamma_table_average;
+static int replace_gamma_table_index = 0;
+int get_replace_gamma_table_index(void) {
+	// calculate the table index for gamma replace. if brightness is the lowest, use the tertiary gamma table
+	return replace_gamma_table_index==0 ? 0 : (last_brightness_for_forced == REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS ? 2:1);
 }
-EXPORT_SYMBOL(get_replace_gamma_table_average);
+EXPORT_SYMBOL(get_replace_gamma_table_index);
 
 
 static void uci_user_listener(void) {
@@ -169,7 +179,7 @@ static void uci_user_listener(void) {
 	bool new_hbm_use_ambient_light = !!uci_get_user_property_int_mm("hbm_use_ambient_light", 0, 0, 1);
 
 	bool new_replace_gamma_table = !!uci_get_user_property_int_mm("replace_gamma_table", 0, 0, 1);
-	bool new_replace_gamma_table_average = !!uci_get_user_property_int_mm("replace_gamma_table_average", 0, 0, 1);
+	int new_replace_gamma_table_index = uci_get_user_property_int_mm("replace_gamma_table_average", 0, 0, 2);
 
 	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
 	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
@@ -178,12 +188,12 @@ static void uci_user_listener(void) {
 	if (new_forced_panel_freq_below_backlight!=forced_panel_freq_below_backlight ||
 		new_forced_panel_freq_below_backlight_value!=forced_panel_freq_below_backlight_value ||
 		new_replace_gamma_table!=replace_gamma_table ||
-		new_replace_gamma_table_average!=replace_gamma_table_average) {
+		new_replace_gamma_table_index!=replace_gamma_table_index) {
 
 		bool force_mode_change = new_replace_gamma_table!=replace_gamma_table ||
-			new_replace_gamma_table_average!=replace_gamma_table_average;
+			new_replace_gamma_table_index!=replace_gamma_table_index;
 		replace_gamma_table = new_replace_gamma_table;
-		replace_gamma_table_average = new_replace_gamma_table_average;
+		replace_gamma_table_index = new_replace_gamma_table_index;
 		forced_panel_freq_below_backlight = new_forced_panel_freq_below_backlight;
 		forced_panel_freq_below_backlight_value = new_forced_panel_freq_below_backlight_value;
 		check_forced_panel_mode_updates(force_mode_change);
@@ -671,8 +681,28 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 			brightness, bl->bl_scale, bl->bl_scale_ad, bl_lvl,
 			panel->hbm_mode);
 #ifdef CONFIG_UCI
-	last_brightness_for_forced = brightness;
-	check_forced_panel_mode_updates(false);
+	{
+		// are we over brightness level that should block gamma replacement...
+		bool new_replace_gamma_table_variable_freq_off = brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS;
+
+		// brighntess changes to or from lowest brightness (1), and gamma table raplec is active...force a mode update...
+		bool force_update_for_tertiary = replace_gamma_table && last_brightness_for_forced!=brightness && 
+			(brightness == REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS || 
+				last_brightness_for_forced == REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS);
+
+		last_brightness_for_forced = brightness;
+
+		if (new_replace_gamma_table_variable_freq_off!=replace_gamma_table_variable_freq_off && replace_gamma_table) {
+			replace_gamma_table_variable_freq_off = new_replace_gamma_table_variable_freq_off;
+			check_forced_panel_mode_updates(true); // forced update
+		} else {
+			if (force_update_for_tertiary) {
+				check_forced_panel_mode_updates(true); // forced update
+			} else {
+				check_forced_panel_mode_updates(false);
+			}
+		}
+	}
 #endif
 
 	return bl_lvl;
