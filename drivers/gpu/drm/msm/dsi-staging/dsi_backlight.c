@@ -44,7 +44,7 @@
 #ifdef CONFIG_UCI
 
 // above this panel brightness block GAMMA tweak replacements
-#define REPLACE_GAMMA_MAXIMUM_BRIGHTNESS 15
+#define REPLACE_GAMMA_MAXIMUM_BRIGHTNESS 11
 #define REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS 1
 static int backlight_min = 3;
 static bool backlight_dimmer = false;
@@ -102,6 +102,8 @@ static int lp_kcal_overlay_level = 50;
 static bool replace_gamma_table = false;
 // on pixel4xl variant freq will cause flicker with replaced gamma tables. Above a light level, gamma table replacement should be off
 static bool replace_gamma_table_variable_freq_off = false;
+// if fps drops, it means variable freq rate is applied, and flicker might happen. set this to true
+static bool replace_gamma_table_variable_freq_fps_based_off = false;
 
 // forced freq settngs
 static u32 last_brightness_for_forced = 100;
@@ -113,12 +115,50 @@ static void check_forced_panel_mode_updates(bool force_mode_change) {
 			last_brightness_for_forced <= forced_panel_freq_below_backlight_value) {
 		uci_set_forced_freq(60, force_mode_change);
 	} else {
-		uci_release_forced_freq(force_mode_change);
+		/*if (!replace_gamma_table_variable_freq_off && replace_gamma_table) {
+			// not above brightness threshold yet, so below make sure that we force 90hz, or flicker happens!
+			uci_set_forced_freq(90, force_mode_change);
+		} else*/
+		{
+			uci_release_forced_freq(force_mode_change);
+		}
 	}
 }
 
 //
 extern void uci_force_sde_update(void);
+
+static bool non_high_fps = false;
+static unsigned long last_non_high_fps_time = 0;
+static unsigned long last_high_fps_time = 0;
+
+static void handle_fps_back_to_normal_work_func(struct work_struct * handle_fps_back_to_normal_work)
+{
+	pr_info("%s WORK timed, not canceled, return to gamma override if still possible..\n",__func__);
+	replace_gamma_table_variable_freq_fps_based_off = false;
+	if (replace_gamma_table) {
+		// trying to switch back to gamma replacement...
+		check_forced_panel_mode_updates(true);
+	}
+}
+static DECLARE_DELAYED_WORK(handle_fps_back_to_normal_work, handle_fps_back_to_normal_work_func);
+
+static void report_non_high_fps(bool state) {
+	if (true) return;
+	// don't need this code anymore...
+	if (state) {
+		pr_info("%s blocking gamma replace based on fps drop. \n",__func__);
+		replace_gamma_table_variable_freq_fps_based_off = true;
+		last_non_high_fps_time = jiffies;
+		cancel_delayed_work(&handle_fps_back_to_normal_work);
+		// switching off gamma replacement
+		check_forced_panel_mode_updates(true);
+	} else {
+		pr_info("%s gamma scheduling fps back work to 1 sec. \n",__func__);
+		last_high_fps_time = jiffies;
+		schedule_delayed_work(&handle_fps_back_to_normal_work,msecs_to_jiffies(1200)); // 30 jiffies later, 1 sec
+	}
+}
 
 static void uci_sys_listener(void) {
 	if (screen_wake_by_user) {
@@ -139,6 +179,14 @@ static void uci_sys_listener(void) {
 			}
 		}
 		uci_lux_level = new_lux_level;
+
+		{
+			bool new_non_high_fps = !!uci_get_sys_property_int_mm("non_high_fps", 0, 0, 1);
+			if (new_non_high_fps!=non_high_fps) {
+				non_high_fps = new_non_high_fps;
+				report_non_high_fps(non_high_fps);
+			}
+		}
 	}
 	if (is_lp_mode_on && lp_kcal_overlay_dynamic) {
 		int new_lux_level = uci_get_sys_property_int_mm("lux_level_detailed", 0, 0, 270000);
@@ -161,7 +209,7 @@ static int dsi_backlight_update_status(struct backlight_device *bd);
 bool get_replace_gamma_table(void) {
 	// return true if gamma table is on, and brightness level is low enough for constant 90hz!
 	//	(varaible freq rate would cause flicker on brighter levels)
-	return replace_gamma_table && !replace_gamma_table_variable_freq_off;
+	return replace_gamma_table && !replace_gamma_table_variable_freq_off && !replace_gamma_table_variable_freq_fps_based_off;
 }
 EXPORT_SYMBOL(get_replace_gamma_table);
 
@@ -171,6 +219,8 @@ int get_replace_gamma_table_index(void) {
 	return replace_gamma_table_index==0 ? 0 : (last_brightness_for_forced == REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS ? 2:1);
 }
 EXPORT_SYMBOL(get_replace_gamma_table_index);
+
+
 
 
 static void uci_user_listener(void) {
@@ -693,6 +743,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 		last_brightness_for_forced = brightness;
 
 		if (new_replace_gamma_table_variable_freq_off!=replace_gamma_table_variable_freq_off && replace_gamma_table) {
+			// brightness based gamma table blocking changed... call forced panel mode updates, so either lock freq/release and update gamma too
 			replace_gamma_table_variable_freq_off = new_replace_gamma_table_variable_freq_off;
 			check_forced_panel_mode_updates(true); // forced update
 		} else {
