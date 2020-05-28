@@ -190,7 +190,14 @@ static void panel_switch_to_mode(struct panel_switch_data *pdata,
 #ifdef CONFIG_UCI
 int forced_freq_value = 60;
 int stored_freq_value = 60;
+int last_set_freq_value = 60;
 static bool forced_freq = false;
+
+int get_forced_freq(void) {
+	return forced_freq?forced_freq_value:0;
+}
+EXPORT_SYMBOL(get_forced_freq);
+
 #endif
 
 static void panel_switch_worker(struct kthread_work *work)
@@ -225,14 +232,15 @@ static void panel_switch_worker(struct kthread_work *work)
 	SDE_ATRACE_BEGIN(__func__);
 
 	pr_debug("switching mode to %dhz\n", mode->timing.refresh_rate);
-#if 0
-	pr_info("switching mode to %dhz\n", mode->timing.refresh_rate);
+#if 1
+	pr_info("%s [cleanslate] switching mode to %dhz  panel %s\n", __func__,mode->timing.refresh_rate, panel->name);
 #endif
 #ifdef CONFIG_UCI
 	if (!forced_freq) {
 		forced_freq_value = mode->timing.refresh_rate;
 		stored_freq_value = mode->timing.refresh_rate;
 	}
+	last_set_freq_value = mode->timing.refresh_rate;
 #endif
 
 	te_listen_cnt = pdata->switch_te_listen_count;
@@ -360,7 +368,7 @@ static void panel_queue_switch(struct panel_switch_data *pdata,
 #ifdef CONFIG_UCI
 	if (forced_freq && g_panel!=NULL && (pdata->panel == g_panel)) {
 		struct dsi_display_mode *new_mode_forced = find_mode_for_refresh_rate(g_panel,forced_freq_value);
-		pr_info("%s [cleanslate] switcing to FORCED rate: %d ... starting work. \n",__func__, new_mode_forced->timing.refresh_rate);
+		pr_info("%s [cleanslate] switching to FORCED rate: %d ... starting work. \n",__func__, new_mode_forced->timing.refresh_rate);
 		pdata->display_mode = new_mode_forced;
 	} else {
 		stored_freq_value = new_mode->timing.refresh_rate;
@@ -383,7 +391,7 @@ static void uci_forced_panel_queue_switch_work_func(struct work_struct * uci_for
 {
 	if (g_panel!=NULL) {
 		struct dsi_display_mode *new_mode = find_mode_for_refresh_rate(g_panel,forced_freq_value);
-		pr_debug("%s WORK forced freq %d\n",__func__,forced_freq_value);
+		pr_debug("%s [cleanslate] WORK forced freq %d\n",__func__,forced_freq_value);
 		if (new_mode!=NULL) panel_queue_switch(g_pdata, new_mode);
 	}
 }
@@ -393,14 +401,14 @@ static void uci_release_panel_queue_switch_work_func(struct work_struct * uci_re
 {
 	if (g_panel!=NULL) {
 		struct dsi_display_mode *restore_mode = find_mode_for_refresh_rate(g_panel,stored_freq_value);
-		pr_debug("%s WORK release forced freq %d to %d \n",__func__,forced_freq_value,stored_freq_value);
+		pr_debug("%s [cleanslate] WORK release forced freq %d to %d \n",__func__,forced_freq_value,stored_freq_value);
 		if (restore_mode!=NULL) panel_queue_switch(g_pdata, restore_mode);
 	}
 }
 static DECLARE_WORK(uci_release_panel_queue_switch_work, uci_release_panel_queue_switch_work_func);
 
 void uci_set_forced_freq(int freq, bool force_mode_change) {
-	pr_debug("%s forced freq %d\n",__func__,freq);
+	pr_debug("%s [cleanslate] forced freq %d\n",__func__,freq);
 	if (g_panel!=NULL && (freq == 60 || freq == 90)) {
 		if (force_mode_change != true && forced_freq == true && forced_freq_value == freq) {
 			return;
@@ -527,7 +535,6 @@ static int panel_wakeup(struct dsi_panel *panel)
 
 	if (mode)
 		panel_queue_switch(pdata, mode);
-
 	SDE_ATRACE_INT("display_idle", 0);
 
 	return 0;
@@ -951,10 +958,14 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 
 #ifdef CONFIG_UCI
 	bool should_override_gamma_to_60 = false;
+	bool should_override_gamma_for_60hz = false;
 	struct dsi_display_mode *mode_60 = get_replace_gamma_table() ? find_mode_for_refresh_rate(g_panel,60) : NULL;
 	struct s6e3hc2_panel_data *priv_data_60 = NULL;
 	if (mode_60 != NULL && pdata->panel == g_panel) {
+		pr_info("%s gamma g_panel == pdata-> panel.\n",__func__);
 		priv_data_60 = mode_60->priv_info->switch_data;
+	} else {
+		pr_info("%s gamma g_panel != pdata->panel name: %s.\n",__func__, pdata->panel->name);
 	}
 #endif
 
@@ -976,6 +987,9 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 	if (priv_data_60 != NULL && mode->timing.refresh_rate == 90) {
 		pr_info("%s gamma to be overridden with 60hz values.\n",__func__);
 		should_override_gamma_to_60 = true;
+	} else {
+		pr_info("%s gamma to be stock downtuned green for 60hz! refresh rate is %d\n",__func__,mode->timing.refresh_rate);
+		should_override_gamma_for_60hz = true;
 	}
 #endif
 	for (i = 0; i < S6E3HC2_NUM_GAMMA_TABLES; i++) {
@@ -990,6 +1004,7 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 		const void *data_60 = dsi_custom_gamma_table.gamma_90hz_table[i];
 		const void *data_60_2 = dsi_custom_2_gamma_table.gamma_90hz_table[i];
 		const void *data_60_3 = dsi_custom_3_gamma_table.gamma_90hz_table[i];
+		//const void *data_90 = dsi_custom_60hz_gamma_table.gamma_60hz_table[i];
 #endif
 		const bool send_last =
 				!(info->flags & GAMMA_CMD_GROUP_WITH_NEXT);
@@ -1015,7 +1030,12 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 						send_last)))
 				pr_warn("failed sending gamma cmd 0x%02x\n",
 					s6e3hc2_gamma_tables[i].cmd);
-		} else
+		} /*else if (should_override_gamma_for_60hz) {
+			if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data_90, len,
+						send_last)))
+				pr_warn("failed sending gamma cmd 0x%02x\n",
+					s6e3hc2_gamma_tables[i].cmd);
+		}*/ else
 #endif
 		if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data, len,
 					send_last)))

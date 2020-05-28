@@ -4346,6 +4346,12 @@ static int dsi_display_get_dfps_timing(struct dsi_display *display,
 		rc = -ENOTSUPP;
 	}
 
+#if 1
+	if (rc==0 && curr_refresh_rate!=timing->refresh_rate) {
+		pr_info("%s old fps %u new fps %u\n",
+			__func__,curr_refresh_rate, timing->refresh_rate);
+	}
+#endif
 	return rc;
 }
 
@@ -7274,6 +7280,10 @@ int dsi_display_enable(struct dsi_display *display)
 		return -EINVAL;
 	}
 	SDE_EVT32(SDE_EVTLOG_FUNC_ENTRY);
+#if 1
+	pr_info("%s [cleanslate] setting display mode...\n",__func__);
+	WARN_ON(true);
+#endif
 
 	/* Engine states and panel states are populated during splash
 	 * resource init and hence we return early
