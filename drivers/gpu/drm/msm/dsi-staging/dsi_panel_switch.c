@@ -400,9 +400,8 @@ static DECLARE_DELAYED_WORK(uci_forced_panel_queue_switch_work, uci_forced_panel
 static void uci_release_panel_queue_switch_work_func(struct work_struct * uci_release_panel_queue_switch_work)
 {
 	if (g_panel!=NULL) {
-		struct dsi_display_mode *restore_mode = find_mode_for_refresh_rate(g_panel,stored_freq_value);
 		pr_debug("%s [cleanslate] WORK release forced freq %d to %d \n",__func__,forced_freq_value,stored_freq_value);
-		if (restore_mode!=NULL) panel_queue_switch(g_pdata, restore_mode);
+		panel_queue_switch(g_pdata, g_panel->cur_mode);
 	}
 }
 static DECLARE_WORK(uci_release_panel_queue_switch_work, uci_release_panel_queue_switch_work_func);
@@ -416,7 +415,7 @@ void uci_set_forced_freq(int freq, bool force_mode_change) {
 		forced_freq_value = freq;
 		forced_freq = true;
 		{
-			schedule_delayed_work(&uci_forced_panel_queue_switch_work, 0);
+			schedule_delayed_work(&uci_forced_panel_queue_switch_work, 1);
 		}
 	}
 }

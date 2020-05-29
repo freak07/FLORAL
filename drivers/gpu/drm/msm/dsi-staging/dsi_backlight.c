@@ -318,8 +318,8 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		// after a screen off, last_hbm should be OFF as it turns off by itself
 		last_hbm_mode = false;
 
-		// forced freq mode call
-		check_forced_panel_mode_updates(true);
+		// forced freq mode call (only if forced panel freq, otherwise do not force it)
+		check_forced_panel_mode_updates(forced_panel_freq_below_backlight);
 	}
 	if (!strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
 		uci_lux_level = -1;
@@ -328,8 +328,8 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		// after a screen off, last_hbm should be OFF as it turns off by itself
 		last_hbm_mode = false;
 
-		// forced freq mode call
-		check_forced_panel_mode_updates(true);
+		// forced freq mode call (only if forced panel freq, otherwise do not force it)
+		check_forced_panel_mode_updates(forced_panel_freq_below_backlight);
 	}
         if (!strcmp(event,NTF_EVENT_INPUT)) {
 		//event -> wake by user is sure...trigger sys listener
