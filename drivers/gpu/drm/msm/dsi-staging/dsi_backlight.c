@@ -290,6 +290,8 @@ static void call_switch_hbm(struct work_struct * call_switch_hbm_work)
 }
 static DECLARE_WORK(call_switch_hbm_work, call_switch_hbm);
 
+static bool screen_off_time_saved_replace_gamma_table_variable_freq_off = false;
+
 static void ntf_listener(char* event, int num_param, char* str_param) {
         if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
                 pr_info("%s dsi_backlight ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
@@ -303,6 +305,9 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 
 		// after a screen off, last_hbm should be OFF as it turns off by itself
 		last_hbm_mode = false;
+
+		// save the current backlight based gamma replacement blocking state...
+		screen_off_time_saved_replace_gamma_table_variable_freq_off = replace_gamma_table_variable_freq_off;
         }
         if ((!strcmp(event,NTF_EVENT_LOCKED) && !!num_param)) { // locked
 		uci_lux_level = -1;
@@ -318,6 +323,8 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		// after a screen off, last_hbm should be OFF as it turns off by itself
 		last_hbm_mode = false;
 
+		// let's restore the value stored at screen off time...
+		replace_gamma_table_variable_freq_off = screen_off_time_saved_replace_gamma_table_variable_freq_off;
 		// forced freq mode call (only if forced panel freq, otherwise do not force it)
 		check_forced_panel_mode_updates(forced_panel_freq_below_backlight);
 	}
@@ -731,6 +738,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 			brightness, bl->bl_scale, bl->bl_scale_ad, bl_lvl,
 			panel->hbm_mode);
 #ifdef CONFIG_UCI
+	if (screen_wake_by_user) // when not woke by user, eg. in aod, do not modify these values, it can cause issues with panel mode status...
 	{
 		// are we over brightness level that should block gamma replacement...
 		bool new_replace_gamma_table_variable_freq_off = brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS;
