@@ -30,6 +30,7 @@
 
 #ifdef CONFIG_UCI
 #include "dsi_custom_gamma.h"
+#include "dsi_custom_gamma_op7pro.h"
 
 static struct dsi_panel *g_panel = NULL;
 static struct panel_switch_data *g_pdata = NULL;
@@ -1004,6 +1005,12 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 		const void *data_60_2 = dsi_custom_2_gamma_table.gamma_90hz_table[i];
 		const void *data_60_3 = dsi_custom_3_gamma_table.gamma_90hz_table[i];
 		//const void *data_90 = dsi_custom_60hz_gamma_table.gamma_60hz_table[i];
+
+		const void *data_60_op7pro =
+			dsi_custom_gamma_60hz_op7_pro_table.gamma_60hz_table[i];
+		const void *data_90_op7pro =
+			dsi_custom_gamma_90hz_op7_pro_table.gamma_90hz_table[i];
+
 #endif
 		const bool send_last =
 				!(info->flags & GAMMA_CMD_GROUP_WITH_NEXT);
@@ -1012,6 +1019,18 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 			continue;
 
 #ifdef CONFIG_UCI
+		if (get_replace_gamma_table() && get_replace_gamma_table_index()==3 && pdata->panel == g_panel) { // op7pro mode
+			if (mode->timing.refresh_rate == 60) {
+				if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data_60_op7pro, len,
+							send_last)))
+					pr_warn("failed sending gamma cmd 0x%02x\n",
+						s6e3hc2_gamma_tables[i].cmd);
+			} else
+				if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data_90_op7pro, len,
+						send_last)))
+				pr_warn("failed sending gamma cmd 0x%02x\n",
+					s6e3hc2_gamma_tables[i].cmd);
+		} else
 		if (should_override_gamma_to_60) {
 			if (get_replace_gamma_table_index()==1) {
 				if (IS_ERR_VALUE(panel_dsi_write_buf(pdata->panel, data_60_2, len,
