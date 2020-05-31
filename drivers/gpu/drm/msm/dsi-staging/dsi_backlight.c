@@ -43,8 +43,13 @@
 
 #ifdef CONFIG_UCI
 
-// above this panel brightness block GAMMA tweak replacements
+// above this panel brightness it's important to block GAMMA tweak replacements,
+// ...so flicker on variant freq mode doesn't happen...
 #define REPLACE_GAMMA_MAXIMUM_BRIGHTNESS 11
+// below which gamma replacement blocking is active, above
+// ...this level, on high brightness levels flicker is not present
+#define REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS 67
+// the level where tertiary gamma tables to be used
 #define REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS 1
 static int backlight_min = 3;
 static bool backlight_dimmer = false;
@@ -211,7 +216,7 @@ static bool replace_gamma_table_fully = false;
 bool get_replace_gamma_table(void) {
 	// return true if gamma table is on, and brightness level is low enough for constant 90hz!
 	//	(varaible freq rate would cause flicker on brighter levels)
-	return replace_gamma_table && ((!replace_gamma_table_variable_freq_off && !replace_gamma_table_variable_freq_fps_based_off) || replace_gamma_table_fully);
+	return replace_gamma_table && ((!replace_gamma_table_variable_freq_off && !replace_gamma_table_variable_freq_fps_based_off));
 }
 EXPORT_SYMBOL(get_replace_gamma_table);
 
@@ -746,8 +751,12 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 #ifdef CONFIG_UCI
 	if (screen_wake_by_user) // when not woke by user, eg. in aod, do not modify these values, it can cause issues with panel mode status...
 	{
-		// are we over brightness level that should block gamma replacement...
-		bool new_replace_gamma_table_variable_freq_off = brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS;
+		// check whether gamma replacement should be blocked based on brightness value:
+		// are we higher than max replace brightness level...
+		// or below a brightness level (this latter, only in case of Full replacement)
+		bool new_replace_gamma_table_variable_freq_off =
+			brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS &&
+				(!replace_gamma_table_fully || brightness < REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS);
 
 		// brighntess changes to or from lowest brightness (1), and gamma table raplec is active...force a mode update...
 		bool force_update_for_tertiary = replace_gamma_table && last_brightness_for_forced!=brightness && 
