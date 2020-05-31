@@ -212,6 +212,7 @@ static void uci_sys_listener(void) {
 static int dsi_backlight_update_status(struct backlight_device *bd);
 
 static bool replace_gamma_table_fully = false;
+static bool replace_gamma_table_fully_on_high_brightness = false;
 
 bool get_replace_gamma_table(void) {
 	// return true if gamma table is on, and brightness level is low enough for constant 90hz!
@@ -223,7 +224,10 @@ EXPORT_SYMBOL(get_replace_gamma_table);
 static int replace_gamma_table_index = 0;
 int get_replace_gamma_table_index(void) {
 	// calculate the table index for gamma replace. if brightness is the lowest, use the tertiary gamma table
-	return replace_gamma_table_fully ? 3 : ( replace_gamma_table_index==0 ? 0 : (last_brightness_for_forced == REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS ? 2:1));
+	return (replace_gamma_table_fully ||
+		(replace_gamma_table_fully_on_high_brightness && last_brightness_for_forced >= REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS)) ?
+			3 :
+			( replace_gamma_table_index==0 ? 0 : (last_brightness_for_forced == REPLACE_GAMMA_WITH_TERTIARY_MAP_BRIGHTNESS ? 2:1));
 }
 EXPORT_SYMBOL(get_replace_gamma_table_index);
 
@@ -238,6 +242,7 @@ static void uci_user_listener(void) {
 	bool new_replace_gamma_table = !!uci_get_user_property_int_mm("replace_gamma_table", 0, 0, 1);
 	int new_replace_gamma_table_index = uci_get_user_property_int_mm("replace_gamma_table_average", 0, 0, 2);
 	bool new_replace_gamma_table_fully = !!uci_get_user_property_int_mm("replace_gamma_table_fully", 0, 0, 1);
+	bool new_replace_gamma_table_fully_on_high_brightness = !!uci_get_user_property_int_mm("replace_gamma_table_fully_on_high_brightness", 0, 0, 1);
 
 	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
 	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
@@ -247,13 +252,16 @@ static void uci_user_listener(void) {
 		new_forced_panel_freq_below_backlight_value!=forced_panel_freq_below_backlight_value ||
 		new_replace_gamma_table!=replace_gamma_table ||
 		new_replace_gamma_table_fully!=replace_gamma_table_fully ||
+		new_replace_gamma_table_fully_on_high_brightness!=replace_gamma_table_fully_on_high_brightness ||
 		new_replace_gamma_table_index!=replace_gamma_table_index) {
 
 		bool force_mode_change = new_replace_gamma_table!=replace_gamma_table ||
 			new_replace_gamma_table_fully!=replace_gamma_table_fully ||
+			new_replace_gamma_table_fully_on_high_brightness!=replace_gamma_table_fully_on_high_brightness ||
 			new_replace_gamma_table_index!=replace_gamma_table_index;
 		replace_gamma_table = new_replace_gamma_table;
 		replace_gamma_table_fully = new_replace_gamma_table_fully;
+		replace_gamma_table_fully_on_high_brightness = new_replace_gamma_table_fully_on_high_brightness;
 		replace_gamma_table_index = new_replace_gamma_table_index;
 		forced_panel_freq_below_backlight = new_forced_panel_freq_below_backlight;
 		forced_panel_freq_below_backlight_value = new_forced_panel_freq_below_backlight_value;
@@ -756,7 +764,8 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 		// or below a brightness level (this latter, only in case of Full replacement)
 		bool new_replace_gamma_table_variable_freq_off =
 			brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS &&
-				(!replace_gamma_table_fully || brightness < REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS);
+				((!replace_gamma_table_fully && !replace_gamma_table_fully_on_high_brightness) ||
+					brightness < REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS);
 
 		// brighntess changes to or from lowest brightness (1), and gamma table raplec is active...force a mode update...
 		bool force_update_for_tertiary = replace_gamma_table && last_brightness_for_forced!=brightness && 
