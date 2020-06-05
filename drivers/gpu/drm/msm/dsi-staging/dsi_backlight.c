@@ -214,6 +214,53 @@ static int dsi_backlight_update_status(struct backlight_device *bd);
 static bool replace_gamma_table_fully = false;
 static bool replace_gamma_table_fully_on_high_brightness = false;
 
+// ---------- dynamic
+static bool replace_gamma_table_dynamic = false;
+static bool replace_gamma_table_dynamic_whole_range = false;
+static int replace_gamma_dynamic_red = 10;
+static int replace_gamma_dynamic_green = 10;
+static int replace_gamma_dynamic_blue = 10;
+static int replace_gamma_dynamic_red_low = 10;
+static int replace_gamma_dynamic_green_low = 10;
+static int replace_gamma_dynamic_blue_low = 10;
+bool get_replace_gamma_table_dynamic(void) {
+	return replace_gamma_table_dynamic;
+}
+EXPORT_SYMBOL(get_replace_gamma_table_dynamic);
+bool get_replace_gamma_table_dynamic_whole_range(void) {
+	return replace_gamma_table_dynamic_whole_range;
+}
+EXPORT_SYMBOL(get_replace_gamma_table_dynamic_whole_range);
+
+int get_replace_gamma_dynamic_red(void) {
+	return replace_gamma_dynamic_red;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_red);
+int get_replace_gamma_dynamic_green(void) {
+	return replace_gamma_dynamic_green;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_green);
+int get_replace_gamma_dynamic_blue(void) {
+	return replace_gamma_dynamic_blue;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_blue);
+
+int get_replace_gamma_dynamic_red_low(void) {
+	return replace_gamma_dynamic_red_low;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_red_low);
+int get_replace_gamma_dynamic_green_low(void) {
+	return replace_gamma_dynamic_green_low;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_green_low);
+int get_replace_gamma_dynamic_blue_low(void) {
+	return replace_gamma_dynamic_blue_low;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_blue_low);
+
+// -------------------
+
+
 bool get_replace_gamma_table(void) {
 	// return true if gamma table is on, and brightness level is low enough for constant 90hz!
 	//	(varaible freq rate would cause flicker on brighter levels)
@@ -244,6 +291,16 @@ static void uci_user_listener(void) {
 	bool new_replace_gamma_table_fully = !!uci_get_user_property_int_mm("replace_gamma_table_fully", 0, 0, 1);
 	bool new_replace_gamma_table_fully_on_high_brightness = !!uci_get_user_property_int_mm("replace_gamma_table_fully_on_high_brightness", 0, 0, 1);
 
+	bool new_replace_gamma_table_dynamic = !!uci_get_user_property_int_mm("replace_gamma_table_dynamic", 0, 0, 1);
+	bool new_replace_gamma_table_dynamic_whole_range = !!uci_get_user_property_int_mm("replace_gamma_table_dynamic_whole_range", 0, 0, 1);
+
+	int new_replace_gamma_dynamic_red = uci_get_user_property_int_mm("replace_gamma_dynamic_red", 10, 0, 20);
+	int new_replace_gamma_dynamic_green = uci_get_user_property_int_mm("replace_gamma_dynamic_green", 10, 0, 20);
+	int new_replace_gamma_dynamic_blue = uci_get_user_property_int_mm("replace_gamma_dynamic_blue", 10, 0, 20);
+	int new_replace_gamma_dynamic_red_low = uci_get_user_property_int_mm("replace_gamma_dynamic_red_low", 10, 0, 20);
+	int new_replace_gamma_dynamic_green_low = uci_get_user_property_int_mm("replace_gamma_dynamic_green_low", 10, 0, 20);
+	int new_replace_gamma_dynamic_blue_low = uci_get_user_property_int_mm("replace_gamma_dynamic_blue_low", 10, 0, 20);
+
 	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
 	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
 
@@ -253,18 +310,45 @@ static void uci_user_listener(void) {
 		new_replace_gamma_table!=replace_gamma_table ||
 		new_replace_gamma_table_fully!=replace_gamma_table_fully ||
 		new_replace_gamma_table_fully_on_high_brightness!=replace_gamma_table_fully_on_high_brightness ||
-		new_replace_gamma_table_index!=replace_gamma_table_index) {
+		new_replace_gamma_table_dynamic!=replace_gamma_table_dynamic ||
+		new_replace_gamma_table_dynamic_whole_range!=replace_gamma_table_dynamic_whole_range ||
+		new_replace_gamma_dynamic_red!=replace_gamma_dynamic_red ||
+		new_replace_gamma_dynamic_green!=replace_gamma_dynamic_green ||
+		new_replace_gamma_dynamic_blue!=replace_gamma_dynamic_blue ||
+		new_replace_gamma_dynamic_red_low!=replace_gamma_dynamic_red_low ||
+		new_replace_gamma_dynamic_green_low!=replace_gamma_dynamic_green_low ||
+		new_replace_gamma_dynamic_blue_low!=replace_gamma_dynamic_blue_low ||
+		new_replace_gamma_table_index!=replace_gamma_table_index)
+	{
 
 		bool force_mode_change = new_replace_gamma_table!=replace_gamma_table ||
 			new_replace_gamma_table_fully!=replace_gamma_table_fully ||
 			new_replace_gamma_table_fully_on_high_brightness!=replace_gamma_table_fully_on_high_brightness ||
+			new_replace_gamma_table_dynamic!=replace_gamma_table_dynamic ||
+			new_replace_gamma_table_dynamic_whole_range!=replace_gamma_table_dynamic_whole_range ||
+			new_replace_gamma_dynamic_red!=replace_gamma_dynamic_red ||
+			new_replace_gamma_dynamic_green!=replace_gamma_dynamic_green ||
+			new_replace_gamma_dynamic_blue!=replace_gamma_dynamic_blue ||
+			new_replace_gamma_dynamic_red_low!=replace_gamma_dynamic_red_low ||
+			new_replace_gamma_dynamic_green_low!=replace_gamma_dynamic_green_low ||
+			new_replace_gamma_dynamic_blue_low!=replace_gamma_dynamic_blue_low ||
 			new_replace_gamma_table_index!=replace_gamma_table_index;
+
 		replace_gamma_table = new_replace_gamma_table;
 		replace_gamma_table_fully = new_replace_gamma_table_fully;
 		replace_gamma_table_fully_on_high_brightness = new_replace_gamma_table_fully_on_high_brightness;
 		replace_gamma_table_index = new_replace_gamma_table_index;
 		forced_panel_freq_below_backlight = new_forced_panel_freq_below_backlight;
 		forced_panel_freq_below_backlight_value = new_forced_panel_freq_below_backlight_value;
+		replace_gamma_table_dynamic = new_replace_gamma_table_dynamic;
+		replace_gamma_table_dynamic_whole_range = new_replace_gamma_table_dynamic_whole_range;
+		replace_gamma_dynamic_red = new_replace_gamma_dynamic_red;
+		replace_gamma_dynamic_green = new_replace_gamma_dynamic_green;
+		replace_gamma_dynamic_blue = new_replace_gamma_dynamic_blue;
+		replace_gamma_dynamic_red_low = new_replace_gamma_dynamic_red_low;
+		replace_gamma_dynamic_green_low = new_replace_gamma_dynamic_green_low;
+		replace_gamma_dynamic_blue_low = new_replace_gamma_dynamic_blue_low;
+
 		check_forced_panel_mode_updates(force_mode_change);
 	}
 
@@ -763,9 +847,10 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 		// are we higher than max replace brightness level...
 		// or below a brightness level (this latter, only in case of Full replacement)
 		bool new_replace_gamma_table_variable_freq_off =
-			brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS &&
-				((!replace_gamma_table_fully && !replace_gamma_table_fully_on_high_brightness) ||
-					brightness < REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS);
+			bl_lvl < 4 || // backlight dimming. gamma table should remain intact
+			(brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS &&
+				(!replace_gamma_table_dynamic_whole_range && !replace_gamma_table_fully && (!replace_gamma_table_fully_on_high_brightness ||
+					brightness < REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS)));
 
 		// brighntess changes to or from lowest brightness (1), and gamma table raplec is active...force a mode update...
 		bool force_update_for_tertiary = replace_gamma_table && last_brightness_for_forced!=brightness && 
