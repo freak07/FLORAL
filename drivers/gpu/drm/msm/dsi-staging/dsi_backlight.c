@@ -216,7 +216,6 @@ static bool replace_gamma_table_fully_on_high_brightness = false;
 
 // ---------- dynamic
 static bool replace_gamma_table_dynamic = false;
-static bool replace_gamma_table_dynamic_whole_range = false;
 static int replace_gamma_dynamic_red = 10;
 static int replace_gamma_dynamic_green = 10;
 static int replace_gamma_dynamic_blue = 10;
@@ -236,10 +235,6 @@ bool get_replace_gamma_table_dynamic(void) {
 	return replace_gamma_table_dynamic;
 }
 EXPORT_SYMBOL(get_replace_gamma_table_dynamic);
-bool get_replace_gamma_table_dynamic_whole_range(void) {
-	return replace_gamma_table_dynamic_whole_range;
-}
-EXPORT_SYMBOL(get_replace_gamma_table_dynamic_whole_range);
 
 int get_replace_gamma_dynamic_red(void) {
 	return replace_gamma_dynamic_red;
@@ -331,7 +326,6 @@ static void uci_user_listener(void) {
 	bool new_replace_gamma_table_fully_on_high_brightness = !!uci_get_user_property_int_mm("replace_gamma_table_fully_on_high_brightness", 0, 0, 1);
 
 	bool new_replace_gamma_table_dynamic = !!uci_get_user_property_int_mm("replace_gamma_table_dynamic", 0, 0, 1);
-	bool new_replace_gamma_table_dynamic_whole_range = !!uci_get_user_property_int_mm("replace_gamma_table_dynamic_whole_range", 0, 0, 1);
 
 	int new_replace_gamma_dynamic_red = uci_get_user_property_int_mm("replace_gamma_dynamic_red", 10, 0, 20);
 	int new_replace_gamma_dynamic_green = uci_get_user_property_int_mm("replace_gamma_dynamic_green", 10, 0, 20);
@@ -358,7 +352,6 @@ static void uci_user_listener(void) {
 		new_replace_gamma_table_fully!=replace_gamma_table_fully ||
 		new_replace_gamma_table_fully_on_high_brightness!=replace_gamma_table_fully_on_high_brightness ||
 		new_replace_gamma_table_dynamic!=replace_gamma_table_dynamic ||
-		new_replace_gamma_table_dynamic_whole_range!=replace_gamma_table_dynamic_whole_range ||
 		new_replace_gamma_dynamic_red!=replace_gamma_dynamic_red ||
 		new_replace_gamma_dynamic_green!=replace_gamma_dynamic_green ||
 		new_replace_gamma_dynamic_blue!=replace_gamma_dynamic_blue ||
@@ -379,7 +372,6 @@ static void uci_user_listener(void) {
 			new_replace_gamma_table_fully!=replace_gamma_table_fully ||
 			new_replace_gamma_table_fully_on_high_brightness!=replace_gamma_table_fully_on_high_brightness ||
 			new_replace_gamma_table_dynamic!=replace_gamma_table_dynamic ||
-			new_replace_gamma_table_dynamic_whole_range!=replace_gamma_table_dynamic_whole_range ||
 			new_replace_gamma_dynamic_red!=replace_gamma_dynamic_red ||
 			new_replace_gamma_dynamic_green!=replace_gamma_dynamic_green ||
 			new_replace_gamma_dynamic_blue!=replace_gamma_dynamic_blue ||
@@ -402,7 +394,6 @@ static void uci_user_listener(void) {
 		forced_panel_freq_below_backlight = new_forced_panel_freq_below_backlight;
 		forced_panel_freq_below_backlight_value = new_forced_panel_freq_below_backlight_value;
 		replace_gamma_table_dynamic = new_replace_gamma_table_dynamic;
-		replace_gamma_table_dynamic_whole_range = new_replace_gamma_table_dynamic_whole_range;
 		replace_gamma_dynamic_red = new_replace_gamma_dynamic_red;
 		replace_gamma_dynamic_green = new_replace_gamma_dynamic_green;
 		replace_gamma_dynamic_blue = new_replace_gamma_dynamic_blue;
@@ -917,7 +908,7 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 		bool new_replace_gamma_table_variable_freq_off =
 			bl_lvl < 4 || // backlight dimming. gamma table should remain intact
 			(brightness > REPLACE_GAMMA_MAXIMUM_BRIGHTNESS &&
-				(!replace_gamma_table_dynamic_whole_range && !replace_gamma_table_fully && (!replace_gamma_table_fully_on_high_brightness ||
+				(!replace_gamma_table_dynamic && !replace_gamma_table_fully && (!replace_gamma_table_fully_on_high_brightness ||
 					brightness < REPLACE_GAMMA_MINIMUM_HIGH_BRIGHTNESS)));
 
 		// brighntess changes to or from lowest brightness (1), and gamma table raplec is active...force a mode update...
