@@ -48,6 +48,10 @@ extern int get_replace_gamma_dynamic_blue_low(void);
 extern int get_replace_gamma_dynamic_red_mid(void);
 extern int get_replace_gamma_dynamic_green_mid(void);
 extern int get_replace_gamma_dynamic_blue_mid(void);
+extern int get_replace_gamma_dynamic_freq_corr_hi(void);
+extern int get_replace_gamma_dynamic_freq_corr_mid(void);
+extern int get_replace_gamma_dynamic_freq_corr_low(void);
+extern int get_replace_gamma_dynamic_freq_corr_green_bias_low(void);
 
 #endif
 
@@ -919,10 +923,12 @@ struct s6e3hc2_panel_data {
 //#define PRINT_GAMMA
 #ifdef CONFIG_UCI
 
-static void post_calc_gamma(void *source_table, void *target_table, int table_idx,
+static void post_calc_gamma(int freq, void *source_table, void *target_table, int table_idx,
 		int red_low_coeff, int red_mid_coeff, int red_coeff,
 		int green_low_coeff, int green_mid_coeff, int green_coeff,
-		int blue_low_coeff, int blue_mid_coeff, int blue_coeff);
+		int blue_low_coeff, int blue_mid_coeff, int blue_coeff,
+		int freq_corr_low, int freq_corr_mid, int freq_corr_hi,
+		int freq_corr_green_bias_low);
 
 
 #ifdef PRINT_GAMMA
@@ -1040,7 +1046,8 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 			for (cnt=0;cnt<len;cnt++) {
 				target_table[cnt] = src_data[cnt];
 			}
-			post_calc_gamma(src_data,&target_table,i,
+			post_calc_gamma(mode->timing.refresh_rate,
+				src_data,&target_table,i,
 				get_replace_gamma_dynamic_red_low(),
 				get_replace_gamma_dynamic_red_mid(),
 				get_replace_gamma_dynamic_red(),
@@ -1049,7 +1056,11 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 				get_replace_gamma_dynamic_green(),
 				get_replace_gamma_dynamic_blue_low(),
 				get_replace_gamma_dynamic_blue_mid(),
-				get_replace_gamma_dynamic_blue());
+				get_replace_gamma_dynamic_blue(),
+				get_replace_gamma_dynamic_freq_corr_low(),
+				get_replace_gamma_dynamic_freq_corr_mid(),
+				get_replace_gamma_dynamic_freq_corr_hi(),
+				get_replace_gamma_dynamic_freq_corr_green_bias_low());
 		}
 
 #endif
@@ -1400,14 +1411,16 @@ static void *s6e3hc2_gamma_get_offset(struct s6e3hc2_panel_data *data,
 
 #ifdef CONFIG_UCI
 // calculate -20% - +20% based on coefficient 0-20 values (doubled in the calculations)
-static s16 calc_new_val(s16 src, s16 coeff) {
+static s16 calc_new_val(s16 src, s16 coeff, s16 corr_coeff) {
 	s16 r = src;
-	if (coeff == 10) {
+	if (coeff == 10 && corr_coeff == 10) {
 		pr_debug("%s [cleanslate] return original value...\n",__func__);
 		return r;
 	}
 	r = (src * (80+(coeff*2)))/100;
 	pr_debug("%s [cleanslate] calc: src %d coeff %d ret %d...\n",__func__,src,coeff,r);
+	r = (r * (180+(corr_coeff)))/200;
+	pr_debug("%s [cleanslate] calc: src %d corr coeff %d ret %d...\n",__func__,src,corr_coeff,r);
 	// todo max?
 	return r;
 }
@@ -1420,17 +1433,23 @@ static s16 calc_new_val(s16 src, s16 coeff) {
 #define MAX_BAND_IDX 12
 
 /* calculate the value between low_coeff and coeff, based on NOTCH value relative to MAX_NOTCH value */
-static int calc_current_coeff(int notch, int low_coeff, int mid_coeff, int coeff) {
+static int calc_current_coeff(int notch, int low_coeff, int mid_coeff, int coeff, bool bias_lowering, int bias_number) {
+	int ret = 0;
 	if (notch <= MIDDLE_NOTCH) { // low to mid coeffs...
 		// calc: difference between the lowest coeff and target mid coeff, and get it's current added value based on notch relative to max notch
 		int coeff_diff_ratio = ((mid_coeff - low_coeff) * notch) / (MIDDLE_NOTCH);
-		return low_coeff + coeff_diff_ratio; // return lowest coeff and the current notch relative value. At MAX notch reached, value returned here will be exactly coeff
+		ret = low_coeff + coeff_diff_ratio; // return lowest coeff and the current notch relative value. At MAX notch reached, value returned here will be exactly coeff
+		if (bias_lowering) {
+			ret = ret + ((bias_number * (MIDDLE_NOTCH - notch)) / MIDDLE_NOTCH);
+		}
 	} else {
 		// calc: difference between the mid coeff and target high coeff, and get it's current added value based on notch relative to max notch
 		int coeff_diff_ratio = ((coeff - mid_coeff) * (notch - MIDDLE_NOTCH)) / (MIDDLE_NOTCH);
-		return mid_coeff + coeff_diff_ratio; // return lowest coeff and the current notch relative value. At MAX notch reached, value returned here will be exactly coeff
+		ret = mid_coeff + coeff_diff_ratio; // return lowest coeff and the current notch relative value. At MAX notch reached, value returned here will be exactly coeff
 	}
+	return ret;
 }
+
 
 /**
  * Based on the table index (c8,c9,b3 command starte sections), gamma idx (gamma band groups containing 12 rgb bands),
@@ -1456,12 +1475,16 @@ static int calc_current_notch(int table_idx, int gamma_idx, int band_idx) {
  * Calc new Gamma RGB band values from source gamma table byte array into a target gamma table byte array.
  * Use coeff low and coeff high RGB component biases to change surce RGB values.
  * Low coeff is used for low brightness Gamma bands, High coeff is for high brightness gamma bands.
+ * Frequency FPS is taken into consideration, to alleviate the differences especially present on low brightness ranges,
+ *   60 hertz usually being darker than 90hz on those panel brightnesses.
  */
 
-static void post_calc_gamma(void *source_table, void *target_table, int table_idx,
+static void post_calc_gamma(int freq, void *source_table, void *target_table, int table_idx,
 		int red_low_coeff, int red_mid_coeff, int red_coeff,
 		int green_low_coeff, int green_mid_coeff, int green_coeff,
-		int blue_low_coeff, int blue_mid_coeff, int blue_coeff)
+		int blue_low_coeff, int blue_mid_coeff, int blue_coeff,
+		int freq_corr_low, int freq_corr_mid, int freq_corr_hi,
+		int freq_corr_green_bias_low)
 {
 	int gamma_idx = 0;
 
@@ -1495,9 +1518,19 @@ static void post_calc_gamma(void *source_table, void *target_table, int table_id
 			src_g = gamma_src.g;
 			src_b = gamma_src.b;
 			// calculate target values...
-			gamma_src.r = calc_new_val(gamma_src.r , calc_current_coeff(current_notch,red_low_coeff,red_mid_coeff,red_coeff));
-			gamma_src.g = calc_new_val(gamma_src.g , calc_current_coeff(current_notch,green_low_coeff,green_mid_coeff,green_coeff));
-			gamma_src.b = calc_new_val(gamma_src.b , calc_current_coeff(current_notch,blue_low_coeff,blue_mid_coeff,blue_coeff));
+			gamma_src.r = calc_new_val(gamma_src.r ,
+					calc_current_coeff(current_notch,red_low_coeff,red_mid_coeff,red_coeff,false,0),
+					(freq<90?calc_current_coeff(current_notch,freq_corr_low,freq_corr_mid,freq_corr_hi,false,0):10)
+				);
+			gamma_src.g = calc_new_val(gamma_src.g ,
+					calc_current_coeff(current_notch,green_low_coeff,green_mid_coeff,green_coeff,false,0),
+														// use bias for greens, dampen them on 60hz
+					(freq<90?calc_current_coeff(current_notch,freq_corr_low,freq_corr_mid,freq_corr_hi, true, -30+freq_corr_green_bias_low):10) 
+				);
+			gamma_src.b = calc_new_val(gamma_src.b ,
+					calc_current_coeff(current_notch,blue_low_coeff,blue_mid_coeff,blue_coeff,false,0),
+					(freq<90?calc_current_coeff(current_notch,freq_corr_low,freq_corr_mid,freq_corr_hi, false, 0):10)
+				);
 			pr_debug("%s [cleanslate] calc finished... src %d calc r %d \n",__func__,src_r,gamma_src.r);
 			pr_debug("%s [cleanslate] calc finished... src %d calc g %d \n",__func__,src_g,gamma_src.g);
 			pr_debug("%s [cleanslate] calc finished... src %d calc b %d \n",__func__,src_b,gamma_src.b);

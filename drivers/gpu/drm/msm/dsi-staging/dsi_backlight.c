@@ -226,6 +226,12 @@ static int replace_gamma_dynamic_blue_low = 10;
 static int replace_gamma_dynamic_red_mid = 10;
 static int replace_gamma_dynamic_green_mid = 10;
 static int replace_gamma_dynamic_blue_mid = 10;
+
+static int replace_gamma_dynamic_freq_corr_hi = 20;
+static int replace_gamma_dynamic_freq_corr_mid = 20;
+static int replace_gamma_dynamic_freq_corr_low = 20;
+static int replace_gamma_dynamic_freq_corr_green_bias_low = 10;
+
 bool get_replace_gamma_table_dynamic(void) {
 	return replace_gamma_table_dynamic;
 }
@@ -274,6 +280,23 @@ int get_replace_gamma_dynamic_blue_mid(void) {
 }
 EXPORT_SYMBOL(get_replace_gamma_dynamic_blue_mid);
 
+int get_replace_gamma_dynamic_freq_corr_hi(void) {
+	return replace_gamma_dynamic_freq_corr_hi;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_freq_corr_hi);
+int get_replace_gamma_dynamic_freq_corr_mid(void) {
+	return replace_gamma_dynamic_freq_corr_mid;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_freq_corr_mid);
+int get_replace_gamma_dynamic_freq_corr_low(void) {
+	return replace_gamma_dynamic_freq_corr_low;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_freq_corr_low);
+int get_replace_gamma_dynamic_freq_corr_green_bias_low(void) {
+	return replace_gamma_dynamic_freq_corr_green_bias_low;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_freq_corr_green_bias_low);
+
 // -------------------
 
 
@@ -320,6 +343,11 @@ static void uci_user_listener(void) {
 	int new_replace_gamma_dynamic_green_mid = uci_get_user_property_int_mm("replace_gamma_dynamic_green_mid", 10, 0, 20);
 	int new_replace_gamma_dynamic_blue_mid = uci_get_user_property_int_mm("replace_gamma_dynamic_blue_mid", 10, 0, 20);
 
+	int new_replace_gamma_dynamic_freq_corr_hi = uci_get_user_property_int_mm("replace_gamma_dynamic_freq_corr_hi", 20, 0, 40);
+	int new_replace_gamma_dynamic_freq_corr_mid = uci_get_user_property_int_mm("replace_gamma_dynamic_freq_corr_mid", 20, 0, 40);
+	int new_replace_gamma_dynamic_freq_corr_low = uci_get_user_property_int_mm("replace_gamma_dynamic_freq_corr_low", 20, 0, 40);
+	int new_replace_gamma_dynamic_freq_corr_green_bias_low = uci_get_user_property_int_mm("replace_gamma_dynamic_freq_corr_green_bias_low", 30, 0, 60);
+
 	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
 	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
 
@@ -340,6 +368,10 @@ static void uci_user_listener(void) {
 		new_replace_gamma_dynamic_red_mid!=replace_gamma_dynamic_red_mid ||
 		new_replace_gamma_dynamic_green_mid!=replace_gamma_dynamic_green_mid ||
 		new_replace_gamma_dynamic_blue_mid!=replace_gamma_dynamic_blue_mid ||
+		new_replace_gamma_dynamic_freq_corr_hi!=replace_gamma_dynamic_freq_corr_hi ||
+		new_replace_gamma_dynamic_freq_corr_mid!=replace_gamma_dynamic_freq_corr_mid ||
+		new_replace_gamma_dynamic_freq_corr_low!=replace_gamma_dynamic_freq_corr_low ||
+		new_replace_gamma_dynamic_freq_corr_green_bias_low!=replace_gamma_dynamic_freq_corr_green_bias_low ||
 		new_replace_gamma_table_index!=replace_gamma_table_index)
 	{
 
@@ -357,6 +389,10 @@ static void uci_user_listener(void) {
 			new_replace_gamma_dynamic_red_mid!=replace_gamma_dynamic_red_mid ||
 			new_replace_gamma_dynamic_green_mid!=replace_gamma_dynamic_green_mid ||
 			new_replace_gamma_dynamic_blue_mid!=replace_gamma_dynamic_blue_mid ||
+			new_replace_gamma_dynamic_freq_corr_hi!=replace_gamma_dynamic_freq_corr_hi ||
+			new_replace_gamma_dynamic_freq_corr_mid!=replace_gamma_dynamic_freq_corr_mid ||
+			new_replace_gamma_dynamic_freq_corr_low!=replace_gamma_dynamic_freq_corr_low ||
+			new_replace_gamma_dynamic_freq_corr_green_bias_low!=replace_gamma_dynamic_freq_corr_green_bias_low ||
 			new_replace_gamma_table_index!=replace_gamma_table_index;
 
 		replace_gamma_table = new_replace_gamma_table;
@@ -376,6 +412,10 @@ static void uci_user_listener(void) {
 		replace_gamma_dynamic_red_mid = new_replace_gamma_dynamic_red_mid;
 		replace_gamma_dynamic_green_mid = new_replace_gamma_dynamic_green_mid;
 		replace_gamma_dynamic_blue_mid = new_replace_gamma_dynamic_blue_mid;
+		replace_gamma_dynamic_freq_corr_hi = new_replace_gamma_dynamic_freq_corr_hi;
+		replace_gamma_dynamic_freq_corr_mid = new_replace_gamma_dynamic_freq_corr_mid;
+		replace_gamma_dynamic_freq_corr_low = new_replace_gamma_dynamic_freq_corr_low;
+		replace_gamma_dynamic_freq_corr_green_bias_low = new_replace_gamma_dynamic_freq_corr_green_bias_low;
 
 		check_forced_panel_mode_updates(force_mode_change);
 	}
