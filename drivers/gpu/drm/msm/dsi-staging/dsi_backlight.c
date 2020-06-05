@@ -223,6 +223,9 @@ static int replace_gamma_dynamic_blue = 10;
 static int replace_gamma_dynamic_red_low = 10;
 static int replace_gamma_dynamic_green_low = 10;
 static int replace_gamma_dynamic_blue_low = 10;
+static int replace_gamma_dynamic_red_mid = 10;
+static int replace_gamma_dynamic_green_mid = 10;
+static int replace_gamma_dynamic_blue_mid = 10;
 bool get_replace_gamma_table_dynamic(void) {
 	return replace_gamma_table_dynamic;
 }
@@ -257,6 +260,19 @@ int get_replace_gamma_dynamic_blue_low(void) {
 	return replace_gamma_dynamic_blue_low;
 }
 EXPORT_SYMBOL(get_replace_gamma_dynamic_blue_low);
+
+int get_replace_gamma_dynamic_red_mid(void) {
+	return replace_gamma_dynamic_red_mid;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_red_mid);
+int get_replace_gamma_dynamic_green_mid(void) {
+	return replace_gamma_dynamic_green_mid;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_green_mid);
+int get_replace_gamma_dynamic_blue_mid(void) {
+	return replace_gamma_dynamic_blue_mid;
+}
+EXPORT_SYMBOL(get_replace_gamma_dynamic_blue_mid);
 
 // -------------------
 
@@ -300,6 +316,9 @@ static void uci_user_listener(void) {
 	int new_replace_gamma_dynamic_red_low = uci_get_user_property_int_mm("replace_gamma_dynamic_red_low", 10, 0, 20);
 	int new_replace_gamma_dynamic_green_low = uci_get_user_property_int_mm("replace_gamma_dynamic_green_low", 10, 0, 20);
 	int new_replace_gamma_dynamic_blue_low = uci_get_user_property_int_mm("replace_gamma_dynamic_blue_low", 10, 0, 20);
+	int new_replace_gamma_dynamic_red_mid = uci_get_user_property_int_mm("replace_gamma_dynamic_red_mid", 10, 0, 20);
+	int new_replace_gamma_dynamic_green_mid = uci_get_user_property_int_mm("replace_gamma_dynamic_green_mid", 10, 0, 20);
+	int new_replace_gamma_dynamic_blue_mid = uci_get_user_property_int_mm("replace_gamma_dynamic_blue_mid", 10, 0, 20);
 
 	bool new_forced_panel_freq_below_backlight = !!uci_get_user_property_int_mm("forced_panel_freq_below_backlight", 0, 0, 1);
 	int new_forced_panel_freq_below_backlight_value = uci_get_user_property_int_mm("forced_panel_freq_below_backlight_value", 9, 1, 15);
@@ -318,6 +337,9 @@ static void uci_user_listener(void) {
 		new_replace_gamma_dynamic_red_low!=replace_gamma_dynamic_red_low ||
 		new_replace_gamma_dynamic_green_low!=replace_gamma_dynamic_green_low ||
 		new_replace_gamma_dynamic_blue_low!=replace_gamma_dynamic_blue_low ||
+		new_replace_gamma_dynamic_red_mid!=replace_gamma_dynamic_red_mid ||
+		new_replace_gamma_dynamic_green_mid!=replace_gamma_dynamic_green_mid ||
+		new_replace_gamma_dynamic_blue_mid!=replace_gamma_dynamic_blue_mid ||
 		new_replace_gamma_table_index!=replace_gamma_table_index)
 	{
 
@@ -332,6 +354,9 @@ static void uci_user_listener(void) {
 			new_replace_gamma_dynamic_red_low!=replace_gamma_dynamic_red_low ||
 			new_replace_gamma_dynamic_green_low!=replace_gamma_dynamic_green_low ||
 			new_replace_gamma_dynamic_blue_low!=replace_gamma_dynamic_blue_low ||
+			new_replace_gamma_dynamic_red_mid!=replace_gamma_dynamic_red_mid ||
+			new_replace_gamma_dynamic_green_mid!=replace_gamma_dynamic_green_mid ||
+			new_replace_gamma_dynamic_blue_mid!=replace_gamma_dynamic_blue_mid ||
 			new_replace_gamma_table_index!=replace_gamma_table_index;
 
 		replace_gamma_table = new_replace_gamma_table;
@@ -348,6 +373,9 @@ static void uci_user_listener(void) {
 		replace_gamma_dynamic_red_low = new_replace_gamma_dynamic_red_low;
 		replace_gamma_dynamic_green_low = new_replace_gamma_dynamic_green_low;
 		replace_gamma_dynamic_blue_low = new_replace_gamma_dynamic_blue_low;
+		replace_gamma_dynamic_red_mid = new_replace_gamma_dynamic_red_mid;
+		replace_gamma_dynamic_green_mid = new_replace_gamma_dynamic_green_mid;
+		replace_gamma_dynamic_blue_mid = new_replace_gamma_dynamic_blue_mid;
 
 		check_forced_panel_mode_updates(force_mode_change);
 	}

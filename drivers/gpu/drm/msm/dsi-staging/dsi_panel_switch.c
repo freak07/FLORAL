@@ -45,6 +45,9 @@ extern int get_replace_gamma_dynamic_blue(void);
 extern int get_replace_gamma_dynamic_red_low(void);
 extern int get_replace_gamma_dynamic_green_low(void);
 extern int get_replace_gamma_dynamic_blue_low(void);
+extern int get_replace_gamma_dynamic_red_mid(void);
+extern int get_replace_gamma_dynamic_green_mid(void);
+extern int get_replace_gamma_dynamic_blue_mid(void);
 
 #endif
 
@@ -916,8 +919,10 @@ struct s6e3hc2_panel_data {
 //#define PRINT_GAMMA
 #ifdef CONFIG_UCI
 
-static void post_calc_gamma(void *source_table, void *target_table, int table_index,
-		int red_low_coeff, int red_coeff, int green_low_coeff, int green_coeff, int blue_low_coeff, int blue_coeff);
+static void post_calc_gamma(void *source_table, void *target_table, int table_idx,
+		int red_low_coeff, int red_mid_coeff, int red_coeff,
+		int green_low_coeff, int green_mid_coeff, int green_coeff,
+		int blue_low_coeff, int blue_mid_coeff, int blue_coeff);
 
 
 #ifdef PRINT_GAMMA
@@ -1037,10 +1042,13 @@ static void s6e3hc2_gamma_update(struct panel_switch_data *pdata,
 			}
 			post_calc_gamma(src_data,&target_table,i,
 				get_replace_gamma_dynamic_red_low(),
+				get_replace_gamma_dynamic_red_mid(),
 				get_replace_gamma_dynamic_red(),
 				get_replace_gamma_dynamic_green_low(),
+				get_replace_gamma_dynamic_green_mid(),
 				get_replace_gamma_dynamic_green(),
 				get_replace_gamma_dynamic_blue_low(),
+				get_replace_gamma_dynamic_blue_mid(),
 				get_replace_gamma_dynamic_blue());
 		}
 
@@ -1407,14 +1415,21 @@ static s16 calc_new_val(s16 src, s16 coeff) {
 // all command tables contain N groups, 3,4,1 respectively. Each contains 12 bands (RGB values)
 // (3 + 4 + 1) * max_band_idx; // 8 * 12 bands altogether - this is the maximum number of different brightness bands.
 #define MAX_NOTCH (8 * 12)
+#define MIDDLE_NOTCH (MAX_NOTCH / 2)
 // maximum number of bqnds in one Gamma band grouping
 #define MAX_BAND_IDX 12
 
 /* calculate the value between low_coeff and coeff, based on NOTCH value relative to MAX_NOTCH value */
-static int calc_current_coeff(int notch, int low_coeff, int coeff) {
-	// calc: difference between the lowest coeff and target coeff, and get it's current added value based on notch relative to max notch
-	int coeff_diff_ratio = ((coeff - low_coeff) * notch) / MAX_NOTCH;
-	return low_coeff + coeff_diff_ratio; // return lowest coeff and the current notch relative value. At MAX notch reached, value returned here will be exactly coeff
+static int calc_current_coeff(int notch, int low_coeff, int mid_coeff, int coeff) {
+	if (notch <= MIDDLE_NOTCH) { // low to mid coeffs...
+		// calc: difference between the lowest coeff and target mid coeff, and get it's current added value based on notch relative to max notch
+		int coeff_diff_ratio = ((mid_coeff - low_coeff) * notch) / (MIDDLE_NOTCH);
+		return low_coeff + coeff_diff_ratio; // return lowest coeff and the current notch relative value. At MAX notch reached, value returned here will be exactly coeff
+	} else {
+		// calc: difference between the mid coeff and target high coeff, and get it's current added value based on notch relative to max notch
+		int coeff_diff_ratio = ((coeff - mid_coeff) * (notch - MIDDLE_NOTCH)) / (MIDDLE_NOTCH);
+		return mid_coeff + coeff_diff_ratio; // return lowest coeff and the current notch relative value. At MAX notch reached, value returned here will be exactly coeff
+	}
 }
 
 /**
@@ -1442,9 +1457,12 @@ static int calc_current_notch(int table_idx, int gamma_idx, int band_idx) {
  * Use coeff low and coeff high RGB component biases to change surce RGB values.
  * Low coeff is used for low brightness Gamma bands, High coeff is for high brightness gamma bands.
  */
-static void post_calc_gamma(void *source_table, void *target_table, int table_idx, 
-					int red_low_coeff, int red_coeff, int green_low_coeff, int green_coeff, 
-						int blue_low_coeff, int blue_coeff) {
+
+static void post_calc_gamma(void *source_table, void *target_table, int table_idx,
+		int red_low_coeff, int red_mid_coeff, int red_coeff,
+		int green_low_coeff, int green_mid_coeff, int green_coeff,
+		int blue_low_coeff, int blue_mid_coeff, int blue_coeff)
+{
 	int gamma_idx = 0;
 
 	// calculate the maximum gamma index (groups) in the table. Each command's table has different number of gamma groups respectively.
@@ -1477,9 +1495,9 @@ static void post_calc_gamma(void *source_table, void *target_table, int table_id
 			src_g = gamma_src.g;
 			src_b = gamma_src.b;
 			// calculate target values...
-			gamma_src.r = calc_new_val(gamma_src.r , calc_current_coeff(current_notch,red_low_coeff,red_coeff));
-			gamma_src.g = calc_new_val(gamma_src.g , calc_current_coeff(current_notch,green_low_coeff,green_coeff));
-			gamma_src.b = calc_new_val(gamma_src.b , calc_current_coeff(current_notch,blue_low_coeff,blue_coeff));
+			gamma_src.r = calc_new_val(gamma_src.r , calc_current_coeff(current_notch,red_low_coeff,red_mid_coeff,red_coeff));
+			gamma_src.g = calc_new_val(gamma_src.g , calc_current_coeff(current_notch,green_low_coeff,green_mid_coeff,green_coeff));
+			gamma_src.b = calc_new_val(gamma_src.b , calc_current_coeff(current_notch,blue_low_coeff,blue_mid_coeff,blue_coeff));
 			pr_debug("%s [cleanslate] calc finished... src %d calc r %d \n",__func__,src_r,gamma_src.r);
 			pr_debug("%s [cleanslate] calc finished... src %d calc g %d \n",__func__,src_g,gamma_src.g);
 			pr_debug("%s [cleanslate] calc finished... src %d calc b %d \n",__func__,src_b,gamma_src.b);
