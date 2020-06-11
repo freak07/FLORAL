@@ -2,8 +2,6 @@
 #ifndef __UAPI_CORESIGHT_STM_H_
 #define __UAPI_CORESIGHT_STM_H_
 
-#include <linux/const.h>
-
 #define STM_FLAG_NONE          0x00
 #define STM_FLAG_TIMESTAMPED   0x08
 #define STM_FLAG_GUARANTEED    0x80

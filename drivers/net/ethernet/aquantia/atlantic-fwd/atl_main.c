@@ -681,6 +681,8 @@ static int atl_suspend_common(struct device *dev, unsigned int wol_mode)
 	atl_clear_rdm_cache(nic);
 	atl_clear_tdm_cache(nic);
 
+	hw->mcp.ops->deinit(hw);
+
 	if (wol_mode) {
 		ret = hw->mcp.ops->enable_wol(hw, wol_mode);
 		if (ret)

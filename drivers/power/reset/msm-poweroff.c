@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,6 +29,7 @@
 #include <linux/notifier.h>
 #include <linux/kallsyms.h>
 #include <linux/io.h>
+#include <linux/syscore_ops.h>
 
 #include <asm/cacheflush.h>
 #include <asm/system_misc.h>
@@ -692,6 +693,25 @@ int restart_handler_init(void)
 	pr_debug("%s: default message is set\n", __func__);
 	return 0;
 }
+
+#if defined(CONFIG_RANDOMIZE_BASE) && defined(CONFIG_HIBERNATION)
+static void msm_poweroff_syscore_resume(void)
+{
+#define KASLR_OFFSET_BIT_MASK	0x00000000FFFFFFFF
+	if (kaslr_imem_addr) {
+		__raw_writel(0xdead4ead, kaslr_imem_addr);
+		__raw_writel(KASLR_OFFSET_BIT_MASK &
+		(kimage_vaddr - KIMAGE_VADDR), kaslr_imem_addr + 4);
+		__raw_writel(KASLR_OFFSET_BIT_MASK &
+			((kimage_vaddr - KIMAGE_VADDR) >> 32),
+			kaslr_imem_addr + 8);
+	}
+}
+
+static struct syscore_ops msm_poweroff_syscore_ops = {
+	.resume = msm_poweroff_syscore_resume,
+};
+#endif
 
 static int msm_restart_probe(struct platform_device *pdev)
 {

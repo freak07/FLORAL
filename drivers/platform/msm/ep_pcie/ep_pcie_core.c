@@ -2801,7 +2801,7 @@ int ep_pcie_core_get_msi_config(struct ep_pcie_msi_config *cfg)
 					msi->start, 0, msi->end,
 					lower, upper);
 
-		if (ep_pcie_dev.active_config) {
+		if (ep_pcie_dev.active_config || ep_pcie_dev.pcie_edma) {
 			cfg->lower = lower;
 			cfg->upper = upper;
 		} else {
