@@ -397,12 +397,11 @@ static int ipa_mhi_start_gsi_channel(enum ipa_client_type client,
 			ipa3_ctx->ep[ipa_ep_idx].client == IPA_CLIENT_MHI_PROD
 				&& !ipa3_is_mhip_offload_enabled()) {
 			if (ipa3_cfg_ep_seq(ipa_ep_idx,
-						&ipa_ep_cfg->seq)) {
+					&ipa_ep_cfg->seq)) {
 				IPA_MHI_ERR("fail to configure USB pipe seq\n");
 				goto fail_ep_cfg;
 			}
 		}
-
 	}
 
 	if (IPA_CLIENT_IS_PROD(ep->client) && ep->skip_ep_cfg) {
@@ -430,21 +429,19 @@ static int ipa_mhi_start_gsi_channel(enum ipa_client_type client,
 	}
 
 	if (IPA_CLIENT_IS_PROD(ep->client) && ep->skip_ep_cfg &&
-			ipa3_ctx->ipa_endp_delay_wa &&
-			!ipa3_is_mhip_offload_enabled()) {
+		ipa3_ctx->ipa_endp_delay_wa &&
+		!ipa3_is_mhip_offload_enabled()) {
 		res = gsi_enable_flow_control_ee(ep->gsi_chan_hdl, 0, &code);
 		if (res == GSI_STATUS_SUCCESS) {
 			IPA_MHI_DBG("flow ctrl sussess gsi ch %d code %d\n",
 					ep->gsi_chan_hdl, code);
 		} else {
 			IPA_MHI_DBG("failed to flow ctrll gsi ch %d code %d\n",
-					ep->gsi_chan_hdl, code);
+				ep->gsi_chan_hdl, code);
 		}
 	}
-
 	IPA_MHI_FUNC_EXIT();
 	return 0;
-
 fail_ep_cfg:
 	ipa3_disable_data_path(ipa_ep_idx);
 fail_ch_start:
@@ -561,7 +558,6 @@ int ipa3_connect_mhi_pipe(struct ipa_mhi_connect_params_internal *in,
 			res);
 		goto fail_start_channel;
 	}
-
 	*clnt_hdl = ipa_ep_idx;
 	ipa3_ctx->skip_ep_cfg_shadow[ipa_ep_idx] = ep->skip_ep_cfg;
 	IPA_MHI_DBG("client %d (ep: %d) connected\n", client, ipa_ep_idx);
