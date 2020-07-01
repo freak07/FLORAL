@@ -439,6 +439,10 @@ static struct msm_soc_info cpu_of_id[] = {
 	/* atollab ID */
 	[443] = {MSM_CPU_ATOLL_AB, "ATOLL-AB"},
 
+	/* QCM6125 IDs*/
+	[467] = {MSM_CPU_QCM6125, "QCM6125"},
+	[468] = {MSM_CPU_QCS6125, "QCS6125"},
+
 	/* SDM660 ID */
 	[317] = {MSM_CPU_SDM660, "SDM660"},
 	[324] = {MSM_CPU_SDA660, "SDA660"},
@@ -1438,6 +1442,14 @@ static void * __init setup_dummy_socinfo(void)
 	} else if (early_machine_is_atoll_ab()) {
 		dummy_socinfo.id = 443;
 		strlcpy(dummy_socinfo.build_id, "atoll-ab - ",
+		sizeof(dummy_socinfo.build_id));
+	} else if (early_machine_is_qcm6125()) {
+		dummy_socinfo.id = 467;
+		strlcpy(dummy_socinfo.build_id, "qcm6125 - ",
+		sizeof(dummy_socinfo.build_id));
+	} else if (early_machine_is_qcs6125()) {
+		dummy_socinfo.id = 468;
+		strlcpy(dummy_socinfo.build_id, "qcm6125 - ",
 		sizeof(dummy_socinfo.build_id));
 	} else if (early_machine_is_sdm660()) {
 		dummy_socinfo.id = 317;

@@ -94,6 +94,12 @@ SoCs:
 - SDA660
   compatible = "qcom,sda660"
 
+- QCM6125
+  compatible = "qcom,qcm6125"
+
+- QCS6125
+  compatible = "qcom,qcs6125"
+
 Generic board variants:
 
 - CDP device:
@@ -265,3 +271,5 @@ compatible = "qcom,sda660-mtp"
 compatible = "qcom,sda660-cdp"
 compatible = "qcom,sda660-qrd"
 compatible = "qcom,mdm9607-cdp"
+compatible = "qcom,qcm6125"
+compatible = "qcom,qcs6125"
