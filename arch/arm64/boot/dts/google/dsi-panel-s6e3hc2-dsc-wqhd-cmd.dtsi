@@ -71,7 +71,7 @@
 				qcom,mdss-dsi-v-pulse-width = <4>;
 				qcom,mdss-dsi-on-command = [
 					07 01 00 00 00 00 01 01    /* Compression Enable */
-					05 01 00 00 78 00 01 11    /* sleep out, Wait 120 ms */
+					05 01 00 00 05 00 01 11    /* sleep out, Wait 5 ms */
 					15 01 00 00 00 00 02 53 20 /* write ctl 60hz */
 					15 01 00 00 00 00 02 35 00 /* TE on */
 
@@ -101,7 +101,7 @@
 				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
 				qcom,mdss-dsi-off-command = [
 					05 01 00 00 0A 00 01 28    /* display off */
-					05 01 00 00 78 00 01 10    /* sleep in */
+					05 01 00 00 5A 00 01 10    /* sleep in */
 				];
 				qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
 
@@ -169,7 +169,7 @@
 				qcom,mdss-dsi-v-pulse-width = <4>;
 				qcom,mdss-dsi-on-command = [
 					07 01 00 00 00 00 01 01    /* Compression Enable */
-					05 01 00 00 78 00 01 11    /* sleep out, Wait 120 ms */
+					05 01 00 00 05 00 01 11    /* sleep out, Wait 5 ms */
 					15 01 00 00 00 00 02 53 30 /* write ctl 90hz */
 					15 01 00 00 00 00 02 35 00 /* TE on */
 
@@ -199,7 +199,7 @@
 				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
 				qcom,mdss-dsi-off-command = [
 					05 01 00 00 0A 00 01 28    /* display off */
-					05 01 00 00 78 00 01 10    /* sleep in */
+					05 01 00 00 5A 00 01 10    /* sleep in */
 				];
 				qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
 
