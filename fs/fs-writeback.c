@@ -45,6 +45,7 @@ struct wb_completion {
 struct wb_writeback_work {
 	long nr_pages;
 	struct super_block *sb;
+	unsigned long *older_than_this;
 	enum writeback_sync_modes sync_mode;
 	unsigned int tagged_writepages:1;
 	unsigned int for_kupdate:1;
@@ -1149,13 +1150,16 @@ static bool inode_dirtied_after(struct inode *inode, unsigned long t)
 #define EXPIRE_DIRTY_ATIME 0x0001
 
 /*
- * Move expired (dirtied before dirtied_before) dirty inodes from
+ * Move expired (dirtied before work->older_than_this) dirty inodes from
  * @delaying_queue to @dispatch_queue.
  */
 static int move_expired_inodes(struct list_head *delaying_queue,
 			       struct list_head *dispatch_queue,
-			       int flags, unsigned long dirtied_before)
+			       int flags,
+			       struct wb_writeback_work *work)
 {
+	unsigned long *older_than_this = NULL;
+	unsigned long expire_time;
 	LIST_HEAD(tmp);
 	struct list_head *pos, *node;
 	struct super_block *sb = NULL;
@@ -1163,9 +1167,16 @@ static int move_expired_inodes(struct list_head *delaying_queue,
 	int do_sb_sort = 0;
 	int moved = 0;
 
+	if ((flags & EXPIRE_DIRTY_ATIME) == 0)
+		older_than_this = work->older_than_this;
+	else if (!work->for_sync) {
+		expire_time = jiffies - (dirtytime_expire_interval * HZ);
+		older_than_this = &expire_time;
+	}
 	while (!list_empty(delaying_queue)) {
 		inode = wb_inode(delaying_queue->prev);
-		if (inode_dirtied_after(inode, dirtied_before))
+		if (older_than_this &&
+		    inode_dirtied_after(inode, *older_than_this))
 			break;
 		list_move(&inode->i_io_list, &tmp);
 		moved++;
@@ -1211,22 +1222,18 @@ out:
  *                                           |
  *                                           +--> dequeue for IO
  */
-static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work,
-		     unsigned long dirtied_before)
+static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work)
 {
 	int moved;
-	unsigned long time_expire_jif = dirtied_before;
 
 	assert_spin_locked(&wb->list_lock);
 	list_splice_init(&wb->b_more_io, &wb->b_io);
-	moved = move_expired_inodes(&wb->b_dirty, &wb->b_io, 0, dirtied_before);
-	if (!work->for_sync)
-		time_expire_jif = jiffies - dirtytime_expire_interval * HZ;
+	moved = move_expired_inodes(&wb->b_dirty, &wb->b_io, 0, work);
 	moved += move_expired_inodes(&wb->b_dirty_time, &wb->b_io,
-				     EXPIRE_DIRTY_ATIME, time_expire_jif);
+				     EXPIRE_DIRTY_ATIME, work);
 	if (moved)
 		wb_io_lists_populated(wb);
-	trace_writeback_queue_io(wb, work, dirtied_before, moved);
+	trace_writeback_queue_io(wb, work, moved);
 }
 
 static int write_inode(struct inode *inode, struct writeback_control *wbc)
@@ -1738,7 +1745,7 @@ static long writeback_inodes_wb(struct bdi_writeback *wb, long nr_pages,
 	blk_start_plug(&plug);
 	spin_lock(&wb->list_lock);
 	if (list_empty(&wb->b_io))
-		queue_io(wb, &work, jiffies);
+		queue_io(wb, &work);
 	__writeback_inodes_wb(wb, &work);
 	spin_unlock(&wb->list_lock);
 	blk_finish_plug(&plug);
@@ -1758,7 +1765,7 @@ static long writeback_inodes_wb(struct bdi_writeback *wb, long nr_pages,
  * takes longer than a dirty_writeback_interval interval, then leave a
  * one-second gap.
  *
- * dirtied_before takes precedence over nr_to_write.  So we'll only write back
+ * older_than_this takes precedence over nr_to_write.  So we'll only write back
  * all dirty pages if they are all attached to "old" mappings.
  */
 static long wb_writeback(struct bdi_writeback *wb,
@@ -1766,10 +1773,13 @@ static long wb_writeback(struct bdi_writeback *wb,
 {
 	unsigned long wb_start = jiffies;
 	long nr_pages = work->nr_pages;
-	unsigned long dirtied_before = jiffies;
+	unsigned long oldest_jif;
 	struct inode *inode;
 	long progress;
 	struct blk_plug plug;
+
+	oldest_jif = jiffies;
+	work->older_than_this = &oldest_jif;
 
 	blk_start_plug(&plug);
 	spin_lock(&wb->list_lock);
@@ -1804,14 +1814,14 @@ static long wb_writeback(struct bdi_writeback *wb,
 		 * safe.
 		 */
 		if (work->for_kupdate) {
-			dirtied_before = jiffies -
+			oldest_jif = jiffies -
 				msecs_to_jiffies(dirty_expire_interval * 10);
 		} else if (work->for_background)
-			dirtied_before = jiffies;
+			oldest_jif = jiffies;
 
 		trace_writeback_start(wb, work);
 		if (list_empty(&wb->b_io))
-			queue_io(wb, work, dirtied_before);
+			queue_io(wb, work);
 		if (work->sb)
 			progress = writeback_sb_inodes(work->sb, wb, work);
 		else
