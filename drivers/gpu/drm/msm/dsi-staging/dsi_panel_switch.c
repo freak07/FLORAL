@@ -28,6 +28,10 @@
 #include "sde_trace.h"
 #include "sde_connector.h"
 
+#ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
+#include <linux/notification/notification.h>
+#endif
+
 #ifdef CONFIG_UCI
 #include "dsi_custom_gamma.h"
 #include "dsi_custom_gamma_op7pro.h"
@@ -439,7 +443,7 @@ EXPORT_SYMBOL(uci_set_forced_freq);
 
 void uci_release_forced_freq(bool force_mode_change) {
 	if (g_panel!=NULL) {
-		if (forced_freq || force_mode_change) {
+		if ((forced_freq || force_mode_change) && (ntf_is_screen_on())) {
 			pr_info("%s [cleanslate] release forced freq %d to %d \n",__func__,forced_freq_value,stored_freq_value);
 			forced_freq = false;
 			schedule_work(&uci_release_panel_queue_switch_work);
