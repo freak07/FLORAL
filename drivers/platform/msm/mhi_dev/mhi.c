@@ -1560,7 +1560,7 @@ static void mhi_dev_trigger_cb(enum mhi_client_channel ch_id)
 	struct mhi_dev_ready_cb_info *info;
 	enum mhi_ctrl_info state_data;
 
-	/* Currently no clients register for HW channel notify */
+	/* Currently no clients register for HW channel notification */
 	if (ch_id >= MHI_MAX_SOFTWARE_CHANNELS)
 		return;
 
@@ -3429,7 +3429,7 @@ static void mhi_update_state_info_ch(uint32_t ch_id, enum mhi_ctrl_info info)
 {
 	struct mhi_dev_client_cb_reason reason;
 
-	/* Currently no clients register for HW channel notify */
+	/* Currently no clients register for HW channel notification */
 	if (ch_id >= MHI_MAX_SOFTWARE_CHANNELS)
 		return;
 

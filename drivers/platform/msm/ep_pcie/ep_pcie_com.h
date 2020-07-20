@@ -424,15 +424,6 @@ struct ep_pcie_dev_t {
 extern struct ep_pcie_dev_t ep_pcie_dev;
 extern struct ep_pcie_hw hw_drv;
 
-#if IS_ENABLED(CONFIG_QCOM_PCI_EDMA)
-int qcom_edma_init(struct device *dev);
-#else
-static inline int qcom_edma_init(struct device *dev)
-{
-	return 0;
-}
-#endif
-
 static inline void ep_pcie_write_mask(void __iomem *addr,
 				u32 clear_mask, u32 set_mask)
 {

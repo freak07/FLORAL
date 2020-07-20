@@ -1187,6 +1187,10 @@ static int ipa3_nat_create_modify_pdn_cmd(
 	if (!ipa3_ctx->nat_mem.pdn_mem.base)
 		return -EFAULT;
 
+	/* Before providing physical base address check pointer exist or not*/
+	if (!ipa3_ctx->nat_mem.pdn_mem.base)
+		return -EFAULT;
+
 	if (zero_mem && ipa3_ctx->nat_mem.pdn_mem.base)
 		memset(ipa3_ctx->nat_mem.pdn_mem.base, 0, mem_size);
 

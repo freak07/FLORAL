@@ -356,6 +356,14 @@ static bool ipa_eth_net_event_unregister(struct ipa_eth_device *eth_dev,
 	return false;
 }
 
+static bool ipa_eth_net_update_link(struct ipa_eth_device *eth_dev)
+{
+	return netif_carrier_ok(eth_dev->net_dev) ?
+		!test_and_set_bit(IPA_ETH_IF_ST_LOWER_UP, &eth_dev->if_state) :
+		test_and_clear_bit(IPA_ETH_IF_ST_LOWER_UP, &eth_dev->if_state);
+
+}
+
 static bool ipa_eth_net_event_up(struct ipa_eth_device *eth_dev,
 		unsigned long event, void *ptr)
 {

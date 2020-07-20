@@ -108,15 +108,22 @@ int iaxxx_pm_get_sync(struct device *dev)
 		return -EINVAL;
 	}
 
-	if (!pm_runtime_enabled(dev)) {
-		dev_dbg(dev, "%s Run time PM not enabled\n", __func__);
-		return 0;
-	}
-
 	ret = pm_runtime_get_sync(dev);
-	if (ret < 0)
-		dev_err(dev, "%s() Fail. %d\n", __func__, ret);
-
+	if (ret < 0) {
+		if (ret == -EACCES) {
+			dev_dbg(dev, "%s() runtime PM disabled\n", __func__);
+			ret = 0;
+		} else if (ret == -EIO || ret == -EINVAL) {
+			/* When the chip crashes and we just triggered recovery
+			 * in pm_runtime_get_sync() context, it is expected to
+			 * get -EIO or -EINVAL here. Use pm_runtime_set_active
+			 * to clear the state of runtime_error.
+			 */
+			if (test_bit(IAXXX_FLG_FW_CRASH, &priv->flags))
+				pm_runtime_set_active(priv->dev);
+		} else
+			dev_err(dev, "%s() failed %d\n", __func__, ret);
+	}
 #endif
 	return ret;
 }
@@ -133,18 +140,17 @@ int iaxxx_pm_put_autosuspend(struct device *dev)
 		return -EINVAL;
 	}
 
-	if (!pm_runtime_enabled(dev)) {
-		dev_dbg(dev, "%s Run time PM not enabled\n", __func__);
-		return 0;
-	}
-
 	pm_runtime_mark_last_busy(dev);
 	ret = pm_runtime_put_sync_autosuspend(dev);
-	if (ret && ret != -EBUSY)
-		dev_err(dev, "%s(): fail %d\n", __func__, ret);
-
-	if (ret == -EBUSY)
-		ret = 0;
+	if (ret < 0) {
+		if (ret == -EACCES) {
+			dev_dbg(dev, "%s() runtime PM disabled\n", __func__);
+			ret = 0;
+		} else if (ret == -EBUSY)
+			ret = 0;
+		else
+			dev_err(dev, "%s() failed %d\n", __func__, ret);
+	}
 #endif
 	return ret;
 }
@@ -1138,7 +1144,7 @@ int iaxxx_check_and_powerup_core(struct iaxxx_priv *priv, uint32_t proc_id)
 	if (rc < 0) {
 		dev_err(priv->dev, "%s failed to get pm_sync rc= 0x%x\n",
 			__func__, rc);
-		return rc;
+		goto get_sync_err;
 	}
 
 	mutex_lock(&priv->proc_on_off_lock);
@@ -1164,6 +1170,7 @@ int iaxxx_check_and_powerup_core(struct iaxxx_priv *priv, uint32_t proc_id)
 
 exit:
 	mutex_unlock(&priv->proc_on_off_lock);
+get_sync_err:
 	iaxxx_pm_put_autosuspend(priv->dev);
 	return rc;
 }
