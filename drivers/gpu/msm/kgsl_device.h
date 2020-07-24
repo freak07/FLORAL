@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -470,10 +470,10 @@ struct kgsl_process_private {
 	struct kobject kobj;
 	struct dentry *debug_root;
 	struct {
-		atomic64_t cur;
-		atomic64_t max;
+		atomic_long_t cur;
+		uint64_t max;
 	} stats[KGSL_MEM_ENTRY_MAX];
-	atomic64_t gpumem_mapped;
+	atomic_long_t gpumem_mapped;
 	struct idr syncsource_idr;
 	spinlock_t syncsource_lock;
 	int fd_count;
@@ -567,16 +567,16 @@ struct kgsl_device *kgsl_get_device(int dev_idx);
 static inline void kgsl_process_add_stats(struct kgsl_process_private *priv,
 	unsigned int type, uint64_t size)
 {
-	u64 ret = atomic64_add_return(size, &priv->stats[type].cur);
+	u64 ret = atomic_long_add_return(size, &priv->stats[type].cur);
 
-	if (ret > atomic64_read(&priv->stats[type].max))
-		atomic64_set(&priv->stats[type].max, ret);
+	if (ret > priv->stats[type].max)
+		priv->stats[type].max = ret;
 }
 
 static inline void kgsl_process_sub_stats(struct kgsl_process_private *priv,
 	unsigned int type, uint64_t size)
 {
-	atomic64_sub(size, &priv->stats[type].cur);
+	atomic_long_sub(size, &priv->stats[type].cur);
 }
 
 static inline bool kgsl_is_register_offset(struct kgsl_device *device,
