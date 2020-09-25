@@ -441,9 +441,11 @@ static struct msm_soc_info cpu_of_id[] = {
 	/* atollab ID */
 	[443] = {MSM_CPU_ATOLL_AB, "ATOLL-AB"},
 
-	/* QCM6125 IDs*/
-	[467] = {MSM_CPU_QCM6125, "QCM6125"},
-	[468] = {MSM_CPU_QCS6125, "QCS6125"},
+	/* TRINKET-IOT IDs*/
+	[467] = {MSM_CPU_TRINKET_IOT, "TRINKET-IOT"},
+
+	/* TRINKETP-IOT IDs*/
+	[468] = {MSM_CPU_TRINKETP_IOT, "TRINKETP-IOT"},
 
 	/* SDM660 ID */
 	[317] = {MSM_CPU_SDM660, "SDM660"},
@@ -1445,13 +1447,13 @@ static void * __init setup_dummy_socinfo(void)
 		dummy_socinfo.id = 443;
 		strlcpy(dummy_socinfo.build_id, "atoll-ab - ",
 		sizeof(dummy_socinfo.build_id));
-	} else if (early_machine_is_qcm6125()) {
+	} else if (early_machine_is_trinket_iot()) {
 		dummy_socinfo.id = 467;
-		strlcpy(dummy_socinfo.build_id, "qcm6125 - ",
+		strlcpy(dummy_socinfo.build_id, "trinket-iot - ",
 		sizeof(dummy_socinfo.build_id));
-	} else if (early_machine_is_qcs6125()) {
+	} else if (early_machine_is_trinketp_iot()) {
 		dummy_socinfo.id = 468;
-		strlcpy(dummy_socinfo.build_id, "qcm6125 - ",
+		strlcpy(dummy_socinfo.build_id, "trinketp-iot - ",
 		sizeof(dummy_socinfo.build_id));
 	} else if (early_machine_is_sdm660()) {
 		dummy_socinfo.id = 317;

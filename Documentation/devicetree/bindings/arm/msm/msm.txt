@@ -94,12 +94,6 @@ SoCs:
 - SDA660
   compatible = "qcom,sda660"
 
-- QCM6125
-  compatible = "qcom,qcm6125"
-
-- QCS6125
-  compatible = "qcom,qcs6125"
-
 Generic board variants:
 
 - CDP device:
@@ -150,6 +144,11 @@ Generic board variants:
 - TTP device:
   compatible = "qcom,ttp"
 
+- TRINKET-IOT
+  compatible = "qcom,trinket-iot"
+
+- TRINKETP-IOT
+  compatible = "qcom,trinketp-iot"
 
 Boards (SoC type + board variant):
 
@@ -272,7 +271,8 @@ compatible = "qcom,sda660-mtp"
 compatible = "qcom,sda660-cdp"
 compatible = "qcom,sda660-qrd"
 compatible = "qcom,mdm9607-cdp"
-compatible = "qcom,qcm6125"
-compatible = "qcom,qcs6125"
-compatible = "qcom,qcm6125-idp"
-compatible = "qcom,qcs6125-idp"
+compatible = "qcom,trinket-iot"
+compatible = "qcom,trinketp-iot"
+compatible = "qcom,trinket-iot-idp"
+compatible = "qcom,trinketp-iot-idp"
+compatible = "qcom,qcs610-idp"
