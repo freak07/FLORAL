@@ -1524,10 +1524,7 @@ static enum ipa_client_type ipa3_mhi_get_client_by_chid(u32 chid)
 
 	switch (chid) {
 	case IPA_MHI_CLIENT_ADPL_IN:
-		if (!ipa3_ctx->ipa_in_cpe_cfg)
-			client = IPA_CLIENT_MHI_DPL_CONS;
-		else
-			client = IPA_CLIENT_MAX;
+		client = IPA_CLIENT_MHI_DPL_CONS;
 		break;
 	case IPA_MHI_CLIENT_IP_HW_QDSS:
 		client = IPA_CLIENT_MHI_QDSS_CONS;
