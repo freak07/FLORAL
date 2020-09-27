@@ -220,8 +220,6 @@ const char *ipa_clients_strings[IPA_CLIENT_MAX] = {
 	__stringify(IPA_CLIENT_MHI_LOW_LAT_CONS),
 	__stringify(IPA_CLIENT_QDSS_PROD),
 	__stringify(IPA_CLIENT_MHI_QDSS_CONS),
-	__stringify(RESERVERD_PROD_108),
-	__stringify(IPA_CLIENT_WLAN2_CONS1),
 };
 
 /**
@@ -3502,13 +3500,12 @@ int ipa_conn_wdi_pipes(struct ipa_wdi_conn_in_params *in,
 /**
  * ipa_disconn_wdi_pipes() - disconnect wdi pipes
  */
-int ipa_disconn_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx,
-	int ipa_ep_idx_tx1)
+int ipa_disconn_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx)
 {
 	int ret;
 
 	IPA_API_DISPATCH_RETURN(ipa_disconn_wdi_pipes, ipa_ep_idx_tx,
-		ipa_ep_idx_rx, ipa_ep_idx_tx1);
+		ipa_ep_idx_rx);
 
 	return ret;
 }
@@ -3516,13 +3513,12 @@ int ipa_disconn_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx,
 /**
  * ipa_enable_wdi_pipes() - enable wdi pipes
  */
-int ipa_enable_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx,
-	int ipa_ep_idx_tx1)
+int ipa_enable_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx)
 {
 	int ret;
 
 	IPA_API_DISPATCH_RETURN(ipa_enable_wdi_pipes, ipa_ep_idx_tx,
-		ipa_ep_idx_rx, ipa_ep_idx_tx1);
+		ipa_ep_idx_rx);
 
 	return ret;
 }
@@ -3530,13 +3526,12 @@ int ipa_enable_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx,
 /**
  * ipa_disable_wdi_pipes() - disable wdi pipes
  */
-int ipa_disable_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx,
-	int ipa_ep_idx_tx1)
+int ipa_disable_wdi_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx)
 {
 	int ret;
 
 	IPA_API_DISPATCH_RETURN(ipa_disable_wdi_pipes, ipa_ep_idx_tx,
-		ipa_ep_idx_rx, ipa_ep_idx_tx1);
+		ipa_ep_idx_rx);
 
 	return ret;
 }

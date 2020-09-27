@@ -2340,12 +2340,6 @@ static const struct ipa_ep_configuration ipa3_ep_mapping
 			IPA_DPS_HPS_SEQ_TYPE_INVALID,
 			QMB_MASTER_SELECT_DDR,
 			{ 24, 3, 8, 14, IPA_EE_AP, GSI_SMART_PRE_FETCH, 3 } },
-	[IPA_4_5][IPA_CLIENT_WLAN2_CONS1]          = {
-			true, IPA_v4_5_GROUP_UL_DL,
-			false,
-			IPA_DPS_HPS_SEQ_TYPE_INVALID,
-			QMB_MASTER_SELECT_DDR,
-			{ 27, 18, 8, 14, IPA_EE_AP, GSI_SMART_PRE_FETCH, 3 } },
 	[IPA_4_5][IPA_CLIENT_USB_CONS]            = {
 			true, IPA_v4_5_GROUP_UL_DL,
 			false,
@@ -2967,7 +2961,6 @@ int ipa3_get_clients_from_rm_resource(
 		clients->names[i++] = IPA_CLIENT_WLAN1_CONS;
 		clients->names[i++] = IPA_CLIENT_WLAN2_CONS;
 		clients->names[i++] = IPA_CLIENT_WLAN3_CONS;
-		clients->names[i++] = IPA_CLIENT_WLAN2_CONS1;
 		break;
 	case IPA_RM_RESOURCE_MHI_CONS:
 		clients->names[i++] = IPA_CLIENT_MHI_CONS;
@@ -3045,7 +3038,6 @@ bool ipa3_should_pipe_be_suspended(enum ipa_client_type client)
 	    client == IPA_CLIENT_WLAN1_CONS   ||
 	    client == IPA_CLIENT_WLAN2_CONS   ||
 	    client == IPA_CLIENT_WLAN3_CONS   ||
-	    client == IPA_CLIENT_WLAN2_CONS1  ||
 	    client == IPA_CLIENT_WLAN4_CONS   ||
 	    client == IPA_CLIENT_ODU_EMB_CONS ||
 	    client == IPA_CLIENT_ODU_TETH_CONS ||
