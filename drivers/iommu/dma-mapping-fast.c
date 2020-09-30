@@ -695,7 +695,7 @@ static struct dma_fast_smmu_mapping *__fast_smmu_create_mapping_sized(
 		fast->clean_bitmap = vzalloc(fast->bitmap_size);
 
 	if (!fast->clean_bitmap)
-		goto err3;
+		goto err_free_bitmap;
 
 	spin_lock_init(&fast->lock);
 
@@ -749,6 +749,7 @@ static void fast_smmu_reserve_pci_windows(struct device *dev,
 		start = (start - mapping->base) >> FAST_PAGE_SHIFT;
 		end = (end - mapping->base) >> FAST_PAGE_SHIFT;
 		bitmap_set(mapping->bitmap, start, end - start);
+		bitmap_set(mapping->clean_bitmap, start, end - start);
 	}
 	spin_unlock_irqrestore(&mapping->lock, flags);
 }
