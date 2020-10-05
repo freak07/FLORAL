@@ -53,8 +53,8 @@ extern void set_vibrate(int value);
 extern void set_vibrate_2(int value, int boost_level);
 extern void set_vibrate_boosted(int value);
 
-static int ifilter_switch = IFILTER_SWITCH_STOCK;
-static int ifilter_key = 0;
+static const int ifilter_switch = IFILTER_SWITCH_STOCK;
+static const int ifilter_key = 0;
 static struct input_dev * ifilter_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 static DEFINE_MUTEX(ifilteruncworklock);
@@ -64,8 +64,8 @@ static struct work_struct ifilter_input_work;
 static struct workqueue_struct *ifilter_vib_wq;
 static struct workqueue_struct *ifilter_pwr_wq;
 
-static int vib_strength = VIB_STRENGTH;
-static int unlock_vib_strength = VIB_STRENGTH;
+static const int vib_strength = VIB_STRENGTH;
+static const int unlock_vib_strength = VIB_STRENGTH;
 
 // touchscreen input handler input work queue and work
 static struct workqueue_struct *ts_input_wq;
@@ -92,18 +92,96 @@ unsigned int get_global_seconds(void) {
 
 static struct workqueue_struct *kcal_listener_wq;
 
+#define S_MIN_SECS 60
+
+// --- smart notification settings --
+// how many inactive minutes to start trimming some types of notifications' periodicity/length of timeout/repetitions
+// should be set to 0 if smart trim is inactive
+static const int smart_trim_inactive_seconds = 6 * S_MIN_SECS;// 6 mins
+// notif settings for trim period
+static const int smart_trim_kad = NOTIF_TRIM;
+static const int smart_trim_flashlight = NOTIF_TRIM;
+static const int smart_trim_vib_reminder = NOTIF_DEFAULT;
+static const int smart_trim_notif_booster = NOTIF_DEFAULT;
+static const int smart_trim_bln_light = NOTIF_DEFAULT;
+static const int smart_trim_pulse_light = NOTIF_DEFAULT;
+
+// how many inactive minutes to start stopping some types of notifications
+// should be set to 0 if smart stop is inactive
+static const int smart_stop_inactive_seconds = 60 * S_MIN_SECS; // 60 mins
+// notif settings for stop period
+static const int smart_stop_kad = NOTIF_STOP;
+static const int smart_stop_flashlight = NOTIF_DIM;
+static const int smart_stop_vib_reminder = NOTIF_TRIM;
+static const int smart_stop_notif_booster = NOTIF_DEFAULT;
+static const int smart_stop_bln_light = NOTIF_TRIM;
+static const int smart_stop_pulse_light = NOTIF_DEFAULT;
+
+// how many inactive minutes to start hibarnete (extended stop) some types of notifications
+// should be set to 0 if smart stop is inactive
+static const int smart_hibernate_inactive_seconds = 4 * 60 * S_MIN_SECS; // 4 * 60 mins
+// notif settings for hibernate period
+static const int smart_hibernate_kad = NOTIF_STOP;
+static const int smart_hibernate_flashlight = NOTIF_STOP;
+static const int smart_hibernate_vib_reminder = NOTIF_STOP;
+static const int smart_hibernate_notif_booster = NOTIF_STOP;
+static const int smart_hibernate_bln_light = NOTIF_DIM;
+static const int smart_hibernate_pulse_light = NOTIF_DIM;
+
+static const int phone_ring_in_silent_mode = 0;
+static const int face_down_screen_off = 0;
+static const int face_down_screen_off_vib = 0;
+
+static const int smart_silent_mode_stop = 0;
+static const int smart_silent_mode_hibernate = 0;
+
+// --------------------------------------------------------------------------------
+// uci configs --------------------------------------------------------------------
+// --------------------------------------------------------------------------------
+static int uci_fingerprint_mode = ifilter_switch;
+static int uci_fingerprint_key = ifilter_key;
+static int uci_fp_vib_strength = vib_strength;
+static int uci_fp_unlock_vib_strength = unlock_vib_strength;
+static int uci_smart_trim_inactive_mins = smart_trim_inactive_seconds/60;
+static int uci_smart_stop_inactive_mins = smart_stop_inactive_seconds/60;
+static int uci_smart_hibernate_inactive_mins = smart_hibernate_inactive_seconds/60;
+static int uci_smart_silent_mode_hibernate = smart_silent_mode_hibernate;
+static int uci_smart_silent_mode_stop = smart_silent_mode_stop;
+static int uci_phone_ring_in_silent_mode = phone_ring_in_silent_mode;
+static int uci_face_down_screen_off = face_down_screen_off;
+static int uci_face_down_screen_off_vib = face_down_screen_off_vib;
+
+
+static void uci_user_listener(void) {
+	uci_fingerprint_mode = uci_get_user_property_int_mm("fingerprint_mode", ifilter_switch, 0, 3);
+	uci_fingerprint_key = uci_get_user_property_int_mm("fingerprint_key", ifilter_key, 0, 2);
+	uci_fp_vib_strength = uci_get_user_property_int_mm("fp_vib_strength", vib_strength, 0, 90);
+	uci_fp_unlock_vib_strength = uci_get_user_property_int_mm("fp_unlock_vib_strength", unlock_vib_strength, 0, 90);
+
+	uci_smart_trim_inactive_mins = uci_get_user_property_int_mm("smart_trim_inactive_mins", smart_trim_inactive_seconds/60, 0, 2 * 24 * 60);
+	uci_smart_stop_inactive_mins = uci_get_user_property_int_mm("smart_stop_inactive_mins", smart_stop_inactive_seconds/60, 0, 2 * 24 * 60);
+	uci_smart_hibernate_inactive_mins = uci_get_user_property_int_mm("smart_hibernate_inactive_mins", smart_hibernate_inactive_seconds/60, 0, 2 * 24 * 60);
+	uci_smart_silent_mode_hibernate = uci_get_user_property_int_mm("smart_silent_mode_hibernate", smart_silent_mode_hibernate, 0, 1);
+	uci_smart_silent_mode_stop = uci_get_user_property_int_mm("smart_silent_mode_stop", smart_silent_mode_stop, 0, 1);
+
+	uci_phone_ring_in_silent_mode = uci_get_user_property_int_mm("phone_ring_in_silent_mode", phone_ring_in_silent_mode, 0, 1);
+
+	uci_face_down_screen_off = uci_get_user_property_int_mm("face_down_screen_off", face_down_screen_off, 0, 1);
+	uci_face_down_screen_off_vib = uci_get_user_property_int_mm("face_down_screen_off_vib", face_down_screen_off_vib, 0, 1);
+}
+
 static int get_ifilter_switch(void) {
-	return uci_get_user_property_int_mm("fingerprint_mode", ifilter_switch, 0, 3);
+	return uci_fingerprint_mode;
 }
 static int get_ifilter_key(void) {
-	int fp_key = uci_get_user_property_int_mm("fingerprint_key", ifilter_key, 0, 2);
+	int fp_key = uci_fingerprint_key;
 	return fp_key==2?KEY_KPDOT:(fp_key==1?KEY_APPSELECT:KEY_HOME);
 }
 static int get_vib_strength(void) {
-	return uci_get_user_property_int_mm("fp_vib_strength", vib_strength, 0, 90);
+	return uci_fp_vib_strength;
 }
 static int get_unlock_vib_strength(void) {
-	return uci_get_user_property_int_mm("fp_unlock_vib_strength", unlock_vib_strength, 0, 90);
+	return uci_fp_unlock_vib_strength;
 }
 
 // early screen on flag
@@ -118,42 +196,6 @@ int input_is_screen_on(void) {
 }
 EXPORT_SYMBOL(input_is_screen_on);
 
-#define S_MIN_SECS 60
-
-// --- smart notification settings --
-// how many inactive minutes to start trimming some types of notifications' periodicity/length of timeout/repetitions
-// should be set to 0 if smart trim is inactive
-static int smart_trim_inactive_seconds = 6 * S_MIN_SECS;// 6 mins
-// notif settings for trim period
-static int smart_trim_kad = NOTIF_TRIM;
-static int smart_trim_flashlight = NOTIF_TRIM;
-static int smart_trim_vib_reminder = NOTIF_DEFAULT;
-static int smart_trim_notif_booster = NOTIF_DEFAULT;
-static int smart_trim_bln_light = NOTIF_DEFAULT;
-static int smart_trim_pulse_light = NOTIF_DEFAULT;
-
-// how many inactive minutes to start stopping some types of notifications
-// should be set to 0 if smart stop is inactive
-static int smart_stop_inactive_seconds = 60 * S_MIN_SECS; // 60 mins
-// notif settings for stop period
-static int smart_stop_kad = NOTIF_STOP;
-static int smart_stop_flashlight = NOTIF_DIM;
-static int smart_stop_vib_reminder = NOTIF_TRIM;
-static int smart_stop_notif_booster = NOTIF_DEFAULT;
-static int smart_stop_bln_light = NOTIF_TRIM;
-static int smart_stop_pulse_light = NOTIF_DEFAULT;
-
-// how many inactive minutes to start hibarnete (extended stop) some types of notifications
-// should be set to 0 if smart stop is inactive
-static int smart_hibernate_inactive_seconds = 4 * 60 * S_MIN_SECS; // 4 * 60 mins
-// notif settings for hibernate period
-static int smart_hibernate_kad = NOTIF_STOP;
-static int smart_hibernate_flashlight = NOTIF_STOP;
-static int smart_hibernate_vib_reminder = NOTIF_STOP;
-static int smart_hibernate_notif_booster = NOTIF_STOP;
-static int smart_hibernate_bln_light = NOTIF_DIM;
-static int smart_hibernate_pulse_light = NOTIF_DIM;
-
 
 /**
 * this variable is 1 if KAD was blocked only by Proximity or not being yet Locked. On sys uci listener check this, and start kad if blocking is over.
@@ -162,23 +204,21 @@ static int kad_should_start_on_uci_sys_change = 0;
 void kernel_ambient_display(void);
 void kernel_ambient_display_led_based(void);
 
-static int smart_silent_mode_stop = 1;
-static int smart_silent_mode_hibernate = 1;
 
 int uci_get_smart_trim_inactive_seconds(void) {
-	return uci_get_user_property_int_mm("smart_trim_inactive_mins", smart_trim_inactive_seconds/60, 0, 2 * 24 * 60)*60;
+	return uci_smart_trim_inactive_mins*60;
 }
 int uci_get_smart_stop_inactive_seconds(void) {
-	return uci_get_user_property_int_mm("smart_stop_inactive_mins", smart_stop_inactive_seconds/60, 0, 2 * 24 * 60)*60;
+	return uci_smart_stop_inactive_mins*60;
 }
 int uci_get_smart_hibernate_inactive_seconds(void) {
-	return uci_get_user_property_int_mm("smart_hibernate_inactive_mins", smart_hibernate_inactive_seconds/60, 0, 2 * 24 * 60)*60;
+	return uci_smart_hibernate_inactive_mins*60;
 }
 int uci_get_smart_silent_mode_hibernate(void) {
-	return uci_get_user_property_int_mm("smart_silent_mode_hibernate", smart_silent_mode_hibernate, 0, 1);
+	return uci_smart_silent_mode_hibernate;
 }
 int uci_get_smart_silent_mode_stop(void) {
-	return uci_get_user_property_int_mm("smart_silent_mode_stop", smart_silent_mode_stop, 0, 1);
+	return uci_smart_silent_mode_stop;
 }
 
 int ifilter_silent_mode = 0;
@@ -204,9 +244,8 @@ int silent_mode_stop(void) {
 	return 0;
 }
 
-static int phone_ring_in_silent_mode = 0;
 static int get_phone_ring_in_silent_mode(void) {
-	return uci_get_user_property_int_mm("phone_ring_in_silent_mode", phone_ring_in_silent_mode, 0, 1);
+	return uci_phone_ring_in_silent_mode;
 }
 
 static struct alarm vibrate_rtc;
@@ -218,15 +257,13 @@ static enum alarmtimer_restart vibrate_rtc_callback(struct alarm *al, ktime_t no
 }
 
 
-static int face_down_screen_off = 1;
 static int get_face_down_screen_off(void) {
-	return uci_get_user_property_int_mm("face_down_screen_off", face_down_screen_off, 0, 1);
+	return uci_face_down_screen_off;
 }
 
 // should vibrate when face down screen off gesture triggers..?
-static int face_down_screen_off_vib = 1;
 static int get_face_down_screen_off_vib(void) {
-	return uci_get_user_property_int_mm("face_down_screen_off_vib", face_down_screen_off_vib, 0, 1);
+	return uci_face_down_screen_off_vib;
 }
 
 bool should_screen_off_face_down(int screen_timeout_sec, int face_down);
@@ -3243,6 +3280,7 @@ static int __init ifilter_init(void)
 	alarm_init(&triple_tap_rtc, ALARM_REALTIME,
 		triple_tap_rtc_callback);
 
+	uci_add_user_listener(uci_user_listener);
 	uci_add_sys_listener(ifilter_uci_sys_listener);
 	ntf_add_listener(ntf_listener);
 
