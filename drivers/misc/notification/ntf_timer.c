@@ -56,76 +56,134 @@ EXPORT_SYMBOL(ntf_set_cam_flashlight);
 #define DEFAULT_WAIT_INC_MAX 8
 
 // default switches
-static int flash_blink_on  = 1;
-static int flash_blink_bright  = 1; // apply bright flash on each X number
-static int flash_blink_bright_number  = 5; // X number when bright flash should be done
-static int flash_blink_number = DEFAULT_BLINK_NUMBER;
-static int flash_blink_wait_sec = DEFAULT_BLINK_WAIT_SEC;
-static int flash_blink_wait_inc = DEFAULT_WAIT_INC;
-static int flash_blink_wait_inc_max = DEFAULT_WAIT_INC_MAX;
+static const int flash_blink_on  = 0;
+static const int flash_blink_bright  = 1; // apply bright flash on each X number
+static const int flash_blink_bright_number  = 5; // X number when bright flash should be done
+static const int flash_blink_number = DEFAULT_BLINK_NUMBER;
+static const int flash_blink_wait_sec = DEFAULT_BLINK_WAIT_SEC;
+static const int flash_blink_wait_inc = DEFAULT_WAIT_INC;
+static const int flash_blink_wait_inc_max = DEFAULT_WAIT_INC_MAX;
 #ifdef CONFIG_UCI_NOTIFICATIONS_DETECT_VIBRATIONS
-static int haptic_mode = 1; // 0 - always blink, 1 - only blink with haptic vibration notifications
+static const int haptic_mode = 1; // 0 - always blink, 1 - only blink with haptic vibration notifications
 #else
-static int haptic_mode = 0; // 0 - always blink, 1 - only blink with haptic vibration notifications
+static const int haptic_mode = 0; // 0 - always blink, 1 - only blink with haptic vibration notifications
 #endif
-static int flash_only_face_down = 1;
+static const int flash_only_face_down = 1;
+
+// dim mode switches
+static const int dim_mode = 1; // 0 - no , 1 - darker dim flash, 2 - fully off dim
+static const int dim_use_period = 1; // 0 - don't use dimming period hours, 1 - use hours, dim only between them
+static const int dim_start_hour = 22; // start hour
+static const int dim_end_hour = 6; // end hour
+
+#define DEFAULT_VIB_SLOW 12
+#define DEFAULT_VIB_LENGTH 250
+
+// on off:
+static const int vib_notification_reminder = 0;
+// how oftern vib
+static const int vib_notification_slowness = DEFAULT_VIB_SLOW;
+// how long vibration motor should be on for one reminder buzz...
+static const int vib_notification_length = DEFAULT_VIB_LENGTH;
+
+
 
 static bool in_call = false;
 
 static bool flash_start_queued = false;
 
+
+// uci properties --------------------------------
+static int uci_flash_ignore_vibration = 0;
+static int uci_flash_haptic_mode = haptic_mode;
+static int uci_flash_blink_bright = flash_blink_bright;
+static int uci_flash_blink_bright_number = flash_blink_bright_number;
+static int uci_flash_blink_bright_strong = 0;
+static int uci_flash_blink_number = flash_blink_number;
+static int uci_flash_blink_wait_sec = flash_blink_wait_sec;
+static int uci_flash_blink_wait_inc = flash_blink_wait_inc;
+static int uci_flash_blink_wait_inc_max = flash_blink_wait_inc_max;
+static int uci_flash_blink = flash_blink_on;
+static int uci_flash_dim_mode = dim_mode;
+static int uci_flash_dim_use_period = dim_use_period;
+static int uci_flash_dim_start_hour = dim_start_hour;
+static int uci_flash_dim_end_hour = dim_end_hour;
+static int uci_flash_only_face_down = flash_only_face_down;
+
+static int uci_vib_notification_reminder = vib_notification_reminder;
+static int uci_vib_notification_slowness = vib_notification_slowness;
+static int uci_vib_notification_length = vib_notification_length;
+
+static void uci_user_listener(void) {
+	uci_flash_ignore_vibration = uci_get_user_property_int_mm("flash_ignore_vibration", 0, 0, 1);
+	uci_flash_haptic_mode = uci_get_user_property_int_mm("flash_haptic_mode", haptic_mode, 0, 1);
+
+	uci_flash_blink_bright = uci_get_user_property_int_mm("flash_blink_bright", flash_blink_bright, 0, 1);
+	uci_flash_blink_bright_number = uci_get_user_property_int_mm("flash_blink_bright_number", flash_blink_bright_number, 1, 10);
+	uci_flash_blink_bright_strong = uci_get_user_property_int_mm("flash_blink_bright_strong", 0, 0, 1);
+	uci_flash_blink_number = uci_get_user_property_int_mm("flash_blink_number", flash_blink_number, 0, 50);
+	uci_flash_blink_wait_sec = uci_get_user_property_int_mm("flash_blink_wait_sec", flash_blink_wait_sec, 1, 50);
+	uci_flash_blink_wait_inc = uci_get_user_property_int_mm("flash_blink_wait_inc", flash_blink_wait_inc, 0, 1);
+	uci_flash_blink_wait_inc_max = uci_get_user_property_int_mm("flash_blink_wait_inc_max", flash_blink_wait_inc_max, 1, 8);
+	uci_flash_dim_mode = uci_get_user_property_int_mm("flash_dim_mode", dim_mode, 0, 2);
+	uci_flash_dim_use_period = uci_get_user_property_int_mm("flash_dim_use_period", dim_use_period, 0, 1);
+	uci_flash_dim_start_hour =uci_get_user_property_int_mm("flash_dim_start_hour", dim_start_hour, 0, 23);
+	uci_flash_dim_end_hour =uci_get_user_property_int_mm("flash_dim_end_hour", dim_end_hour, 0, 23);
+	uci_flash_only_face_down =uci_get_user_property_int_mm("flash_only_face_down", flash_only_face_down, 0, 1);
+	uci_flash_blink =!!uci_get_user_property_int_mm("flash_blink", flash_blink_on, 0, 1);
+
+	uci_vib_notification_slowness = uci_get_user_property_int_mm("vib_notification_slowness", vib_notification_slowness, 0, 30);
+	uci_vib_notification_length = uci_get_user_property_int_mm("vib_notification_length", vib_notification_length, 0, 500);
+	uci_vib_notification_reminder = !!uci_get_user_property_int_mm("vib_notification_reminder", vib_notification_reminder, 0, 1);
+
+}
+
 static int get_flash_ignore_vibration(void) {
-	return uci_get_user_property_int_mm("flash_ignore_vibration", 0, 0, 1);
+	return uci_flash_ignore_vibration;
 }
 static int uci_get_flash_haptic_mode(void) {
 #ifdef CONFIG_UCI_NOTIFICATIONS_DETECT_VIBRATIONS
-	return uci_get_user_property_int_mm("flash_haptic_mode", haptic_mode, 0, 1);
+	return uci_flash_haptic_mode;
 #else
 	return haptic_mode;
 #endif
 }
 static int uci_get_flash_blink_bright(void) {
-	return uci_get_user_property_int_mm("flash_blink_bright", flash_blink_bright, 0, 1);
+	return uci_flash_blink_bright;
 }
 static int uci_get_flash_blink_bright_number(void) {
-	return uci_get_user_property_int_mm("flash_blink_bright_number", flash_blink_bright_number, 1, 10);
+	return uci_flash_blink_bright_number;
 }
 static int uci_get_flash_blink_bright_strong(void) {
-	return uci_get_user_property_int_mm("flash_blink_bright_strong", 0, 0, 1);
+	return uci_flash_blink_bright_strong;
 }
 static int uci_get_flash_blink_number(void) {
-	return uci_get_user_property_int_mm("flash_blink_number", flash_blink_number, 0, 50);
+	return uci_flash_blink_number;
 }
 static int uci_get_flash_blink_wait_sec(void) {
-	return uci_get_user_property_int_mm("flash_blink_wait_sec", flash_blink_wait_sec, 1, 50);
+	return uci_flash_blink_wait_sec;
 }
 static int uci_get_flash_blink_wait_inc(void) {
-	return uci_get_user_property_int_mm("flash_blink_wait_inc", flash_blink_wait_inc, 0, 1);
+	return uci_flash_blink_wait_inc;
 }
 static int uci_get_flash_blink_wait_inc_max(void) {
-	return uci_get_user_property_int_mm("flash_blink_wait_inc_max", flash_blink_wait_inc_max, 1, 8);
+	return uci_flash_blink_wait_inc_max;
 }
-
-// dim mode switches
-static int dim_mode = 1; // 0 - no , 1 - darker dim flash, 2 - fully off dim
-static int dim_use_period = 1; // 0 - don't use dimming period hours, 1 - use hours, dim only between them
-static int dim_start_hour = 22; // start hour
-static int dim_end_hour = 6; // end hour
 
 static int uci_get_flash_dim_mode(void) {
-	return uci_get_user_property_int_mm("flash_dim_mode", dim_mode, 0, 2);
+	return uci_flash_dim_mode;
 }
 static int uci_get_flash_dim_use_period(void) {
-	return uci_get_user_property_int_mm("flash_dim_use_period", dim_use_period, 0, 1);
+	return uci_flash_dim_use_period;
 }
 static int uci_get_flash_dim_start_hour(void) {
-	return uci_get_user_property_int_mm("flash_dim_start_hour", dim_start_hour, 0, 23);
+	return uci_flash_dim_start_hour;
 }
 static int uci_get_flash_dim_end_hour(void) {
-	return uci_get_user_property_int_mm("flash_dim_end_hour", dim_end_hour, 0, 23);
+	return uci_flash_dim_end_hour;
 }
 static int uci_get_flash_only_face_down(void) {
-	return uci_get_user_property_int_mm("flash_only_face_down", flash_only_face_down, 0, 1);
+	return uci_flash_only_face_down;
 }
 
 extern bool ntf_face_down;
@@ -139,7 +197,7 @@ void flash_stop_blink(void);
 static int smart_get_flash_blink_on(void) {
 	int ret = 0;
 	int level = smart_get_notification_level(NOTIF_FLASHLIGHT);
-	if (uci_get_user_property_int_mm("flash_blink", flash_blink_on, 0, 1)) {
+	if (uci_flash_blink) {
 		if (level!=NOTIF_STOP) {
 			ret = 1;
 		}
@@ -218,52 +276,31 @@ int is_dim_blink_needed(void)
 	return 0;
 }
 
-#define DEFAULT_VIB_SLOW 12
-#define DEFAULT_VIB_LENGTH 250
-
-// on off:
-static int vib_notification_reminder = 0;
-// how oftern vib
-static int vib_notification_slowness = DEFAULT_VIB_SLOW;
-// how long vibration motor should be on for one reminder buzz...
-static int vib_notification_length = DEFAULT_VIB_LENGTH;
 
 static int uci_get_vib_notification_slowness(void) {
-	return uci_get_user_property_int_mm("vib_notification_slowness", vib_notification_slowness, 0, 30);
+	return uci_vib_notification_slowness;
 }
 static int uci_get_vib_notification_length(void) {
-	return uci_get_user_property_int_mm("vib_notification_length", vib_notification_length, 0, 500);
+	return uci_vib_notification_length;
 }
 
-void set_vib_notification_reminder(int value) {
-	vib_notification_reminder = !!value;
-}
-EXPORT_SYMBOL(set_vib_notification_reminder);
 int get_vib_notification_reminder(void) {
-	return vib_notification_reminder;
+	return uci_vib_notification_reminder;
 }
 EXPORT_SYMBOL(get_vib_notification_reminder);
-void set_vib_notification_slowness(int value) {
-	vib_notification_slowness = value%31;
-}
-EXPORT_SYMBOL(set_vib_notification_slowness);
 int get_vib_notification_slowness(void) {
-	return vib_notification_slowness;
+	return uci_vib_notification_slowness;
 }
 EXPORT_SYMBOL(get_vib_notification_slowness);
-void set_vib_notification_length(int value) {
-	vib_notification_length = value%500;
-}
-EXPORT_SYMBOL(set_vib_notification_length);
 int get_vib_notification_length(void) {
-	return vib_notification_length;
+	return uci_vib_notification_length;
 }
 EXPORT_SYMBOL(get_vib_notification_length);
 
 static int smart_get_vib_notification_reminder(void) {
 	int ret = 0;
 	if (ntf_silent) return 0; // do not vibrate in silent mode at all, regadless of configurations
-	if (uci_get_user_property_int_mm("vib_notification_reminder", vib_notification_reminder, 0, 1)) {
+	if (uci_vib_notification_reminder) {
 		int level = smart_get_notification_level(NOTIF_VIB_REMINDER);
 		if (level!=NOTIF_STOP) {
 			pr_info("%s smart_notif =========== level: %d vib_notification_reminder %d \n",__func__, level, ret);
@@ -686,6 +723,7 @@ static int __init ntf_timer_init_module(void)
 #ifdef CONFIG_UCI_NOTIFICATIONS
 	ntf_add_listener(ntf_listener);
 #endif
+	uci_add_user_listener(uci_user_listener);
 	init_done = 1;
         return rc;
 }
