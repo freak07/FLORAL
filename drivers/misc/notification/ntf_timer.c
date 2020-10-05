@@ -63,12 +63,10 @@ static int flash_blink_number = DEFAULT_BLINK_NUMBER;
 static int flash_blink_wait_sec = DEFAULT_BLINK_WAIT_SEC;
 static int flash_blink_wait_inc = DEFAULT_WAIT_INC;
 static int flash_blink_wait_inc_max = DEFAULT_WAIT_INC_MAX;
-# if 0
 #ifdef CONFIG_UCI_NOTIFICATIONS_DETECT_VIBRATIONS
 static int haptic_mode = 1; // 0 - always blink, 1 - only blink with haptic vibration notifications
 #else
 static int haptic_mode = 0; // 0 - always blink, 1 - only blink with haptic vibration notifications
-#endif
 #endif
 static int flash_only_face_down = 1;
 
@@ -76,7 +74,6 @@ static bool in_call = false;
 
 static bool flash_start_queued = false;
 
-#if 0
 static int get_flash_ignore_vibration(void) {
 	return uci_get_user_property_int_mm("flash_ignore_vibration", 0, 0, 1);
 }
@@ -87,7 +84,6 @@ static int uci_get_flash_haptic_mode(void) {
 	return haptic_mode;
 #endif
 }
-#endif
 static int uci_get_flash_blink_bright(void) {
 	return uci_get_user_property_int_mm("flash_blink_bright", flash_blink_bright, 0, 1);
 }
@@ -525,12 +521,9 @@ void flash_blink(bool haptic) {
 	pr_info("%s [flashwake] flash_blink\n",__func__);
 	// is flash blink on?
 	if (!smart_get_flash_blink_on()) return;
-
-#if 0
 	// if not a haptic notificcation and haptic blink mode on, do not do blinking...
 	if (!haptic && uci_get_flash_haptic_mode()) return;
 	if (haptic && get_flash_ignore_vibration()) return;
-#endif
 	if (in_call) return;
 
 	// if torch i on, don't blink
