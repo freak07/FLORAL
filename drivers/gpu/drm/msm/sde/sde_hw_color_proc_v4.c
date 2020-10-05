@@ -221,7 +221,31 @@ static int stored_enable = 0;
 extern void kcal_force_update(void);
 
 static bool first_init = true;
+
+static int uci_enable = false;
+static int uci_r = 256;
+static int uci_g = 256;
+static int uci_b = 256;
+static int uci_min = 40;
+static int uci_sat = 256;
+static int uci_cont = 256;
+static int uci_val = 256;
+
 static void uci_user_listener(void) {
+	//pr_info("%s [CLEANSLATE] kcal setup... \n",__func__);
+        uci_enable = uci_get_user_property_int_mm("kcal_enable", uci_enable, 0, 1);
+        uci_r = uci_get_user_property_int_mm("kcal_red", uci_r, 0, 256);
+        uci_g = uci_get_user_property_int_mm("kcal_green", uci_g, 0, 256);
+        uci_b = uci_get_user_property_int_mm("kcal_blue", uci_b, 0, 256);
+        uci_min = uci_get_user_property_int_mm("kcal_min", uci_min, 0, 256);
+	if (uci_r<uci_min) uci_r= uci_min;
+	if (uci_g<uci_min) uci_g= uci_min;
+	if (uci_b<uci_min) uci_b= uci_min;
+        uci_sat = uci_get_user_property_int_mm("kcal_sat", uci_sat, 128, 383);
+	// don't add HUE, not much useful
+        //hue = uci_get_user_property_int_mm("kcal_hue", hue, 0, 255);
+        uci_cont = uci_get_user_property_int_mm("kcal_cont", uci_cont,128, 383);
+        uci_val = uci_get_user_property_int_mm("kcal_val", uci_val, 128, 383);
 	kcal_force_update();
 }
 #endif
@@ -248,20 +272,14 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 		return;
 	}
 #if 1
-	//pr_info("%s [CLEANSLATE] kcal setup... \n",__func__);
-        enable = uci_get_user_property_int_mm("kcal_enable", enable, 0, 1);
-        r = uci_get_user_property_int_mm("kcal_red", r, 0, 256);
-        g = uci_get_user_property_int_mm("kcal_green", g, 0, 256);
-        b = uci_get_user_property_int_mm("kcal_blue", b, 0, 256);
-        min = uci_get_user_property_int_mm("kcal_min", min, 0, 256);
-	if (r<min) r= min;
-	if (g<min) g= min;
-	if (b<min) b= min;
-        sat = uci_get_user_property_int_mm("kcal_sat", sat, 128, 383);
-	// don't add HUE, not much useful
-        //hue = uci_get_user_property_int_mm("kcal_hue", hue, 0, 255);
-        cont = uci_get_user_property_int_mm("kcal_cont", cont,128, 383);
-        val = uci_get_user_property_int_mm("kcal_val", val, 128, 383);
+	enable = uci_enable;
+	r = uci_r;
+	g = uci_g;
+	b = uci_b;
+	min = uci_min;
+	sat = uci_sat;
+	cont = uci_cont;
+	val = uci_val;
 	if (!enable) {
 		// disabled, return to defaults
 		sat = 255;
