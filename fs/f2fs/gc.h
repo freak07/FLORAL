@@ -15,10 +15,10 @@
 #define DEF_GC_THREAD_MAX_SLEEP_TIME	60000
 #define DEF_GC_THREAD_NOGC_SLEEP_TIME	300000	/* wait 5 min */
 
-/* choose candidates from sections which has age of more than 7 days */
-#define DEF_GC_THREAD_AGE_THRESHOLD		(60 * 60 * 24 * 7)
-#define DEF_GC_THREAD_CANDIDATE_RATIO		20	/* select 20% oldest sections as candidates */
-#define DEF_GC_THREAD_MAX_CANDIDATE_COUNT	10	/* select at most 10 sections as candidates */
+/* choose candidates from sections which has age of more than 1 days */
+#define DEF_GC_THREAD_AGE_THRESHOLD		(60 * 60 * 24 * 1)
+#define DEF_GC_THREAD_CANDIDATE_RATIO		30	/* select 20% oldest sections as candidates */
+#define DEF_GC_THREAD_MAX_CANDIDATE_COUNT	15	/* select at most 10 sections as candidates */
 #define DEF_GC_THREAD_AGE_WEIGHT		60	/* age weight */
 #define DEFAULT_ACCURACY_CLASS			10000	/* accuracy class */
 
