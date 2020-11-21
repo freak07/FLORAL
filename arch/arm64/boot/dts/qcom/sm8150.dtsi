@@ -706,6 +706,7 @@
 		disp_rdump_memory: disp_rdump_region {
 			reg = <0x0 0x9c000000 0x0 0x02400000>;
 			label = "disp_rdump_region";
+			status = "disabled";
 		};
 
 		adsp_mem: adsp_region {
