@@ -30,7 +30,6 @@
 #include <asm/cpu_ops.h>
 #include <asm/mmu_context.h>
 #include <asm/processor.h>
-#include <asm/scs.h>
 #include <asm/sysreg.h>
 #include <asm/traps.h>
 #include <asm/virt.h>
@@ -900,13 +899,9 @@ kpti_install_ng_mappings(const struct arm64_cpu_capabilities *__unused)
 
 	remap_fn = (void *)__pa_function(idmap_kpti_install_ng_mappings);
 
-	scs_save(current);
-
 	cpu_install_idmap();
 	remap_fn(cpu, num_online_cpus(), __pa_symbol(swapper_pg_dir));
 	cpu_uninstall_idmap();
-
-	scs_load(current);
 
 	if (!cpu)
 		kpti_applied = true;
@@ -1044,7 +1039,7 @@ static int ssbs_emulation_handler(struct pt_regs *regs, u32 instr)
 
 static struct undef_hook ssbs_emulation_hook = {
 	.instr_mask	= ~(1U << CRm_shift),
-	.instr_val	= 0xd500001f | REG_PSTATE_SSBS_IMM,
+	.instr_val	= 0xd500401f | PSTATE_SSBS,
 	.fn		= ssbs_emulation_handler,
 };
 
@@ -1067,6 +1062,7 @@ static void cpu_enable_ssbs(const struct arm64_cpu_capabilities *__unused)
 		arm64_set_ssbd_mitigation(true);
 	}
 }
+
 #endif /* CONFIG_ARM64_SSBD */
 
 static const struct arm64_cpu_capabilities arm64_features[] = {
@@ -1221,18 +1217,6 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.sign = FTR_UNSIGNED,
 		.min_field_value = ID_AA64PFR1_SSBS_PSTATE_ONLY,
 		.cpu_enable = cpu_enable_ssbs,
-	},
-#endif
-#ifdef CONFIG_ARM64_SSBD
-	{
-		.desc = "Speculative Store Bypassing Safe (SSBS)",
-		.capability = ARM64_SSBS,
-		.matches = has_cpuid_feature,
-		.sys_reg = SYS_ID_AA64PFR1_EL1,
-		.field_pos = ID_AA64PFR1_SSBS_SHIFT,
-		.sign = FTR_UNSIGNED,
-		.min_field_value = ID_AA64PFR1_SSBS_PSTATE_ONLY,
-		.enable = cpu_enable_ssbs,
 	},
 #endif
 	{},

@@ -487,12 +487,7 @@ static int xhci_plat_resume(struct device *dev)
 	if (ret)
 		return ret;
 
-	ret = xhci_resume(xhci, false);
-	pm_runtime_disable(dev);
-	pm_runtime_set_active(dev);
-	pm_runtime_enable(dev);
-
-	return ret;
+	return xhci_resume(xhci, 0);
 }
 
 static int xhci_plat_restore(struct device *dev)

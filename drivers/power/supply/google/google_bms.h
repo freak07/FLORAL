@@ -133,15 +133,15 @@ struct ttf_tier_stat {
 
 struct gbms_ce_tier_stats {
 	int8_t		temp_idx;
-	uint8_t		vtier_idx;
+	int8_t		vtier_idx;
 
 	int16_t		soc_in;		/* 8.8 */
 	uint16_t	cc_in;
 	uint16_t	cc_total;
 
-	uint16_t	time_fast;
-	uint16_t	time_taper;
-	uint16_t	time_other;
+	uint32_t	time_fast;
+	uint32_t	time_taper;
+	uint32_t	time_other;
 
 	int16_t		temp_in;
 	int16_t		temp_min;
@@ -199,6 +199,74 @@ struct batt_ttf_stats {
 	struct logbuffer *ttf_log;
 };
 
+/*
+ * health based changing can be enabled from userspace with a deadline
+ *
+ * initial state:
+ *	deadline = 0, rest_state = CHG_HEALTH_INACTIVE
+ *
+ * deadline = -1 from userspace
+ *	CHG_HEALTH_* -> CHG_HEALTH_USER_DISABLED (settings disabled)
+ * on deadline = 0 from userspace
+ *	CHG_HEALTH_* -> CHG_HEALTH_USER_DISABLED (alarm, plug or misc. disabled)
+ * on deadline > 0 from userspace
+ *	CHG_HEALTH_* -> CHG_HEALTH_ENABLED
+ *
+ *  from CHG_HEALTH_ENABLED, msc_logic_health() can change the state to
+ *	CHG_HEALTH_ENABLED  <-> CHG_HEALTH_ACTIVE
+ *	CHG_HEALTH_ENABLED  -> CHG_HEALTH_DISABLED
+ *
+ * from CHG_HEALTH_ACTIVE, msc_logic_health() can change the state to
+ *	CHG_HEALTH_ACTIVE   <-> CHG_HEALTH_ENABLED
+ *	CHG_HEALTH_ACTIVE   -> CHG_HEALTH_DISABLED
+ *	CHG_HEALTH_ACTIVE   -> CHG_HEALTH_DONE
+ */
+enum chg_health_state {
+	CHG_HEALTH_USER_DISABLED = -3,
+	CHG_HEALTH_DISABLED = -2,
+	CHG_HEALTH_DONE = -1,
+	CHG_HEALTH_INACTIVE = 0,
+	CHG_HEALTH_ENABLED,
+	CHG_HEALTH_ACTIVE,
+};
+
+/* tier index used to log the session */
+enum gbms_stats_tier_idx_t {
+	GBMS_STATS_AC_TI_DISABLE_SETTING_STOP = -4,
+	GBMS_STATS_AC_TI_DISABLE_MISC = -3,
+	GBMS_STATS_AC_TI_DISABLE_SETTING = -2,
+	GBMS_STATS_AC_TI_INVALID = -1,
+	/* Regular charge tiers 0 -> 9 */
+	GBMS_STATS_AC_TI_VALID = 10,
+	GBMS_STATS_AC_TI_DISABLED,
+	GBMS_STATS_AC_TI_ENABLED,
+	GBMS_STATS_AC_TI_ACTIVE,
+	GBMS_STATS_AC_TI_ENABLED_AON,
+	GBMS_STATS_AC_TI_ACTIVE_AON,
+	GBMS_STATS_AC_TI_FULL_CHARGE = 100,
+	GBMS_STATS_AC_TI_HIGH_SOC = 101,
+};
+
+/* health state */
+struct batt_chg_health {
+	int rest_soc;		/* entry criteria */
+	int rest_voltage;	/* entry criteria */
+	int always_on_soc;	/* entry criteria */
+
+	time_t rest_deadline;	/* full by this in seconds */
+	int rest_rate;		/* centirate once enter */
+
+	enum chg_health_state rest_state;
+	int rest_cc_max;
+	int rest_fv_uv;
+};
+
+#define CHG_HEALTH_REST_IS_ACTIVE(rest) \
+	((rest)->rest_state == CHG_HEALTH_ACTIVE)
+
+#define CHG_HEALTH_REST_SOC(rest) (((rest)->always_on_soc != -1) ? \
+			(rest)->always_on_soc : (rest)->rest_soc)
+
 struct gbms_charging_event {
 	union gbms_ce_adapter_details	adapter_details;
 
@@ -207,7 +275,6 @@ struct gbms_charging_event {
 	/* charge event and tier tracking */
 	struct gbms_ce_stats		charging_stats;
 	struct gbms_ce_tier_stats	tier_stats[GBMS_STATS_TIER_COUNT];
-	struct gbms_ce_tier_stats	health_stats;
 
 	/* soc tracking for time to full */
 	struct ttf_soc_stats soc_stats;
@@ -217,6 +284,13 @@ struct gbms_charging_event {
 	time_t last_update;
 	uint32_t chg_sts_qual_time;
 	uint32_t chg_sts_delta_soc;
+
+	/* health based charging */
+	struct batt_chg_health		ce_health;	/* updated on close */
+	struct gbms_ce_tier_stats	health_stats;	/* updated in HC */
+
+	struct gbms_ce_tier_stats full_charge_stats;
+	struct gbms_ce_tier_stats high_soc_stats;
 };
 
 #define GBMS_CCCM_LIMITS(profile, ti, vi) \
