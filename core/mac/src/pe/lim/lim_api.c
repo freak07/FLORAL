@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -71,6 +71,7 @@
 #include <wlan_scan_public_structs.h>
 #include <wlan_p2p_ucfg_api.h>
 #include "wlan_utility.h"
+#include "wlan_mlme_main.h"
 
 static void __lim_init_bss_vars(tpAniSirGlobal pMac)
 {
@@ -2052,6 +2053,68 @@ void lim_fill_join_rsp_ht_caps(tpPESession session, tpSirSmeJoinRsp join_rsp)
 #endif
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
+#ifdef WLAN_FEATURE_11W
+static void pe_set_rmf_caps(tpAniSirGlobal mac_ctx,
+			    tpPESession ft_session,
+			    roam_offload_synch_ind *roam_synch)
+{
+	uint8_t *assoc_body;
+	uint16_t len, ret;
+	tDot11fReAssocRequest *assoc_req;
+	uint32_t status;
+	tSirMacRsnInfo rsn_ie;
+	tDot11fIERSN parse_rsn = {0};
+
+	assoc_body = (uint8_t *)roam_synch + roam_synch->reassoc_req_offset +
+			sizeof(tSirMacMgmtHdr);
+	len = roam_synch->reassoc_req_length - sizeof(tSirMacMgmtHdr);
+
+	assoc_req = qdf_mem_malloc(sizeof(*assoc_req));
+	if (!assoc_req)
+		return;
+
+	/* delegate to the framesc-generated code, */
+	status = dot11f_unpack_re_assoc_request(mac_ctx, assoc_body, len,
+						assoc_req, false);
+	if (DOT11F_FAILED(status)) {
+		pe_err("Failed to parse a Re-association Request (0x%08x, %d bytes):",
+		       status, len);
+		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_INFO,
+				   assoc_body, len);
+		qdf_mem_free(assoc_req);
+		return;
+	} else if (DOT11F_WARNED(status)) {
+		pe_debug("There were warnings while unpacking a Re-association Request (0x%08x, %d bytes):",
+			 status, len);
+	}
+	ft_session->limRmfEnabled = false;
+	if (!assoc_req->RSNOpaque.present) {
+		qdf_mem_free(assoc_req);
+		return;
+	}
+	rsn_ie.info[0] = WLAN_ELEMID_RSN;
+	rsn_ie.info[1] = assoc_req->RSNOpaque.num_data;
+
+	rsn_ie.length = assoc_req->RSNOpaque.num_data + 2;
+	qdf_mem_copy(&rsn_ie.info[2], assoc_req->RSNOpaque.data,
+		     assoc_req->RSNOpaque.num_data);
+	qdf_mem_free(assoc_req);
+
+	ret = dot11f_unpack_ie_rsn(mac_ctx, &rsn_ie.info[2],
+				   rsn_ie.length - 2, &parse_rsn, false);
+	if (DOT11F_FAILED(ret))
+		return;
+
+	ft_session->limRmfEnabled = parse_rsn.RSN_Cap[0] & 0x80;
+}
+#else
+static inline void pe_set_rmf_caps(tpAniSirGlobal mac_ctx,
+				   tpPESession ft_session,
+				   roam_offload_synch_ind *roam_synch)
+{
+}
+#endif
+
 /**
  * sir_parse_bcn_fixed_fields() - Parse fixed fields in Beacon IE's
  *
@@ -2387,6 +2450,7 @@ QDF_STATUS pe_roam_synch_callback(tpAniSirGlobal mac_ctx,
 	/* Next routine will update nss and vdev_nss with AP's capabilities */
 	lim_fill_ft_session(mac_ctx, bss_desc, ft_session_ptr, session_ptr);
 
+	pe_set_rmf_caps(mac_ctx, ft_session_ptr, roam_sync_ind_ptr);
 	/* Next routine may update nss based on dot11Mode */
 	lim_ft_prepare_add_bss_req(mac_ctx, false, ft_session_ptr, bss_desc);
 	roam_sync_ind_ptr->add_bss_params =
@@ -2637,33 +2701,44 @@ tMgmtFrmDropReason lim_is_pkt_candidate_for_drop(tpAniSirGlobal pMac,
 				  curr_seq_num);
 			return eMGMT_DROP_DUPLICATE_AUTH_FRAME;
 		}
-	} else if ((subType == SIR_MAC_MGMT_ASSOC_REQ) &&
-		   (subType == SIR_MAC_MGMT_DISASSOC) &&
+	} else if ((subType == SIR_MAC_MGMT_ASSOC_REQ) ||
+		   (subType == SIR_MAC_MGMT_DISASSOC) ||
 		   (subType == SIR_MAC_MGMT_DEAUTH)) {
-		uint16_t assoc_id;
-		dphHashTableClass *dph_table;
-		tDphHashNode *sta_ds;
+		struct peer_mlme_priv_obj *peer_priv;
+		struct wlan_objmgr_peer *peer;
 		qdf_time_t *timestamp;
 
 		pHdr = WMA_GET_RX_MAC_HEADER(pRxPacketInfo);
 		psessionEntry = pe_find_session_by_bssid(pMac, pHdr->bssId,
 				&sessionId);
 		if (!psessionEntry)
-			return eMGMT_DROP_NO_DROP;
-		dph_table = &psessionEntry->dph.dphHashTable;
-		sta_ds = dph_lookup_hash_entry(pMac, pHdr->sa, &assoc_id,
-					       dph_table);
-		if (!sta_ds) {
+			return eMGMT_DROP_SPURIOUS_FRAME;
+
+		peer = wlan_objmgr_get_peer_by_mac(pMac->psoc,
+						   pHdr->sa,
+						   WLAN_LEGACY_MAC_ID);
+		if (!peer) {
 			if (subType == SIR_MAC_MGMT_ASSOC_REQ)
-			    return eMGMT_DROP_NO_DROP;
-			else
-			    return eMGMT_DROP_EXCESSIVE_MGMT_FRAME;
+				return eMGMT_DROP_NO_DROP;
+
+			return eMGMT_DROP_SPURIOUS_FRAME;
 		}
 
+		peer_priv = wlan_objmgr_peer_get_comp_private_obj(peer,
+							WLAN_UMAC_COMP_MLME);
+		if (!peer_priv) {
+			wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_MAC_ID);
+			if (subType == SIR_MAC_MGMT_ASSOC_REQ)
+				return eMGMT_DROP_NO_DROP;
+
+			return eMGMT_DROP_SPURIOUS_FRAME;
+		}
 		if (subType == SIR_MAC_MGMT_ASSOC_REQ)
-			timestamp = &sta_ds->last_assoc_received_time;
+			timestamp = &peer_priv->last_assoc_received_time;
 		else
-			timestamp = &sta_ds->last_disassoc_deauth_received_time;
+			timestamp =
+				&peer_priv->last_disassoc_deauth_received_time;
+
 		if (*timestamp > 0 &&
 		    qdf_system_time_before(qdf_get_system_timestamp(),
 					   *timestamp +
@@ -2673,10 +2748,12 @@ tMgmtFrmDropReason lim_is_pkt_candidate_for_drop(tpAniSirGlobal pMac,
 				    (int)(qdf_get_system_timestamp() - *timestamp),
 				    "of last frame. Allow it only after",
 				    LIM_DOS_PROTECTION_TIME);
+			wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_MAC_ID);
 			return eMGMT_DROP_EXCESSIVE_MGMT_FRAME;
 		}
 
 		*timestamp = qdf_get_system_timestamp();
+		wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_MAC_ID);
 
 	}
 
