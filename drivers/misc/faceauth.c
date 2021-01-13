@@ -50,6 +50,10 @@
 #define M0_ENROLL_POLLING_INTERVAL_US 6000
 #define M0_POLLING_INTERVAL_US 100000
 
+#ifdef CONFIG_FACEAUTH
+#pragma clang diagnostic ignored "-Wcompound-token-split-by-macro"
+#endif
+
 struct faceauth_data {
 	/*
 	 * M0 Verbosity Level Encoding
