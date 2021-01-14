@@ -406,3 +406,34 @@
 	reg = <0 0x8fd00000 0 0x3100000>;
 };
 
+&reserved_memory {
+	video_mem: video_region {
+		compatible = "shared-dma-pool";
+		alloc-ranges = <0x0 0x00000000 0x0 0xC0000000>;
+		reusable;
+		alignment = <0x0 0x400000>;
+		size = <0x0 0x12c00000>;
+	};
+
+	non_pixel_mem: non_pixel_region {
+		compatible = "shared-dma-pool";
+		alloc-ranges = <0x0 0x00000000 0x0 0xAD400000>;
+		reusable;
+		alignment = <0x0 0x400000>;
+		size = <0x0 0x6400000>;
+	};
+};
+
+&ion {
+	qcom,ion-heap@12 { /* VIDEO HEAP */
+		reg = <12>;
+		memory-region = <&video_mem>;
+		qcom,ion-heap-type = "HYP_CMA";
+	};
+
+	qcom,ion-heap@15 { /* NON PIXEL HEAP */
+		reg = <15>;
+		memory-region = <&non_pixel_mem>;
+		qcom,ion-heap-type = "HYP_CMA";
+	};
+};
