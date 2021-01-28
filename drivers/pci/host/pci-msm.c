@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -93,6 +93,7 @@
 #define PCIE20_ELBI_SYS_STTS		 0x08
 
 #define PCIE20_CAP			   0x70
+#define PCIE20_CAP_DEVCAP		(PCIE20_CAP + 0x04)
 #define PCIE20_CAP_DEVCTRLSTATUS	(PCIE20_CAP + 0x08)
 #define PCIE20_CAP_LINKCTRLSTATUS	(PCIE20_CAP + 0x10)
 
@@ -224,6 +225,8 @@
 #define PM_VREG			0x8
 #define PM_PIPE_CLK		  0x10
 #define PM_ALL (PM_IRQ | PM_CLK | PM_GPIO | PM_VREG | PM_PIPE_CLK)
+
+#define L23_READY_POLL_TIMEOUT (100000)
 
 #ifdef CONFIG_PHYS_ADDR_T_64BIT
 #define PCIE_UPPER_ADDR(addr) ((u32)((addr) >> 32))
@@ -727,6 +730,7 @@ struct msm_pcie_dev_t {
 	ulong				ep_corr_counter;
 	ulong				ep_non_fatal_counter;
 	ulong				ep_fatal_counter;
+	uint64_t			l23_rdy_poll_timeout;
 	bool				 suspending;
 	ulong				wake_counter;
 	u32				num_active_ep;
@@ -1386,6 +1390,8 @@ static void msm_pcie_show_status(struct msm_pcie_dev_t *dev)
 		dev->link_turned_on_counter);
 	PCIE_DBG_FS(dev, "link_turned_off_counter: %lu\n",
 		dev->link_turned_off_counter);
+	PCIE_DBG_FS(dev, "l23_rdy_poll_timeout: %llu\n",
+		dev->l23_rdy_poll_timeout);
 }
 
 static void msm_pcie_shadow_dump(struct msm_pcie_dev_t *dev, bool rc)
@@ -2141,14 +2147,57 @@ static ssize_t msm_pcie_enumerate_store(struct device *dev,
 
 static DEVICE_ATTR(enumerate, 0200, NULL, msm_pcie_enumerate_store);
 
+static ssize_t l23_rdy_poll_timeout_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct msm_pcie_dev_t *pcie_dev = (struct msm_pcie_dev_t *)
+						dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%llu\n",
+			pcie_dev->l23_rdy_poll_timeout);
+}
+
+static ssize_t l23_rdy_poll_timeout_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct msm_pcie_dev_t *pcie_dev = (struct msm_pcie_dev_t *)
+						dev_get_drvdata(dev);
+	u64 val;
+
+	if (kstrtou64(buf, 0, &val))
+		return -EINVAL;
+
+	pcie_dev->l23_rdy_poll_timeout = val;
+
+	PCIE_DBG(pcie_dev, "PCIe: RC%d: L23_Ready poll timeout: %llu\n",
+		pcie_dev->rc_idx, pcie_dev->l23_rdy_poll_timeout);
+
+	return count;
+}
+static DEVICE_ATTR_RW(l23_rdy_poll_timeout);
+
+static struct attribute *msm_pcie_debug_attrs[] = {
+	&dev_attr_enumerate.attr,
+	&dev_attr_l23_rdy_poll_timeout.attr,
+	NULL,
+};
+
+static const struct attribute_group msm_pcie_debug_attr_group = {
+	.name	= "debug",
+	.attrs	= msm_pcie_debug_attrs,
+};
+
 static void msm_pcie_sysfs_init(struct msm_pcie_dev_t *dev)
 {
 	int ret;
 
-	ret = device_create_file(&dev->pdev->dev, &dev_attr_enumerate);
+	ret = sysfs_create_group(&dev->pdev->dev.kobj,
+			&msm_pcie_debug_attr_group);
 	if (ret)
 		PCIE_DBG_FS(dev,
-			"RC%d: failed to create sysfs enumerate node\n",
+			"RC%d: failed to create sysfs debug group\n",
 			dev->rc_idx);
 }
 
@@ -3431,6 +3480,8 @@ static void msm_pcie_iatu_config_all_ep(struct msm_pcie_dev_t *dev)
 
 static void msm_pcie_config_controller(struct msm_pcie_dev_t *dev)
 {
+	u32 val;
+
 	PCIE_DBG(dev, "RC%d\n", dev->rc_idx);
 
 	/*
@@ -3475,6 +3526,13 @@ static void msm_pcie_config_controller(struct msm_pcie_dev_t *dev)
 		msm_pcie_write_reg_field(dev->dm_core,
 					PCIE20_DEVICE_CONTROL2_STATUS2,
 					0xf, dev->cpl_timeout);
+
+	/* update RC Max Payload Size based on Max Payload Size Supported */
+	val = readl_relaxed(dev->dm_core + PCIE20_CAP_DEVCAP) &
+	      PCI_EXP_DEVCAP_PAYLOAD;
+	msm_pcie_write_reg_field(dev->dm_core,
+				 PCIE20_CAP_DEVCTRLSTATUS,
+				 PCI_EXP_DEVCTL_PAYLOAD, val);
 
 	/* Enable AER on RC */
 	if (dev->aer_enable) {
@@ -4600,7 +4658,7 @@ int msm_pcie_enumerate(u32 rc_idx)
 			struct pci_dev *pcidev = NULL;
 			struct pci_host_bridge *bridge;
 			bool found = false;
-			struct pci_bus *bus;
+			struct pci_bus *bus, *child;
 			resource_size_t iobase = 0;
 			u32 ids = readl_relaxed(msm_pcie_dev[rc_idx].dm_core);
 			u32 vendor_id = ids & 0xffff;
@@ -4661,6 +4719,9 @@ int msm_pcie_enumerate(u32 rc_idx)
 			bus = bridge->bus;
 
 			pci_assign_unassigned_bus_resources(bus);
+			list_for_each_entry(child, &bus->children, node)
+				pcie_bus_configure_settings(child);
+
 			pci_bus_add_devices(bus);
 
 			dev->enumerated = true;
@@ -6705,6 +6766,7 @@ static int __init pcie_init(void)
 		spin_lock_init(&msm_pcie_dev[i].wakeup_lock);
 		spin_lock_init(&msm_pcie_dev[i].irq_lock);
 		msm_pcie_dev[i].drv_ready = false;
+		msm_pcie_dev[i].l23_rdy_poll_timeout = L23_READY_POLL_TIMEOUT;
 	}
 	for (i = 0; i < MAX_RC_NUM * MAX_DEVICE_NUM; i++) {
 		msm_pcie_dev_tbl[i].bdf = 0;
@@ -6843,7 +6905,8 @@ static int msm_pcie_pm_suspend(struct pci_dev *dev,
 		pcie_dev->rc_idx);
 
 	ret_l23 = readl_poll_timeout((pcie_dev->parf
-		+ PCIE20_PARF_PM_STTS), val, (val & BIT(5)), 10000, 100000);
+		+ PCIE20_PARF_PM_STTS), val, (val & BIT(5)), 10000,
+		pcie_dev->l23_rdy_poll_timeout);
 
 	/* check L23_Ready */
 	PCIE_DBG(pcie_dev, "RC%d: PCIE20_PARF_PM_STTS is 0x%x.\n",
@@ -7023,7 +7086,8 @@ int msm_pcie_pm_control(enum msm_pcie_pm_opt pm_opt, u32 busnr, void *user,
 {
 	int ret = 0;
 	struct pci_dev *dev;
-	u32 rc_idx = 0;
+	u32 rc_idx = 0, count = 0;
+	u16 device_id;
 	struct msm_pcie_dev_t *pcie_dev;
 
 	PCIE_GEN_DBG("PCIe: pm_opt:%d;busnr:%d;options:%d\n",
@@ -7113,6 +7177,23 @@ int msm_pcie_pm_control(enum msm_pcie_pm_opt pm_opt, u32 busnr, void *user,
 				"PCIe: RC%d: requested to resume when link is not disabled:%d. Number of active EP(s): %d\n",
 				rc_idx, msm_pcie_dev[rc_idx].link_status,
 				msm_pcie_dev[rc_idx].num_active_ep);
+			pci_read_config_word((struct pci_dev *)user,
+						PCI_DEVICE_ID, &device_id);
+			while (device_id != (((struct pci_dev *)user)->device)
+					&& count < LINK_UP_CHECK_MAX_COUNT) {
+				usleep_range(LINK_UP_TIMEOUT_US_MIN,
+						LINK_UP_TIMEOUT_US_MAX);
+				pci_read_config_word((struct pci_dev *)user,
+						PCI_DEVICE_ID, &device_id);
+				PCIE_DBG(&msm_pcie_dev[rc_idx],
+					"PCIe: RC:%d, device_id_read:0x%x\n",
+					rc_idx, device_id);
+				count++;
+			}
+			if (count >= LINK_UP_CHECK_MAX_COUNT)
+				PCIE_ERR(&msm_pcie_dev[rc_idx],
+					"PCIe: RC:%d invalid device id\n",
+					rc_idx);
 			break;
 		}
 

@@ -452,8 +452,10 @@ static struct ipa_ep_cfg usb_to_ipa_ep_cfg_deaggr_en = {
 	},
 	.deaggr = {
 		.deaggr_hdr_len = sizeof(struct rndis_pkt_hdr),
+		.syspipe_err_detection = true,
 		.packet_offset_valid = true,
 		.packet_offset_location = 8,
+		.ignore_min_pkt_err = true,
 		.max_packet_len = 8192, /* Will be overridden*/
 	},
 	.route = {
@@ -1453,8 +1455,9 @@ void rndis_ipa_cleanup(void *private)
 	rndis_ipa_debugfs_destroy(rndis_ipa_ctx);
 	RNDIS_IPA_DEBUG("debugfs remove was done\n");
 
+	RNDIS_IPA_DEBUG("RNDIS_IPA netdev unregister started\n");
 	unregister_netdev(rndis_ipa_ctx->net);
-	RNDIS_IPA_DEBUG("netdev unregistered\n");
+	RNDIS_IPA_DEBUG("RNDIS_IPA netdev unregister completed\n");
 
 	spin_lock_irqsave(&rndis_ipa_ctx->state_lock, flags);
 	next_state = rndis_ipa_next_state(rndis_ipa_ctx->state,

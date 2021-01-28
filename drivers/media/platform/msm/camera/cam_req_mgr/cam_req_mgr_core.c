@@ -1919,6 +1919,7 @@ int cam_req_mgr_process_flush_req(void *priv, void *data)
 	struct cam_req_mgr_connected_device *device = NULL;
 	struct cam_req_mgr_flush_request     flush_req;
 	struct crm_task_payload             *task_data = NULL;
+	struct cam_req_mgr_req_tbl          *tbl = NULL;
 
 	if (!data || !priv) {
 		CAM_ERR(CAM_CRM, "input args NULL %pK %pK", data, priv);
@@ -1948,6 +1949,18 @@ int cam_req_mgr_process_flush_req(void *priv, void *data)
 			slot->sync_mode = CAM_REQ_MGR_SYNC_MODE_NO_SYNC;
 			slot->skip_idx = 1;
 			slot->status = CRM_SLOT_STATUS_NO_REQ;
+			tbl = link->req.l_tbl;
+
+			while (tbl != NULL) {
+				CAM_DBG(CAM_CRM, "pd: %d idx: %d state: %d",
+					tbl->pd, i, tbl->slot[i].state);
+				 tbl->slot[i].req_ready_map = 0;
+				 tbl->slot[i].dev_hdl = -1;
+				 tbl->slot[i].skip_next_frame = false;
+				 tbl->slot[i].state = CRM_REQ_STATE_EMPTY;
+				 tbl->slot[i].is_applied = false;
+				 tbl = tbl->next;
+			}
 		}
 		in_q->wr_idx = 0;
 		in_q->rd_idx = 0;
@@ -2577,7 +2590,6 @@ static int cam_req_mgr_cb_notify_trigger(
 	struct  crm_task_payload         *task_data;
 	bool    send_sof = true;
 	int     i = 0;
-	int64_t sof_time_diff = 0;
 
 	if (!trigger_data) {
 		CAM_ERR(CAM_CRM, "sof_data is NULL");
@@ -2597,10 +2609,6 @@ static int cam_req_mgr_cb_notify_trigger(
 		if (link->dev_sof_evt[i].dev_hdl == trigger_data->dev_hdl) {
 			if (link->dev_sof_evt[i].sof_done == false) {
 				link->dev_sof_evt[i].sof_done = true;
-				link->dev_sof_evt[i].frame_id =
-						trigger_data->frame_id;
-				link->dev_sof_evt[i].timestamp =
-					trigger_data->sof_timestamp_val;
 			} else
 				CAM_INFO(CAM_CRM, "Received Spurious SOF");
 		} else if (link->dev_sof_evt[i].sof_done == false) {
@@ -2610,23 +2618,6 @@ static int cam_req_mgr_cb_notify_trigger(
 
 	if (!send_sof)
 		return 0;
-	if (link->num_sof_src > 1) {
-		for (i = 0; i < (link->num_sof_src - 1); i++) {
-			if (link->dev_sof_evt[i].timestamp >=
-				link->dev_sof_evt[i+1].timestamp) {
-				sof_time_diff = link->dev_sof_evt[i].timestamp -
-					link->dev_sof_evt[i+1].timestamp;
-			} else {
-				sof_time_diff =
-					link->dev_sof_evt[i+1].timestamp -
-					link->dev_sof_evt[i].timestamp;
-			}
-			if ((link->dev_sof_evt[i].frame_id !=
-				link->dev_sof_evt[i+1].frame_id) ||
-				sof_time_diff > TIMESTAMP_DIFF_THRESHOLD)
-				return 0;
-		}
-	}
 
 	for (i = 0; i < link->num_sof_src; i++)
 		link->dev_sof_evt[i].sof_done = false;

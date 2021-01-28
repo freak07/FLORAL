@@ -930,7 +930,8 @@ int mhi_dev_sm_init(struct mhi_dev *mhi_dev)
 
 	/*init debugfs*/
 	mhi_sm_debugfs_init();
-	mhi_sm_ctx->mhi_sm_wq = alloc_workqueue("mhi_sm_wq", WQ_HIGHPRI, 0);
+	mhi_sm_ctx->mhi_sm_wq = alloc_workqueue(
+				"mhi_sm_wq", WQ_HIGHPRI | WQ_UNBOUND, 1);
 	if (!mhi_sm_ctx->mhi_sm_wq) {
 		MHI_SM_ERR("Failed to create singlethread_workqueue: sm_wq\n");
 		res = -ENOMEM;
@@ -1246,7 +1247,7 @@ void mhi_dev_sm_pcie_handler(struct ep_pcie_notify *notify)
 
 	dstate_change_evt->event = event;
 	INIT_WORK(&dstate_change_evt->work, mhi_sm_pcie_event_manager);
-	queue_work(mhi_sm_ctx->mhi_sm_wq, &dstate_change_evt->work);
+	queue_work(system_highpri_wq, &dstate_change_evt->work);
 	atomic_inc(&mhi_sm_ctx->pending_pcie_events);
 
 exit:
