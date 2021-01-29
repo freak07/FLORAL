@@ -459,6 +459,8 @@ const char *msm_secure_vmid_to_string(int secure_vmid)
 		return "VMID_CP_SPSS_HLOS_SHARED";
 	case VMID_CP_CAMERA_ENCODE:
 		return "VMID_CP_CAMERA_ENCODE";
+	case VMID_CP_CAMERA_GFX:
+		return "VMID_CP_CAMERA_GFX";
 	case VMID_CP_CDSP:
 		return "VMID_CP_CDSP";
 	case VMID_CP_DSP_EXT:
