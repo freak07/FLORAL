@@ -3687,7 +3687,7 @@ static void heatmap_enable(void)
 	fts_write(command, ARRAY_SIZE(command));
 }
 
-static bool read_heatmap_raw(struct v4l2_heatmap *v4l2, strength_t *data)
+static bool read_heatmap_raw(struct v4l2_heatmap *v4l2)
 {
 	struct fts_ts_info *info =
 		container_of(v4l2, struct fts_ts_info, v4l2);
@@ -3751,7 +3751,7 @@ static bool read_heatmap_raw(struct v4l2_heatmap *v4l2, strength_t *data)
 		/* set all to zero, will only write to non-zero locations in
 		 * the loop
 		 */
-		memset(data, 0, max_x * max_y * sizeof(data[0]));
+		memset(v4l2->frame, 0, v4l2->format.sizeimage);
 		/* populate the data buffer, rearranging into final locations */
 		for (local_i = 0; local_i < num_elements; local_i++) {
 			/* enforce little-endian order */
@@ -3773,7 +3773,7 @@ static bool read_heatmap_raw(struct v4l2_heatmap *v4l2, strength_t *data)
 				return false;
 			}
 			frame_i = heatmap_y * max_x + heatmap_x;
-			data[frame_i] = heatmap_value;
+			v4l2->frame[frame_i] = heatmap_value;
 		}
 	} else if (info->heatmap_mode == FTS_HEATMAP_FULL) {
 		MutualSenseFrame ms_frame = { 0 };
@@ -3801,7 +3801,7 @@ static bool read_heatmap_raw(struct v4l2_heatmap *v4l2, strength_t *data)
 						((max_x-1) - x) * max_y +
 						((max_y-1) - y)];
 				}
-				data[frame_index++] = heatmap_value;
+				v4l2->frame[frame_index++] = heatmap_value;
 			}
 		}
 
