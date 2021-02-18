@@ -29,7 +29,10 @@
 #include <ipc/apr_tal.h>
 #include "adsp_err.h"
 #include "q6afecal-hwdep.h"
+
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 #include <dsp/msm-cirrus-playback.h>
+#endif
 
 #define WAKELOCK_TIMEOUT	5000
 enum {
@@ -245,7 +248,9 @@ int afe_get_topology(int port_id)
 done:
 	return topology;
 }
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 EXPORT_SYMBOL(afe_get_topology);
+#endif
 
 /**
  * afe_set_aanc_info -
@@ -593,10 +598,11 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			av_dev_drift_afe_cb_handler(data->opcode, data->payload,
 						    data->payload_size);
 		} else {
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 			if (!crus_afe_callback(data->payload,
 					       data->payload_size))
 				return 0;
-
+#endif
 			if (rtac_make_afe_callback(data->payload,
 						   data->payload_size))
 				return 0;
@@ -1024,6 +1030,7 @@ static int afe_apr_send_pkt(void *data, wait_queue_head_t *wait)
 	return ret;
 }
 
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 int afe_apr_send_pkt_crus(void *data, int index, int set)
 {
 	int ret = 0;
@@ -1041,6 +1048,7 @@ int afe_apr_send_pkt_crus(void *data, int index, int set)
 		return afe_apr_send_pkt(data, 0);
 }
 EXPORT_SYMBOL(afe_apr_send_pkt_crus);
+#endif
 
 /* This function shouldn't be called directly. Instead call q6afe_set_params. */
 static int q6afe_set_params_v2(u16 port_id, int index,
@@ -2785,7 +2793,8 @@ int afe_port_set_mad_type(u16 port_id, enum afe_mad_type mad_type)
 
 	if (port_id == AFE_PORT_ID_TERTIARY_MI2S_TX ||
 		port_id == AFE_PORT_ID_INT3_MI2S_TX ||
-		port_id == AFE_PORT_ID_TX_CODEC_DMA_TX_3) {
+		port_id == AFE_PORT_ID_TX_CODEC_DMA_TX_3 ||
+		port_id == AFE_PORT_ID_TERTIARY_TDM_TX) {
 		mad_type = MAD_SW_AUDIO;
 		return 0;
 	}
@@ -2814,7 +2823,8 @@ enum afe_mad_type afe_port_get_mad_type(u16 port_id)
 
 	if (port_id == AFE_PORT_ID_TERTIARY_MI2S_TX ||
 		port_id == AFE_PORT_ID_INT3_MI2S_TX ||
-		port_id == AFE_PORT_ID_TX_CODEC_DMA_TX_3)
+		port_id == AFE_PORT_ID_TX_CODEC_DMA_TX_3 ||
+		port_id == AFE_PORT_ID_TERTIARY_TDM_TX)
 		return MAD_SW_AUDIO;
 
 	i = port_id - SLIMBUS_0_RX;
@@ -2896,8 +2906,10 @@ EXPORT_SYMBOL(afe_set_config);
 void afe_clear_config(enum afe_config_type config)
 {
 	clear_bit(config, &afe_configured_cmd);
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 	if (config == AFE_CIRRUS_PORT_CONFIG)
 		msm_crus_check_set_setting(AFE_SSR);
+#endif
 }
 EXPORT_SYMBOL(afe_clear_config);
 
@@ -4849,7 +4861,9 @@ int afe_get_port_index(u16 port_id)
 		return -EINVAL;
 	}
 }
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 EXPORT_SYMBOL(afe_get_port_index);
+#endif
 
 /**
  * afe_open -

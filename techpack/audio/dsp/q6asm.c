@@ -31,6 +31,7 @@
 
 #include <linux/memory.h>
 
+#include <soc/qcom/subsystem_restart.h>
 #include <sound/compress_params.h>
 
 #include <dsp/msm_audio_ion.h>
@@ -3526,6 +3527,9 @@ static int __q6asm_open_write(struct audio_client *ac, uint32_t format,
 	if (!rc) {
 		pr_err("%s: timeout. waited for open write\n", __func__);
 		rc = -ETIMEDOUT;
+		/* Debug patch for b/167581124 */
+		pr_err("trigger ADSP SSR. See b/167581124");
+		subsystem_restart("adsp");
 		goto fail_cmd;
 	}
 	if (atomic_read(&ac->cmd_state) > 0) {

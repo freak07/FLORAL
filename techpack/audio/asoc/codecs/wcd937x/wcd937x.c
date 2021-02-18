@@ -1136,7 +1136,7 @@ int wcd937x_mbhc_micb_adjust_voltage(struct snd_soc_codec *codec,
 		goto exit;
 	}
 
-	dev_dbg(codec->dev, "%s: micb_num: %d, cur_mv: %d, req_mv: %d, micb_en: %d\n",
+	dev_info(codec->dev, "%s: micb_num: %d, cur_mv: %d, req_mv: %d, micb_en: %d\n",
 		 __func__, micb_num, WCD_VOUT_CTL_TO_MICB(cur_vout_ctl),
 		 req_volt, micb_en);
 

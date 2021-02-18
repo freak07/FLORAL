@@ -427,6 +427,10 @@ int apr_send_pkt(void *handle, uint32_t *buf)
 	} else {
 		pr_err_ratelimited("%s: Write APR pkt failed with error %d\n",
 			__func__, rc);
+		if (rc == -EBUSY) {
+			/* b/163101967: to collect full ramdump for debugging */
+			panic("Crashing the device, as ADSP subsystem is busy");
+		}
 		if (rc == -ECONNRESET) {
 			pr_err_ratelimited("%s: Received reset error from tal\n",
 					__func__);

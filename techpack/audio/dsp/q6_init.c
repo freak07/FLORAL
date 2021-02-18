@@ -15,7 +15,10 @@ GNU General Public License for more details.
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include "q6_init.h"
+
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 #include <dsp/msm-cirrus-playback.h>
+#endif
 
 static int __init audio_q6_init(void)
 {
@@ -33,14 +36,18 @@ static int __init audio_q6_init(void)
 	audio_slimslave_init();
 	avtimer_init();
 	msm_mdf_init();
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 	crus_sp_init();
+#endif
 	voice_mhi_init();
 	return 0;
 }
 
 static void __exit audio_q6_exit(void)
 {
+#ifdef CONFIG_CIRRUS_SPKR_PROTECTION
 	crus_sp_exit();
+#endif
 	msm_mdf_exit();
 	avtimer_exit();
 	audio_slimslave_exit();
