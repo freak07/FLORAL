@@ -18,7 +18,6 @@
 #include <linux/slab.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
-#include <linux/pwm.h>
 #include <video/mipi_display.h>
 #include <video/display_timing.h>
 
@@ -2637,10 +2636,13 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 	priv_info = mode->priv_info;
 
 	priv_info->dsc_enabled = false;
+	mode->timing.dsc_enabled = false;
 	compression = utils->get_property(utils->data,
 			"qcom,compression-mode", NULL);
-	if (compression && !strcmp(compression, "dsc"))
+	if (compression && !strcmp(compression, "dsc")) {
 		priv_info->dsc_enabled = true;
+		mode->timing.dsc_enabled = true;
+	}
 
 	if (!priv_info->dsc_enabled) {
 		pr_debug("dsc compression is not enabled for the mode");
@@ -2650,7 +2652,6 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsc-version", &data);
 	if (rc) {
 		priv_info->dsc.version = 0x11;
-		rc = 0;
 	} else {
 		priv_info->dsc.version = data & 0xff;
 		/* only support DSC 1.1 rev */
@@ -2665,7 +2666,6 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsc-scr-version", &data);
 	if (rc) {
 		priv_info->dsc.scr_rev = 0x0;
-		rc = 0;
 	} else {
 		priv_info->dsc.scr_rev = data & 0xff;
 		/* only one scr rev supported */
@@ -2737,10 +2737,13 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 	dsi_dsc_populate_static_param(&priv_info->dsc);
 	dsi_dsc_pclk_param_calc(&priv_info->dsc, intf_width);
 
-	mode->timing.dsc_enabled = true;
 	mode->timing.dsc = &priv_info->dsc;
 
+	return 0;
+
 error:
+	priv_info->dsc_enabled = false;
+	mode->timing.dsc_enabled = false;
 	return rc;
 }
 
@@ -3278,7 +3281,8 @@ static int drm_panel_get_timings(struct drm_panel *panel,
 	if (timings)
 		for (i = 0; i < num_timings; i++) {
 			struct display_timing *t = &timings[i];
-			struct dsi_display_mode m;
+			struct dsi_display_mode m = {0};
+
 			rc = dsi_panel_get_mode(p, i, &m, -1);
 			if (rc)
 				break;
@@ -3806,14 +3810,12 @@ void dsi_panel_debugfs_init(struct dsi_panel *panel, struct dentry *dir)
 {
 	struct dentry *r;
 	struct dsi_panel_debug *pdbg = &panel->debug;
-
 	r = debugfs_create_dir("panel_reg", dir);
 	if (IS_ERR(r))
 		return;
 
 	/* default read of 2 bytes */
 	pdbg->reg_read_len = 2;
-
 	debugfs_create_u8("addr", 0600, r, &pdbg->reg_read_cmd);
 	debugfs_create_size_t("len", 0600, r, &pdbg->reg_read_len);
 	debugfs_create_file("payload", 0600, r, panel, &panel_reg_fops);
@@ -4525,17 +4527,17 @@ static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
 	hbm->cur_range = HBM_RANGE_MAX;
 
 	if (hbm_mode == HBM_MODE_SV) {
-		int rc = panel->funcs->update_irc(panel, false);
+		int rc = dsi_panel_bl_update_irc(bl, false);
 
 		if (rc != 0 && rc != -EOPNOTSUPP)
 			pr_err("[%s] failed to disable IRC, rc=%d\n",
-			       panel->name, rc);
+				panel->name, rc);
 	} else if (hbm_mode == HBM_MODE_ON && panel->hbm_mode == HBM_MODE_SV) {
-		int rc = panel->funcs->update_irc(panel, true);
+		int rc = dsi_panel_bl_update_irc(bl, true);
 
 		if (rc != 0 && rc != -EOPNOTSUPP)
 			pr_err("[%s] failed to enable IRC, rc=%d\n",
-			       panel->name, rc);
+				panel->name, rc);
 	}
 
 	panel->hbm_mode = hbm_mode;
@@ -4557,6 +4559,10 @@ static int dsi_panel_update_hbm_locked(struct dsi_panel *panel,
 			pr_err("[%s] failed to send HBM exit cmd, rc=%d\n",
 				panel->name, rc);
 	}
+
+	if (bl->bl_device)
+		sysfs_notify(&bl->bl_device->dev.kobj, NULL,
+					"state");
 
 	return 0;
 }

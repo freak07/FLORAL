@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
-ifneq ($(CONFIG_BOARD_FLORAL),y)
+ifneq ($(filter y,$(CONFIG_BOARD_SUNFISH) $(CONFIG_BOARD_FLORAL)),y)
 
 ifeq ($(TARGET_BOARD_TYPE),auto)
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
@@ -61,6 +61,7 @@ dtb-$(CONFIG_ARCH_SM6150)	+= sa6155-adp-star.dtb \
 	sa6155p-v2-adp-air.dtb
 
 endif
+
 else #ifeq ($(TARGET_BOARD_TYPE),auto)
 dtb-$(CONFIG_ARCH_QCOM)	+= apq8016-sbc.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-db820c.dtb
@@ -453,10 +454,12 @@ dtb-$(CONFIG_ARCH_SDXPRAIRIE) += sdxprairie-rumi.dtb \
 	sa515m-v2-ccard-pcie-ep.dtb \
 	sa515m-v2-ccard-usb-ep.dtb
 
-endif #ifneq ($(CONFIG_BOARD_FLORAL),y)
+endif #ifeq ($(TARGET_BOARD_TYPE),auto)
 
 dtb-$(CONFIG_ARCH_MDM9607) += mdm9607-mtp.dtb
-endif #ifeq ($(TARGET_BOARD_TYPE),auto)
+endif #ifneq ($(filter y,$(CONFIG_BOARD_SUNFISH) $(CONFIG_BOARD_FLORAL)),y)
+
+
 ifeq ($(CONFIG_ARM64),y)
 always		:= $(dtb-y)
 subdir-y	:= $(dts-dirs)

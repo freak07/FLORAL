@@ -763,7 +763,7 @@ struct __packed gsi_wdi_channel_scratch {
 * gsi_mhip_channel_scratch - MHI PRIME protocol SW config area of
 * channel scratch
 * @assert_bit_40: Valid only for non-host channels.
-* Set to 1 for MHI’ channels when running over PCIe.
+* Set to 1 for MHI\92 channels when running over PCIe.
 * @host_channel: Set to 1 for MHIP channel running on host.
 *
 */

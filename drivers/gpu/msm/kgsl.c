@@ -86,6 +86,7 @@ struct dmabuf_list_entry {
 };
 
 struct kgsl_dma_buf_meta {
+	struct kgsl_device *device;
 	struct kgsl_mem_entry *entry;
 	struct dma_buf_attachment *attach;
 	struct dma_buf *dmabuf;
@@ -284,8 +285,7 @@ kgsl_mem_entry_create(void)
 	return entry;
 }
 
-static void add_dmabuf_list(struct kgsl_device *device,
-				struct kgsl_dma_buf_meta *meta)
+static void add_dmabuf_list(struct kgsl_dma_buf_meta *meta)
 {
 	struct dmabuf_list_entry *dle;
 	struct page *page;
@@ -318,14 +318,13 @@ static void add_dmabuf_list(struct kgsl_device *device,
 		list_add(&dle->node, &kgsl_dmabuf_list);
 		meta->dle = dle;
 		list_add(&meta->node, &dle->dmabuf_list);
-		kgsl_trace_gpu_mem_total(device,
+		kgsl_trace_gpu_mem_total(meta->device,
 				 meta->entry->memdesc.size);
 	}
 	spin_unlock(&kgsl_dmabuf_lock);
 }
 
-static void remove_dmabuf_list(struct kgsl_device *device,
-				struct kgsl_dma_buf_meta *meta)
+static void remove_dmabuf_list(struct kgsl_dma_buf_meta *meta)
 {
 	struct dmabuf_list_entry *dle = meta->dle;
 
@@ -337,18 +336,17 @@ static void remove_dmabuf_list(struct kgsl_device *device,
 	if (list_empty(&dle->dmabuf_list)) {
 		list_del(&dle->node);
 		kfree(dle);
-		kgsl_trace_gpu_mem_total(device,
+		kgsl_trace_gpu_mem_total(meta->device,
 				-(meta->entry->memdesc.size));
 	}
 	spin_unlock(&kgsl_dmabuf_lock);
 }
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
-static void kgsl_destroy_ion(struct kgsl_device *device,
-				struct kgsl_dma_buf_meta *meta)
+static void kgsl_destroy_ion(struct kgsl_dma_buf_meta *meta)
 {
 	if (meta != NULL) {
-		remove_dmabuf_list(device, meta);
+		remove_dmabuf_list(meta);
 		dma_buf_unmap_attachment(meta->attach, meta->table,
 			DMA_BIDIRECTIONAL);
 		dma_buf_detach(meta->dmabuf, meta->attach);
@@ -357,8 +355,7 @@ static void kgsl_destroy_ion(struct kgsl_device *device,
 	}
 }
 #else
-static void kgsl_destroy_ion(struct kgsl_device *device,
-				struct kgsl_dma_buf_meta *meta)
+static void kgsl_destroy_ion(struct kgsl_dma_buf_meta *meta)
 {
 }
 #endif
@@ -369,14 +366,10 @@ kgsl_mem_entry_destroy(struct kref *kref)
 	struct kgsl_mem_entry *entry = container_of(kref,
 						    struct kgsl_mem_entry,
 						    refcount);
-	struct kgsl_device *device = NULL;
 	unsigned int memtype;
 
 	if (entry == NULL)
 		return;
-
-	if (entry->memdesc.pagetable != NULL)
-		device = KGSL_MMU_DEVICE(entry->memdesc.pagetable->mmu);
 
 	/* pull out the memtype before the flags get cleared */
 	memtype = kgsl_memdesc_usermem_type(&entry->memdesc);
@@ -419,7 +412,7 @@ kgsl_mem_entry_destroy(struct kref *kref)
 
 	switch (memtype) {
 	case KGSL_MEM_ENTRY_ION:
-		kgsl_destroy_ion(device, entry->priv_data);
+		kgsl_destroy_ion(entry->priv_data);
 		break;
 	default:
 		break;
@@ -591,6 +584,21 @@ static int _kgsl_get_context_id(struct kgsl_device *device)
 	return id;
 }
 
+void kgsl_dump_active_contexts(struct kgsl_device *device)
+{
+	struct kgsl_context *tmp_context;
+	int tmp_id;
+
+	read_lock(&device->context_lock);
+	idr_for_each_entry (&device->context_idr, tmp_context, tmp_id) {
+		KGSL_DRV_ERR(device, "process %s pid %d created %d contexts",
+			     tmp_context->proc_priv->comm,
+			     tmp_context->proc_priv->pid,
+			     tmp_context->proc_priv->ctxt_count);
+	}
+	read_unlock(&device->context_lock);
+}
+
 /**
  * kgsl_context_init() - helper to initialize kgsl_context members
  * @dev_priv: the owner of the context
@@ -639,12 +647,14 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 		flush_workqueue(device->events_wq);
 		id = _kgsl_get_context_id(device);
 	}
-
 	if (id < 0) {
-		if (id == -ENOSPC)
-			KGSL_DRV_INFO(device,
+		if (id == -ENOSPC) {
+			KGSL_DRV_ERR(
+				device,
 				"cannot have more than %zu contexts due to memstore limitation\n",
 				KGSL_MEMSTORE_MAX);
+			kgsl_dump_active_contexts(device);
+		}
 		atomic_dec(&proc_priv->ctxt_count);
 		return id;
 	}
@@ -2111,7 +2121,7 @@ static long gpumem_free_entry_on_timestamp(struct kgsl_device *device,
 	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_RETIRED, &temp);
 	trace_kgsl_mem_timestamp_queue(device, entry, context->id, temp,
 		timestamp);
-	ret = kgsl_add_low_prio_event(device, &context->events,
+	ret = kgsl_add_event(device, &context->events,
 		timestamp, gpumem_free_func, entry);
 
 	if (ret)
@@ -2695,7 +2705,7 @@ long kgsl_ioctl_gpuobj_import(struct kgsl_device_private *dev_priv,
 
 unmap:
 	if (kgsl_memdesc_usermem_type(&entry->memdesc) == KGSL_MEM_ENTRY_ION) {
-		kgsl_destroy_ion(dev_priv->device, entry->priv_data);
+		kgsl_destroy_ion(entry->priv_data);
 		entry->memdesc.sgt = NULL;
 	}
 
@@ -2796,6 +2806,7 @@ static int kgsl_setup_dma_buf(struct kgsl_device *device,
 	if (entry->memdesc.flags & KGSL_MEMFLAGS_IOCOHERENT)
 		attach->dma_map_attrs |= DMA_ATTR_SKIP_CPU_SYNC;
 
+	meta->device = device;
 	meta->dmabuf = dmabuf;
 	meta->attach = attach;
 	meta->entry = entry;
@@ -2840,7 +2851,7 @@ static int kgsl_setup_dma_buf(struct kgsl_device *device,
 		goto out;
 	}
 
-	add_dmabuf_list(device, meta);
+	add_dmabuf_list(meta);
 	entry->memdesc.size = PAGE_ALIGN(entry->memdesc.size);
 
 out:
@@ -3010,7 +3021,7 @@ long kgsl_ioctl_map_user_mem(struct kgsl_device_private *dev_priv,
 error_attach:
 	switch (kgsl_memdesc_usermem_type(&entry->memdesc)) {
 	case KGSL_MEM_ENTRY_ION:
-		kgsl_destroy_ion(dev_priv->device, entry->priv_data);
+		kgsl_destroy_ion(entry->priv_data);
 		entry->memdesc.sgt = NULL;
 		break;
 	default:
@@ -5162,18 +5173,6 @@ static void kgsl_core_exit(void)
 	unregister_chrdev_region(kgsl_driver.major, KGSL_DEVICE_MAX);
 }
 
-static long kgsl_run_one_worker(struct kthread_worker *worker,
-		struct task_struct **thread, const char *name)
-{
-	kthread_init_worker(worker);
-	*thread = kthread_run(kthread_worker_fn, worker, name);
-	if (IS_ERR(*thread)) {
-		pr_err("unable to start %s\n", name);
-		return PTR_ERR(thread);
-	}
-	return 0;
-}
-
 static int __init kgsl_core_init(void)
 {
 	int result = 0;
@@ -5245,16 +5244,17 @@ static int __init kgsl_core_init(void)
 	kgsl_driver.mem_workqueue = alloc_workqueue("kgsl-mementry",
 		WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
 
-	if (IS_ERR_VALUE(kgsl_run_one_worker(&kgsl_driver.worker,
-			&kgsl_driver.worker_thread,
-			"kgsl_worker_thread")) ||
-		IS_ERR_VALUE(kgsl_run_one_worker(&kgsl_driver.low_prio_worker,
-			&kgsl_driver.low_prio_worker_thread,
-			"kgsl_low_prio_worker_thread")))
+	kthread_init_worker(&kgsl_driver.worker);
+
+	kgsl_driver.worker_thread = kthread_run(kthread_worker_fn,
+		&kgsl_driver.worker, "kgsl_worker_thread");
+
+	if (IS_ERR(kgsl_driver.worker_thread)) {
+		pr_err("unable to start kgsl thread\n");
 		goto err;
+	}
 
 	sched_setscheduler(kgsl_driver.worker_thread, SCHED_FIFO, &param);
-	/* kgsl_driver.low_prio_worker_thread should not be SCHED_FIFO */
 
 	kgsl_events_init();
 

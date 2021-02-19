@@ -348,6 +348,14 @@ static int a6xx_gmu_start(struct kgsl_device *device)
 
 	kgsl_regwrite(device, A6XX_GMU_CX_GMU_WFI_CONFIG, 0x0);
 
+	/**
+	 * We may have asserted gbif halt as part of reset sequence which may
+	 * not get cleared if the gdsc was not reset. So clear it before
+	 * attempting GMU boot.
+	 */
+	if (adreno_has_gbif(ADRENO_DEVICE(device)))
+		kgsl_regwrite(device, A6XX_GBIF_HALT, 0x0);
+
 	/* Bring GMU out of reset */
 	gmu_core_regwrite(device, A6XX_GMU_CM3_SYSRESET, 0);
 	/* Make sure the request completes before continuing */
@@ -1252,15 +1260,18 @@ static int a6xx_gmu_suspend(struct kgsl_device *device)
 			ADRENO_GPU_DEVICE(adreno_dev);
 
 		/* Halt GX traffic */
-		do_gbif_halt(device, A6XX_RBBM_GBIF_HALT,
-			A6XX_RBBM_GBIF_HALT_ACK, gpudev->gbif_gx_halt_mask,
-			"GX");
+		if (a6xx_gmu_gx_is_on(adreno_dev))
+			do_gbif_halt(device, A6XX_RBBM_GBIF_HALT,
+				A6XX_RBBM_GBIF_HALT_ACK,
+				gpudev->gbif_gx_halt_mask,
+				"GX");
 		/* Halt CX traffic */
 		do_gbif_halt(device, A6XX_GBIF_HALT, A6XX_GBIF_HALT_ACK,
 			gpudev->gbif_arb_halt_mask, "CX");
 	}
 
-	kgsl_regwrite(device, A6XX_RBBM_SW_RESET_CMD, 0x1);
+	if (a6xx_gmu_gx_is_on(adreno_dev))
+		kgsl_regwrite(device, A6XX_RBBM_SW_RESET_CMD, 0x1);
 
 	/* Allow the software reset to complete */
 	udelay(100);

@@ -160,14 +160,6 @@ config DEBUG_MODULE_LOAD_INFO
 
 	  If unsure, say N.
 
-config DEBUG_CONSOLE_UNHASHED_POINTERS
-	bool "Display unhashed kernel pointers"
-	depends on DEBUG_KERNEL
-	help
-	  Pointers %p and %pK are normally hashed prior to being displayed to
-	  prevent leaking kernel addresses. On debug builds, always print
-	  actual pointer values, ignoring the kptr_restrict setting.
-	  Not to be enabled on production builds.
 
 endmenu # "printk and dmesg options"
 
@@ -2143,6 +2135,16 @@ config PANIC_ON_DATA_CORRUPTION
 	 Select this option to upgrade warnings for potentially
 	 recoverable data corruption scenarios to system-halting panics,
 	 for easier detection and debug.
+
+config CC_WERROR
+	bool "Treat all compile warnings as errors"
+	default n
+	help
+	 Select this option to set compiler warnings as errors,
+	 to prevent easily-fixable problems from creeping into
+	 the codebase.
+
+	 If unsure, say N.
 
 source "samples/Kconfig"
 

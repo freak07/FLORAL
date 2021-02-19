@@ -2854,12 +2854,10 @@ error_disable_cmd_engine:
 				display->name, ret);
 	}
 error_disable_clks:
-	ret = dsi_display_clk_ctrl(display->dsi_clk_handle,
-			DSI_ALL_CLKS, DSI_CLK_OFF);
-	if (ret) {
-		pr_err("[%s] failed to disable all DSI clocks, rc=%d\n",
-		       display->name, ret);
-	}
+	if (dsi_display_clk_ctrl(display->dsi_clk_handle,
+				 DSI_ALL_CLKS, DSI_CLK_OFF))
+		pr_err("[%s] failed to disable all DSI clocks\n",
+		       display->name);
 error:
 	return rc;
 }

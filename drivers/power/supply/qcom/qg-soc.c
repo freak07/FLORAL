@@ -69,7 +69,7 @@ static int qg_process_fvss_soc(struct qpnp_qg *chip, int sys_soc)
 	if (chip->charge_status == POWER_SUPPLY_STATUS_CHARGING)
 		goto exit_soc_scale;
 
-	rc = qg_get_battery_voltage(chip, &vbat_uv);
+	rc = qg_get_vbat_avg(chip, &vbat_uv);
 	if (rc < 0)
 		goto exit_soc_scale;
 
@@ -344,7 +344,7 @@ static void get_next_update_time(struct qpnp_qg *chip)
 		/* if in maintenance mode scale slower */
 		min_delta_soc_interval_ms = qg_maint_soc_update_ms;
 	else if (chip->fvss_active)
-		min_delta_soc_interval_ms = qg_fvss_delta_soc_interval_ms;
+		min_delta_soc_interval_ms = chip->dt.fvss_interval_ms;
 
 	if (!min_delta_soc_interval_ms)
 		min_delta_soc_interval_ms = 1000;	/* 1 second */

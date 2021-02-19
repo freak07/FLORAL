@@ -1376,7 +1376,6 @@ static void scan_block(void *_start, void *_end,
 /*
  * Scan a large memory block in MAX_SCAN_SIZE chunks to reduce the latency.
  */
-#ifdef CONFIG_SMP
 static void scan_large_block(void *start, void *end)
 {
 	void *next;
@@ -1388,7 +1387,6 @@ static void scan_large_block(void *start, void *end)
 		cond_resched();
 	}
 }
-#endif
 
 /*
  * Scan a memory block corresponding to a kmemleak_object. A condition is

@@ -41,6 +41,7 @@
 #include "qg-soc.h"
 #include "qg-battery-profile.h"
 #include "qg-defs.h"
+#include "../google/google_bms.h"
 
 static int qg_debug_mask;
 module_param_named(
@@ -209,6 +210,9 @@ static void qg_notify_charger(struct qpnp_qg *chip)
 	if (!chip->profile_loaded)
 		return;
 
+	/*
+	 * Don't set charger in qg, it should set by
+	 * google_charger
 	prop.intval = chip->bp.float_volt_uv;
 	rc = power_supply_set_property(chip->batt_psy,
 			POWER_SUPPLY_PROP_VOLTAGE_MAX, &prop);
@@ -228,6 +232,7 @@ static void qg_notify_charger(struct qpnp_qg *chip)
 	}
 
 	pr_debug("Notified charger on float voltage and FCC\n");
+	 */
 
 	rc = power_supply_get_property(chip->batt_psy,
 			POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT, &prop);
@@ -243,7 +248,7 @@ static bool is_batt_available(struct qpnp_qg *chip)
 	if (chip->batt_psy)
 		return true;
 
-	chip->batt_psy = power_supply_get_by_name("battery");
+	chip->batt_psy = power_supply_get_by_name("sm7150_bms");
 	if (!chip->batt_psy)
 		return false;
 
@@ -465,8 +470,24 @@ static int qg_process_fifo(struct qpnp_qg *chip, u32 fifo_length)
 		chip->kdata.fifo[j].interval = sample_interval;
 		chip->kdata.fifo[j].count = sample_count;
 
-		chip->last_fifo_v_uv = chip->kdata.fifo[j].v;
 		chip->last_fifo_i_ua = chip->kdata.fifo[j].i;
+
+		chip->fifo_count++;
+		/* sub the oldest fifo data */
+		chip->vbat_fifo_avg -=
+				chip->vbat_fifo_now[chip->fifo_count - 1];
+		chip->vbat_fifo_avg += chip->kdata.fifo[j].v;
+		chip->vbat_fifo_now[chip->fifo_count - 1] =
+				chip->kdata.fifo[j].v;
+		if ((chip->fifo_count == chip->dt.fvss_fifo_count) &&
+		    !chip->vbat_fifo_acc)
+			chip->vbat_fifo_acc = true;
+		if (chip->vbat_fifo_acc){
+			chip->last_fifo_v_uv =
+				 div_u64(chip->vbat_fifo_avg,
+					 chip->dt.fvss_fifo_count);
+			chip->fifo_count %= chip->dt.fvss_fifo_count;
+		}
 
 		qg_dbg(chip, QG_DEBUG_FIFO, "FIFO %d raw_v=%d uV=%d raw_i=%d uA=%d interval=%d count=%d\n",
 					j, fifo_v,
@@ -532,8 +553,21 @@ static int qg_process_accumulator(struct qpnp_qg *chip)
 	if (chip->kdata.fifo_length == MAX_FIFO_LENGTH)
 		chip->kdata.fifo_length = MAX_FIFO_LENGTH - 1;
 
-	chip->last_fifo_v_uv = chip->kdata.fifo[index].v;
 	chip->last_fifo_i_ua = chip->kdata.fifo[index].i;
+
+	chip->fifo_count++;
+	/* sub the oldest fifo data */
+	chip->vbat_fifo_avg -= chip->vbat_fifo_now[chip->fifo_count - 1];
+	chip->vbat_fifo_avg += chip->kdata.fifo[index].v;
+	chip->vbat_fifo_now[chip->fifo_count - 1] = chip->kdata.fifo[index].v;
+	if ((chip->fifo_count == chip->dt.fvss_fifo_count) &&
+	    !chip->vbat_fifo_acc)
+		chip->vbat_fifo_acc = true;
+	if (chip->vbat_fifo_acc){
+		chip->last_fifo_v_uv = div_u64(chip->vbat_fifo_avg,
+					       chip->dt.fvss_fifo_count);
+		chip->fifo_count %= chip->dt.fvss_fifo_count;
+	}
 
 	if (chip->kdata.fifo_length == 1)	/* Only accumulator data */
 		chip->kdata.seq_no = chip->seq_no++ % U32_MAX;
@@ -1137,6 +1171,10 @@ static void process_udata_work(struct work_struct *work)
 	if (chip->udata.param[QG_CC_SOC].valid)
 		chip->cc_soc = chip->udata.param[QG_CC_SOC].data;
 
+	if (chip->udata.param[QG_CHARGE_COUNTER].valid)
+		chip->charge_counter =
+				chip->udata.param[QG_CHARGE_COUNTER].data;
+
 	if (chip->udata.param[QG_BATT_SOC].valid)
 		chip->batt_soc = chip->udata.param[QG_BATT_SOC].data;
 
@@ -1601,6 +1639,21 @@ static int qg_get_cc_soc(void *data, int *cc_soc)
 	return 0;
 }
 
+static int qg_get_cc(void *data, int *cc)
+{
+	struct qpnp_qg *chip = data;
+
+	if (!chip)
+		return -ENODEV;
+
+	if (chip->charge_counter == INT_MIN)
+		return -EINVAL;
+
+	*cc = chip->charge_counter;
+
+	return 0;
+}
+
 static int qg_restore_cycle_count(void *data, u16 *buf, int length)
 {
 	struct qpnp_qg *chip = data;
@@ -1713,6 +1766,25 @@ static int qg_get_battery_capacity_real(struct qpnp_qg *chip, int *soc)
 	*soc = chip->msoc;
 	mutex_unlock(&chip->soc_lock);
 
+	return 0;
+}
+
+static int qg_get_battery_capacity_raw(struct qpnp_qg *chip, int *soc)
+{
+	int rc, vbat_uv = 0;
+
+	rc = qg_get_vbat_avg(chip, &vbat_uv);
+	if (rc < 0 || vbat_uv <= (chip->dt.fvss_vbat_mv * 1000))
+		return -EINVAL;
+
+	mutex_lock(&chip->soc_lock);
+	if (chip->msoc != chip->catch_up_soc) {
+		mutex_unlock(&chip->soc_lock);
+		return -EINVAL;
+	}
+
+	*soc = (chip->sys_soc * 256) / 100;
+	mutex_unlock(&chip->soc_lock);
 	return 0;
 }
 
@@ -2064,10 +2136,28 @@ static int qg_psy_get_property(struct power_supply *psy,
 		rc = qg_get_battery_capacity(chip, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY_RAW:
-		pval->intval = chip->sys_soc;
+		/*
+		 * to be compatible with other fuel gauge
+		 * for google_battery supporting
+		 */
+		rc = qg_get_battery_capacity_raw(chip, &pval->intval);
+		if (rc < 0) {
+			rc = qg_get_battery_capacity(chip, (int *)&temp);
+			if (rc == 0)
+				pval->intval = (int)temp * 256;
+			else
+				pr_err("qg_get_battery_capacity() rc=%d\n",
+				       rc);
+		}
 		break;
 	case POWER_SUPPLY_PROP_REAL_CAPACITY:
 		rc = qg_get_battery_capacity_real(chip, &pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_HEALTH:
+		if (chip->batt_psy)
+			rc = power_supply_get_property(chip->batt_psy,
+						       POWER_SUPPLY_PROP_HEALTH,
+						       pval);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		rc = qg_get_battery_voltage(chip, &pval->intval);
@@ -2101,6 +2191,7 @@ static int qg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_RESISTANCE_CAPACITIVE:
 		pval->intval = chip->dt.rbat_conn_mohm;
 		break;
+	case POWER_SUPPLY_PROP_SERIAL_NUMBER:
 	case POWER_SUPPLY_PROP_BATTERY_TYPE:
 		pval->strval = qg_get_battery_type(chip);
 		break;
@@ -2133,12 +2224,41 @@ static int qg_psy_get_property(struct power_supply *psy,
 			pval->intval = (int)temp;
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNTS:
-		rc = get_cycle_counts(chip->counter, &pval->strval);
-		if (rc < 0)
-			pval->strval = NULL;
+		if (chip->dt.qg_cycle_disable) {
+			u16 count[BUCKET_COUNT];
+
+			rc = qg_sdam_multibyte_read(QG_SDAM_CYCLE_COUNT_OFFSET,
+							(u8 *)count,
+							sizeof(count));
+			if (rc < 0) {
+				pval->strval = NULL;
+				pr_err("cycle read failed: %d\n", rc);
+				break;
+			}
+			gbms_cycle_count_cstr(chip->cycle_str,
+					      GBMS_CCBIN_CSTR_SIZE, count);
+			pval->strval = chip->cycle_str;
+		} else {
+			rc = get_cycle_counts(chip->counter, &pval->strval);
+			if (rc < 0)
+				pval->strval = NULL;
+		}
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
-		rc = get_cycle_count(chip->counter, &pval->intval);
+		if (chip->dt.qg_cycle_disable) {
+			u16 count[BUCKET_COUNT];
+			int id;
+
+			rc = qg_sdam_multibyte_read(QG_SDAM_CYCLE_COUNT_OFFSET,
+							(u8 *)count,
+							sizeof(count));
+			if (rc < 0)
+				break;
+			for (id = 0; id < BUCKET_COUNT; id++)
+				temp += count[id];
+			pval->intval = temp / 100;
+		} else
+			rc = get_cycle_count(chip->counter, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_AVG:
 		rc = ttf_get_time_to_full(chip->ttf, &pval->intval);
@@ -2178,6 +2298,37 @@ static int qg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
 		pval->intval = chip->batt_age_level;
 		break;
+	case POWER_SUPPLY_PROP_PRESENT:
+		if (is_batt_available(chip))
+			rc = power_supply_get_property(chip->batt_psy,
+						      POWER_SUPPLY_PROP_PRESENT,
+						      pval);
+		else
+			pval->intval = 1;
+		break;
+	case POWER_SUPPLY_PROP_STATUS:
+		if (chip->battery_missing)
+			pval->intval = POWER_SUPPLY_STATUS_DISCHARGING;
+		else if (is_batt_available(chip))
+			rc = power_supply_get_property(chip->batt_psy,
+						       POWER_SUPPLY_PROP_STATUS,
+						       pval);
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_FIFO:
+		pval->intval = chip->last_fifo_v_uv;
+		break;
+	case POWER_SUPPLY_PROP_CC_UAH:
+		rc = qg_get_cc(chip, &pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_CUTOFF_SOC:
+		pval->intval = chip->cutoff_soc;
+		break;
+	case POWER_SUPPLY_PROP_SYS_SOC:
+		pval->intval = chip->sys_soc;
+		break;
+	case POWER_SUPPLY_PROP_BATT_SOC:
+		pval->intval = chip->batt_soc;
+		break;
 	default:
 		pr_debug("Unsupported property %d\n", psp);
 		break;
@@ -2206,6 +2357,7 @@ static int qg_property_is_writeable(struct power_supply *psy,
 static enum power_supply_property qg_psy_props[] = {
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_CAPACITY_RAW,
+	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_REAL_CAPACITY,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
@@ -2240,6 +2392,13 @@ static enum power_supply_property qg_psy_props[] = {
 	POWER_SUPPLY_PROP_POWER_NOW,
 	POWER_SUPPLY_PROP_SCALE_MODE_EN,
 	POWER_SUPPLY_PROP_BATT_AGE_LEVEL,
+	POWER_SUPPLY_PROP_PRESENT,
+	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_VOLTAGE_FIFO,
+	POWER_SUPPLY_PROP_CC_UAH,
+	POWER_SUPPLY_PROP_CUTOFF_SOC,
+	POWER_SUPPLY_PROP_SYS_SOC,
+	POWER_SUPPLY_PROP_BATT_SOC,
 };
 
 static const struct power_supply_desc qg_psy_desc = {
@@ -2534,6 +2693,14 @@ static void qg_sleep_exit_work(struct work_struct *work)
 	vote(chip->awake_votable, SLEEP_EXIT_VOTER, false, 0);
 }
 
+static void qg_temp_chk_work(struct work_struct *work)
+{
+	struct qpnp_qg *chip = container_of(work,
+			struct qpnp_qg, qg_temp_chk_work.work);
+
+	power_supply_changed(chip->qg_psy);
+}
+
 static void qg_status_change_work(struct work_struct *work)
 {
 	struct qpnp_qg *chip = container_of(work,
@@ -2623,6 +2790,7 @@ static int qg_notifier_cb(struct notifier_block *nb,
 		return NOTIFY_OK;
 
 	if ((strcmp(psy->desc->name, "battery") == 0)
+		|| (strcmp(psy->desc->name, "sm7150_bms") == 0)
 		|| (strcmp(psy->desc->name, "parallel") == 0)
 		|| (strcmp(psy->desc->name, "usb") == 0)
 		|| (strcmp(psy->desc->name, "dc") == 0)) {
@@ -2639,13 +2807,11 @@ static int qg_notifier_cb(struct notifier_block *nb,
 
 static int qg_init_psy(struct qpnp_qg *chip)
 {
-	struct power_supply_config qg_psy_cfg;
+	struct power_supply_config qg_psy_cfg = {};
 	int rc;
 
 	qg_psy_cfg.drv_data = chip;
-	qg_psy_cfg.of_node = NULL;
-	qg_psy_cfg.supplied_to = NULL;
-	qg_psy_cfg.num_supplicants = 0;
+	qg_psy_cfg.of_node = chip->dev->of_node;
 	chip->qg_psy = devm_power_supply_register(chip->dev,
 				&qg_psy_desc, &qg_psy_cfg);
 	if (IS_ERR_OR_NULL(chip->qg_psy)) {
@@ -2885,10 +3051,11 @@ static int get_batt_id_ohm(struct qpnp_qg *chip, u32 *batt_id_ohm)
 	return 0;
 }
 
+#define BATT_TYPE_UNKNOWN	"unknown"
 static int qg_load_battery_profile(struct qpnp_qg *chip)
 {
 	struct device_node *node = chip->dev->of_node;
-	struct device_node *profile_node;
+	struct device_node *profile_node = NULL;
 	int rc, tuple_len, len, i, avail_age_level = 0;
 
 	chip->batt_node = of_find_node_by_name(node, "qcom,battery-data");
@@ -2917,8 +3084,27 @@ static int qg_load_battery_profile(struct qpnp_qg *chip)
 			chip->batt_age_level = avail_age_level;
 		}
 	} else {
-		profile_node = of_batterydata_get_best_profile(chip->batt_node,
-				chip->batt_id_ohm / 1000, NULL);
+		char *batt_type;
+
+		batt_type = (chip->dt.batt_type_name == NULL) ?
+			    (char *)chip->batt_gpn :
+			    (char *)chip->dt.batt_type_name;
+
+		if (batt_type != NULL)
+			profile_node = of_batterydata_get_best_profile(
+						chip->batt_node,
+						chip->batt_id_ohm / 1000,
+						batt_type);
+
+		/* Loading the unknown profile
+		 * 1. if loading best profile by batt_type is fail
+		 * 2. if batt_type is NULL
+		 */
+		if (profile_node == NULL)
+			profile_node = of_batterydata_get_best_profile(
+						chip->batt_node,
+						chip->batt_id_ohm / 1000,
+						BATT_TYPE_UNKNOWN);
 	}
 
 	if (IS_ERR(profile_node)) {
@@ -3224,6 +3410,7 @@ use_pon_ocv:
 			pr_err("Failed to lookup CUTOFF_SOC@PON rc=%d\n", rc);
 			goto done;
 		}
+		chip->cutoff_soc = cutoff_soc;
 
 		if ((full_soc > cutoff_soc) && (pon_soc > cutoff_soc)) {
 			soc = DIV_ROUND_UP(((pon_soc - cutoff_soc) * 100),
@@ -3695,6 +3882,12 @@ static int qg_alg_init(struct qpnp_qg *chip)
 	struct device_node *node = chip->dev->of_node;
 	int rc;
 
+
+	chip->dt.qg_cycle_disable = of_property_read_bool(node,
+						"google,qg-cycle-disable");
+	if (chip->dt.qg_cycle_disable)
+		goto skip_counter;
+
 	counter = devm_kzalloc(chip->dev, sizeof(*counter), GFP_KERNEL);
 	if (!counter)
 		return -ENOMEM;
@@ -3714,6 +3907,7 @@ static int qg_alg_init(struct qpnp_qg *chip)
 
 	chip->counter = counter;
 
+skip_counter:
 	ttf = devm_kzalloc(chip->dev, sizeof(*ttf), GFP_KERNEL);
 	if (!ttf)
 		return -ENOMEM;
@@ -3805,6 +3999,8 @@ static int qg_alg_init(struct qpnp_qg *chip)
 #define DEFAULT_SYS_MIN_VOLT_MV		2800
 #define DEFAULT_FAST_CHG_S2_FIFO_LENGTH	1
 #define DEFAULT_FVSS_VBAT_MV		3500
+#define DEFAULT_FVSS_FIFO_COUNT		1
+#define DEFAULT_FVSS_INTERVAL_MS	10000
 #define DEFAULT_TCSS_ENTRY_SOC		90
 static int qg_parse_dt(struct qpnp_qg *chip)
 {
@@ -4110,6 +4306,20 @@ static int qg_parse_dt(struct qpnp_qg *chip)
 			chip->dt.fvss_vbat_mv = DEFAULT_FVSS_VBAT_MV;
 		else
 			chip->dt.fvss_vbat_mv = temp;
+
+		rc = of_property_read_u32(node,
+				"qcom,fvss-fifo-count", &temp);
+		if (rc < 0)
+			chip->dt.fvss_fifo_count = DEFAULT_FVSS_FIFO_COUNT;
+		else
+			chip->dt.fvss_fifo_count = temp;
+
+		rc = of_property_read_u32(node,
+				"google,fvss-interval-ms", &temp);
+		if (rc < 0)
+			chip->dt.fvss_interval_ms = DEFAULT_FVSS_INTERVAL_MS;
+		else
+			chip->dt.fvss_interval_ms = temp;
 	}
 
 	if (of_property_read_bool(node, "qcom,tcss-enable")) {
@@ -4128,6 +4338,9 @@ static int qg_parse_dt(struct qpnp_qg *chip)
 
 	chip->dt.multi_profile_load = of_property_read_bool(node,
 					"qcom,multi-profile-load");
+
+	(void)of_property_read_string(node, "google,batt_type_name",
+				&chip->dt.batt_type_name);
 
 	/* Capacity learning params*/
 	if (!chip->dt.cl_disable) {
@@ -4191,7 +4404,7 @@ static int qg_parse_dt(struct qpnp_qg *chip)
 
 		if (of_property_read_bool(node, "qcom,cl-wt-enable")) {
 			chip->cl->dt.cl_wt_enable = true;
-			chip->cl->dt.min_start_soc = DEFAULT_CL_WT_START_SOC;
+			chip->cl->dt.min_start_soc = -EINVAL;
 			chip->cl->dt.max_start_soc = -EINVAL;
 		}
 
@@ -4199,6 +4412,7 @@ static int qg_parse_dt(struct qpnp_qg *chip)
 			chip->cl->dt.min_start_soc, chip->cl->dt.max_start_soc,
 			chip->cl->dt.min_temp, chip->cl->dt.max_temp);
 	}
+
 	qg_dbg(chip, QG_DEBUG_PON, "DT: vbatt_empty_mv=%dmV vbatt_low_mv=%dmV delta_soc=%d ext-sns=%d\n",
 			chip->dt.vbatt_empty_mv, chip->dt.vbatt_low_mv,
 			chip->dt.delta_soc, chip->dt.qg_ext_sense);
@@ -4217,6 +4431,7 @@ static int process_suspend(struct qpnp_qg *chip)
 		return 0;
 
 	cancel_delayed_work_sync(&chip->ttf->ttf_work);
+	cancel_delayed_work_sync(&chip->qg_temp_chk_work);
 
 	chip->suspend_data = false;
 
@@ -4443,12 +4658,144 @@ static int qpnp_qg_resume(struct device *dev)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_GOOGLE_BMS)
+#define MAX_DEFER_CNT	10
+static int qg_get_batt_type(struct qpnp_qg *chip)
+{
+	static int defer_cnt;
+	bool defer;
+	int rc = 0;
+
+	chip->batt_gpn = kzalloc(GBMS_BGPN_LEN + 1, GFP_KERNEL);
+
+	if (chip->batt_gpn == NULL) {
+		pr_err("Failed to get battery type, rc=%d\n", rc);
+		return 0;
+	}
+
+	*((char *)chip->batt_gpn + GBMS_BGPN_LEN) = '\0';
+
+	rc = gbms_storage_read(GBMS_TAG_BGPN, (void *)chip->batt_gpn,
+			       GBMS_BGPN_LEN);
+
+	if (rc < 0) {
+		kfree(chip->batt_gpn);
+		chip->batt_gpn = NULL;
+	}
+
+	defer = (rc == -EPROBE_DEFER) ||
+		(rc == -EINVAL);
+
+	if (defer) {
+		defer_cnt++;
+
+		if (defer_cnt <= MAX_DEFER_CNT)
+			return -EPROBE_DEFER;
+	}
+
+	pr_info("eeprom ID=%s, len=%d, defer_cnt=%d\n",
+		chip->batt_gpn, rc, defer_cnt);
+
+	return 0;
+}
+
+static int qg_storage_iter(int index, gbms_tag_t *tag, void *ptr)
+{
+	static gbms_tag_t keys[] = { GBMS_TAG_BCNT };
+	const int count = ARRAY_SIZE(keys);
+
+	if (index >= 0 && index < count)
+		*tag = keys[index];
+	else
+		return -ENOENT;
+
+	return 0;
+}
+
+static int qg_storage_read(gbms_tag_t tag, void *buff, size_t size,
+			   void *ptr)
+{
+	int ret;
+	int offset = 0;
+
+	switch (tag) {
+	case GBMS_TAG_BCNT:
+		if (size != (BUCKET_COUNT * 2)) {
+			pr_err("BCNT read error size %d/%d",
+					(BUCKET_COUNT * 2), size);
+			return -ERANGE;
+		}
+
+		offset = QG_SDAM_CYCLE_COUNT_OFFSET;
+		break;
+	default:
+		ret = -ENOENT;
+		break;
+	}
+
+	if (offset)
+		ret = qg_sdam_multibyte_read(offset, (u8 *)buff,
+					     BUCKET_COUNT * 2);
+	if (ret < 0) {
+		pr_err("failed to read cycle counts rc=%d\n", ret);
+		return ret;
+	}
+	return ret;
+}
+
+static int qg_storage_write(gbms_tag_t tag, const void *buff, size_t size,
+				  void *ptr)
+{
+	int ret;
+	int offset = 0;
+
+	switch (tag) {
+	case GBMS_TAG_BCNT:
+		if (size != (BUCKET_COUNT * 2)) {
+			pr_err("BCNT write error size %d/%d",
+					(BUCKET_COUNT * 2), size);
+			return -ERANGE;
+		}
+
+		offset = QG_SDAM_CYCLE_COUNT_OFFSET;
+		break;
+	default:
+		ret = -ENOENT;
+		break;
+	}
+
+	if (offset)
+		ret = qg_sdam_multibyte_write(offset, (u8 *)buff,
+					      BUCKET_COUNT * 2);
+	if (ret < 0) {
+		pr_err("failed to write cycle counts rc=%d\n", ret);
+		return ret;
+	}
+	return ret;
+}
+
+static struct gbms_storage_desc qg_storage_dsc = {
+	.iter = qg_storage_iter,
+	.read = qg_storage_read,
+	.write = qg_storage_write,
+};
+#endif /* CONFIG_GOOGLE_BMS */
+
 static const struct dev_pm_ops qpnp_qg_pm_ops = {
 	.suspend_noirq	= qpnp_qg_suspend_noirq,
 	.resume_noirq	= qpnp_qg_resume_noirq,
 	.suspend	= qpnp_qg_suspend,
 	.resume		= qpnp_qg_resume,
 };
+
+extern char boot_mode_string[64];
+bool is_charger_bootmode(void)
+{
+	if (!strncmp(boot_mode_string, "charger", sizeof(boot_mode_string)))
+		return true;
+
+	return false;
+}
 
 static int qpnp_qg_probe(struct platform_device *pdev)
 {
@@ -4458,6 +4805,15 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
 		return -ENOMEM;
+
+#if IS_ENABLED(CONFIG_GOOGLE_BMS)
+	rc = qg_get_batt_type(chip);
+	if (rc < 0) {
+		pr_err("Failed to get battery type, rc=%d\n", rc);
+		devm_kfree(&pdev->dev, chip);
+		return rc;
+	}
+#endif /* CONFIG_GOOGLE_BMS */
 
 	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!chip->regmap) {
@@ -4490,6 +4846,7 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	INIT_WORK(&chip->udata_work, process_udata_work);
 	INIT_WORK(&chip->qg_status_change_work, qg_status_change_work);
 	INIT_DELAYED_WORK(&chip->qg_sleep_exit_work, qg_sleep_exit_work);
+	INIT_DELAYED_WORK(&chip->qg_temp_chk_work, qg_temp_chk_work);
 	mutex_init(&chip->bus_lock);
 	mutex_init(&chip->soc_lock);
 	mutex_init(&chip->data_lock);
@@ -4498,12 +4855,18 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	chip->batt_soc = INT_MIN;
 	chip->cc_soc = INT_MIN;
 	chip->sys_soc = INT_MIN;
+	chip->cutoff_soc = INT_MIN;
 	chip->full_soc = QG_SOC_FULL;
 	chip->chg_iterm_ma = INT_MIN;
 	chip->soh = -EINVAL;
 	chip->esr_actual = -EINVAL;
 	chip->esr_nominal = -EINVAL;
 	chip->batt_age_level = -EINVAL;
+	chip->vbat_fifo_avg = 0;
+	chip->fifo_count = 0;
+	chip->last_fifo_v_uv = 0;
+	chip->vbat_fifo_acc = false;
+	wakeup_source_init(&chip->qg_wakelock, "google-qg");
 
 	rc = qg_alg_init(chip);
 	if (rc < 0) {
@@ -4570,10 +4933,14 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 				}
 			}
 		}
-		rc = restore_cycle_count(chip->counter);
-		if (rc < 0) {
-			pr_err("Error in restoring cycle_count, rc=%d\n", rc);
-			return rc;
+
+		if (!chip->dt.qg_cycle_disable) {
+			rc = restore_cycle_count(chip->counter);
+			if (rc < 0) {
+				pr_err("Error restoring cycle_count, rc=%d\n",
+						rc);
+				return rc;
+			}
 		}
 		schedule_delayed_work(&chip->ttf->ttf_work, 10000);
 	}
@@ -4635,9 +5002,22 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 		goto fail_votable;
 	}
 
+#if IS_ENABLED(CONFIG_GOOGLE_BMS)
+	rc = gbms_storage_register(&qg_storage_dsc, "qg", chip);
+	if (rc < 0) {
+		pr_err("Failed in qg_storage_register rc=%d\n", rc);
+		goto fail_votable;
+	}
+#endif
+
 	qg_get_battery_capacity(chip, &soc);
-	pr_info("QG initialized! battery_profile=%s SOC=%d QG_subtype=%d\n",
-			qg_get_battery_type(chip), soc, chip->qg_subtype);
+
+	/*FIXME: need to fix bootmode value problem with b/148833549*/
+	chip->is_charger_mode = is_charger_bootmode();
+
+	pr_info("QG initialized! battery_profile=%s SOC=%d QG_subtype=%d charger_mode=%d\n",
+		qg_get_battery_type(chip), soc, chip->qg_subtype,
+		chip->is_charger_mode);
 
 	return rc;
 
@@ -4658,6 +5038,7 @@ static int qpnp_qg_remove(struct platform_device *pdev)
 	qg_soc_exit(chip);
 
 	cancel_delayed_work_sync(&chip->qg_sleep_exit_work);
+	cancel_delayed_work_sync(&chip->qg_temp_chk_work);
 	cancel_work_sync(&chip->udata_work);
 	cancel_work_sync(&chip->qg_status_change_work);
 	device_destroy(chip->qg_class, chip->dev_no);
@@ -4666,6 +5047,7 @@ static int qpnp_qg_remove(struct platform_device *pdev)
 	mutex_destroy(&chip->bus_lock);
 	mutex_destroy(&chip->data_lock);
 	mutex_destroy(&chip->soc_lock);
+	wakeup_source_trash(&chip->qg_wakelock);
 	if (chip->awake_votable)
 		destroy_votable(chip->awake_votable);
 

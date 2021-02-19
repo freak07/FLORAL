@@ -3437,9 +3437,9 @@ int sde_rotator_pm_resume(struct device *dev)
 
 	SDEROT_DBG("PM system resume\n");
 	sde_rot_mgr_lock(mgr);
-	SDEROT_DBG("begin pm active %d clk_cnt %d\n",
+	SDEROT_DBG("begin pm system active %d clk_cnt %d\n",
 	 atomic_read(&mgr->device_suspended), mgr->pm_rot_enable_clk_cnt);
-	ATRACE_BEGIN("pm_active");
+	ATRACE_BEGIN("pm_system_active");
 	SDEROT_EVTLOG(mgr->pm_rot_enable_clk_cnt,
 			 atomic_read(&mgr->device_suspended));
 	atomic_dec(&mgr->device_suspended);

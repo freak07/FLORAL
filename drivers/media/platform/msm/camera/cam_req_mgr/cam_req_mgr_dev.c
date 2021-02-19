@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -268,26 +268,49 @@ static long cam_private_ioctl(struct file *file, void *fh,
 		break;
 
 	case CAM_REQ_MGR_LINK: {
-		struct cam_req_mgr_link_info link_info;
+		struct cam_req_mgr_ver_info ver_info;
 
-		if (k_ioctl->size != sizeof(link_info))
+		if (k_ioctl->size != sizeof(ver_info.u.link_info_v1))
 			return -EINVAL;
 
-		if (copy_from_user(&link_info,
+		if (copy_from_user(&ver_info.u.link_info_v1,
 			u64_to_user_ptr(k_ioctl->handle),
 			sizeof(struct cam_req_mgr_link_info))) {
 			return -EFAULT;
 		}
-
-		rc = cam_req_mgr_link(&link_info);
+		ver_info.version = VERSION_1;
+		rc = cam_req_mgr_link(&ver_info);
 		if (!rc)
 			if (copy_to_user(
 				u64_to_user_ptr(k_ioctl->handle),
-				&link_info,
+				&ver_info.u.link_info_v1,
 				sizeof(struct cam_req_mgr_link_info)))
 				rc = -EFAULT;
 		}
 		break;
+
+	case CAM_REQ_MGR_LINK_V2: {
+			struct cam_req_mgr_ver_info ver_info;
+
+			if (k_ioctl->size != sizeof(ver_info.u.link_info_v2))
+				return -EINVAL;
+
+			if (copy_from_user(&ver_info.u.link_info_v2,
+				u64_to_user_ptr(k_ioctl->handle),
+				sizeof(struct cam_req_mgr_link_info_v2))) {
+				return -EFAULT;
+			}
+			ver_info.version = VERSION_2;
+			rc = cam_req_mgr_link_v2(&ver_info);
+			if (!rc)
+				if (copy_to_user(
+					u64_to_user_ptr(k_ioctl->handle),
+					&ver_info.u.link_info_v2,
+					sizeof(struct
+						cam_req_mgr_link_info_v2)))
+					rc = -EFAULT;
+			}
+			break;
 
 	case CAM_REQ_MGR_UNLINK: {
 		struct cam_req_mgr_unlink_info unlink_info;
@@ -450,6 +473,31 @@ static long cam_private_ioctl(struct file *file, void *fh,
 			rc = -EINVAL;
 		}
 		break;
+
+	case CAM_REQ_MGR_REQUEST_DUMP: {
+		struct cam_dump_req_cmd cmd;
+
+		if (k_ioctl->size != sizeof(cmd))
+			return -EINVAL;
+
+		if (copy_from_user(&cmd,
+			u64_to_user_ptr(k_ioctl->handle),
+			sizeof(struct cam_dump_req_cmd))) {
+			rc = -EFAULT;
+			break;
+		}
+
+		rc = cam_req_mgr_dump_request(&cmd);
+		if (!rc)
+			if (copy_to_user(
+				u64_to_user_ptr(k_ioctl->handle),
+				&cmd, sizeof(struct cam_dump_req_cmd))) {
+				rc = -EFAULT;
+				break;
+			}
+		}
+		break;
+
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -516,12 +564,12 @@ int cam_req_mgr_notify_message(struct cam_req_mgr_message *msg,
 
 	if (id == V4L_EVENT_CAM_REQ_MGR_SOF) {
 		CAM_DBG(CAM_CRM,
-			"request id %lld frame number %lld SOF time stamp %lld",
+			"request id:%lld frame number:%lld SOF time stamp:0x%llx",
 			msg->u.frame_msg.request_id, msg->u.frame_msg.frame_id,
 			msg->u.frame_msg.timestamp);
 	} else if (id == V4L_EVENT_CAM_REQ_MGR_SOF_BOOT_TS) {
 		CAM_DBG(CAM_CRM,
-			"request id %lld frame number %lld boot time stamp %lld",
+			"request id:%lld frame number:%lld boot time stamp:0x%llx",
 			msg->u.frame_msg.request_id, msg->u.frame_msg.frame_id,
 			msg->u.frame_msg.timestamp);
 	} else if (id == V4L_EVENT_CAM_REQ_MGR_VSYNC_TS) {
@@ -531,16 +579,6 @@ int cam_req_mgr_notify_message(struct cam_req_mgr_message *msg,
 			msg->u.frame_msg.timestamp);
 	}
 
-	if (g_dev.safety_ic_status != NO_ERROR) {
-		msg->u.frame_msg.laser_tag = LASER_TAG_NONE;
-		CAM_DBG(CAM_CRM,
-			"request id %lld frame number %lld report laser error %d",
-			msg->u.frame_msg.request_id,
-			msg->u.frame_msg.frame_id,
-			g_dev.safety_ic_status);
-	} else
-		cam_req_mgr_tag_laser(msg);
-	msg->u.frame_msg.safety_ic_status = g_dev.safety_ic_status;
 	event.id = id;
 	event.type = type;
 	ev_header = CAM_REQ_MGR_GET_PAYLOAD_PTR(event,
@@ -630,18 +668,6 @@ int cam_unregister_subdev(struct cam_subdev *csd)
 }
 EXPORT_SYMBOL(cam_unregister_subdev);
 
-void cam_req_mgr_update_safety_ic_status(
-	enum safety_ic_error_type status)
-{
-	if (g_dev.safety_ic_status != status) {
-		CAM_INFO(CAM_CRM,
-			"change laser status from %d to %d",
-			g_dev.safety_ic_status, status);
-		g_dev.safety_ic_status = status;
-	}
-}
-EXPORT_SYMBOL(cam_req_mgr_update_safety_ic_status);
-
 static int cam_req_mgr_remove(struct platform_device *pdev)
 {
 	cam_req_mgr_core_device_deinit();
@@ -691,7 +717,6 @@ static int cam_req_mgr_probe(struct platform_device *pdev)
 	}
 
 	g_dev.state = true;
-	g_dev.safety_ic_status = NO_ERROR;
 
 	if (g_cam_req_mgr_timer_cachep == NULL) {
 		g_cam_req_mgr_timer_cachep = kmem_cache_create("crm_timer",

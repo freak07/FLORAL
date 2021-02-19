@@ -57,7 +57,7 @@
 
 #define SUZYQ_ENABLED "enabled"
 
-static char boot_mode_string[64];
+char boot_mode_string[64];
 static char suzyq_enabled[15];
 
 struct usbpd {
@@ -126,6 +126,7 @@ struct usbpd {
 
 	bool ext_vbus_supported;
 	bool wireless_online;
+	bool wireless_supported;
 
 	bool low_power_udev;
 	bool switch_based_on_maxpower;
@@ -837,7 +838,8 @@ static void psy_changed_handler(struct work_struct *work)
 	enum power_supply_typec_mode typec_mode;
 	enum typec_cc_orientation typec_cc_orientation;
 
-	bool pe_start, wireless_online;
+	bool pe_start;
+	bool wireless_online = false;
 
 	union power_supply_propval val;
 	int ret = 0;
@@ -889,16 +891,18 @@ static void psy_changed_handler(struct work_struct *work)
 	}
 	typec_cc_orientation = val.intval;
 
-	ret = power_supply_get_property(pd->wireless_psy,
-					POWER_SUPPLY_PROP_ONLINE,
-					&val);
-	if (ret < 0) {
-		logbuffer_log(pd->log,
-			      "Unable to read wireless online property, ret=%d",
-			      ret);
-		goto free;
+	if (pd->wireless_supported) {
+		ret = power_supply_get_property(pd->wireless_psy,
+						POWER_SUPPLY_PROP_ONLINE,
+						&val);
+		if (ret < 0) {
+			logbuffer_log(pd->log,
+				      "Unable to read wireless online property, ret=%d",
+				      ret);
+			goto free;
+		}
+		wireless_online = val.intval ? true : false;
 	}
-	wireless_online = val.intval ? true : false;
 
 	parse_cc_status(typec_mode, typec_cc_orientation, &cc1, &cc2);
 #ifdef CONFIG_UCI_NOTIFICATIONS
@@ -998,7 +1002,7 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	struct psy_changed_event *event;
 
 	pd = container_of(nb, struct usbpd, psy_nb);
-	if (ptr == pd->wireless_psy)
+	if (pd->wireless_supported && ptr == pd->wireless_psy)
 		logbuffer_log(pd->log, "wireless supply changed");
 
 	if (!((ptr == pd->usb_psy || ptr == pd->wireless_psy)
@@ -2044,6 +2048,11 @@ static int update_ext_vbus(struct notifier_block *self, unsigned long action,
 	pd->low_power_udev = turn_on_ext_vbus;
 
 	if (pd->switch_based_on_maxpower) {
+		if (pd->pd_capable) {
+			logbuffer_log(pd->log,
+				      "PD is capable, don't operate ext_vbus");
+			goto exit;
+		}
 		pd->external_vbus_update = turn_on_ext_vbus;
 		work_queued = queue_delayed_work(pd->wq, &pd->ext_vbus_work,
 					turn_on_ext_vbus ?
@@ -2125,6 +2134,9 @@ struct usbpd *usbpd_create(struct device *parent)
 	ret = device_add(&pd->dev);
 	if (ret < 0)
 		goto free_buffer;
+
+	pd->wireless_supported = device_property_read_bool(parent,
+							   "goog,wlc-supported");
 
 	ret = pd_engine_debugfs_init(pd);
 	if (ret < 0)
@@ -2210,12 +2222,14 @@ struct usbpd *usbpd_create(struct device *parent)
 		goto del_wq;
 	}
 
-	pd->wireless_psy = power_supply_get_by_name("wireless");
-	if (!pd->wireless_psy) {
-		dev_err(&pd->dev,
-			"Could not get wireless power_supply, deferring probe");
-		ret = -EPROBE_DEFER;
-		goto put_psy_usb;
+	if (pd->wireless_supported) {
+		pd->wireless_psy = power_supply_get_by_name("wireless");
+		if (!pd->wireless_psy) {
+			dev_err(&pd->dev,
+				"Could not get wireless power_supply, deferring probe");
+			ret = -EPROBE_DEFER;
+			goto put_psy_usb;
+		}
 	}
 
 	pd->usb_icl_votable = find_votable("USB_ICL");
@@ -2284,7 +2298,8 @@ unreg_tcpm:
 	tcpm_unregister_port(pd->tcpm_port);
 put_psy_wireless:
 	ext_vbus_unregister_notify(&pd->ext_vbus_nb);
-	power_supply_put(pd->wireless_psy);
+	if (pd->wireless_supported)
+		power_supply_put(pd->wireless_psy);
 put_psy_usb:
 	power_supply_put(pd->usb_psy);
 del_wq:
@@ -2315,7 +2330,8 @@ void usbpd_destroy(struct usbpd *pd)
 	power_supply_unreg_notifier(&pd->psy_nb);
 	tcpm_unregister_port(pd->tcpm_port);
 	ext_vbus_unregister_notify(&pd->ext_vbus_nb);
-	power_supply_put(pd->wireless_psy);
+	if (pd->wireless_supported)
+		power_supply_put(pd->wireless_psy);
 	power_supply_put(pd->usb_psy);
 	destroy_workqueue(pd->wq);
 	pd_engine_debugfs_exit(pd);

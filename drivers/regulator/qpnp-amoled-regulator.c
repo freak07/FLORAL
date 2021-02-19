@@ -321,7 +321,8 @@ static int qpnp_ab_ibb_regulator_set_mode(struct regulator_dev *rdev,
 			queue_delayed_work(chip->wq, &chip->vout_work, delay);
 		}
 	}
-	return 0;
+
+	return rc;
 }
 
 static unsigned int qpnp_ab_ibb_regulator_get_mode(struct regulator_dev *rdev)

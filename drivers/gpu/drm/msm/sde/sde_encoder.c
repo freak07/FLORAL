@@ -988,11 +988,6 @@ bool sde_encoder_in_clone_mode(struct drm_encoder *drm_enc)
 	return false;
 }
 
-static inline bool is_lp_mode(int mode)
-{
-	return mode == SDE_MODE_DPMS_LP1 || mode == SDE_MODE_DPMS_LP2;
-}
-
 bool sde_encoder_is_topology_ppsplit(struct drm_encoder *drm_enc)
 {
 	struct sde_encoder_virt *sde_enc;
@@ -1009,6 +1004,11 @@ bool sde_encoder_is_topology_ppsplit(struct drm_encoder *drm_enc)
 
 	return  (sde_connector_get_topology_name(master->connector)
 			== SDE_RM_TOPOLOGY_PPSPLIT);
+}
+
+static inline bool is_lp_mode(int mode)
+{
+	return mode == SDE_MODE_DPMS_LP1 || mode == SDE_MODE_DPMS_LP2;
 }
 
 static int sde_encoder_virt_atomic_check(
@@ -1933,8 +1933,8 @@ static int _sde_encoder_update_rsc_client(
 	int rc = 0;
 	int wait_refcount = 0;
 	bool force_vid_rsc = false;
-	struct msm_drm_private *priv;
-	struct sde_kms *sde_kms;
+        struct msm_drm_private *priv;
+        struct sde_kms *sde_kms;
 
 	if (!drm_enc || !drm_enc->dev) {
 		SDE_ERROR("invalid encoder arguments\n");
@@ -1977,32 +1977,32 @@ static int _sde_encoder_update_rsc_client(
 	 * secondary command mode panel.
 	 * Clone mode encoder can request CLK STATE only.
 	 */
-	if (sde_enc->force_vid_rsc) {
-		force_vid_rsc = true;
-	} else if (crtc->state && crtc->state->mode_changed &&
-		   msm_is_mode_seamless_dms_fps(&crtc->state->adjusted_mode)) {
-		SDE_DEBUG_ENC(sde_enc, "seamless dms with fps\n");
-		force_vid_rsc = true;
-	} else if (sde_enc->cur_master && sde_connector_get_qsync_mode(
-			sde_enc->cur_master->connector)) {
-		force_vid_rsc = true;
-	}
+        if (sde_enc->force_vid_rsc) {
+                force_vid_rsc = true;
+        } else if (crtc->state && crtc->state->mode_changed &&
+                   msm_is_mode_seamless_dms_fps(&crtc->state->adjusted_mode)) {
+                SDE_DEBUG_ENC(sde_enc, "seamless dms with fps\n");
+                force_vid_rsc = true;
+        } else if (sde_enc->cur_master && sde_connector_get_qsync_mode(
+                        sde_enc->cur_master->connector)) {
+                force_vid_rsc = true;
+        }
 
-	if (!enable)
-		rsc_state = SDE_RSC_IDLE_STATE;
-	else if (sde_encoder_in_clone_mode(drm_enc))
-		rsc_state = SDE_RSC_CLK_STATE;
-	else if ((disp_info->capabilities & MSM_DISPLAY_CAP_CMD_MODE) &&
-		 disp_info->is_primary && !force_vid_rsc)
-		rsc_state = SDE_RSC_CMD_STATE;
-	else
-		rsc_state = SDE_RSC_VID_STATE;
+        if (!enable)
+                rsc_state = SDE_RSC_IDLE_STATE;
+        else if (sde_encoder_in_clone_mode(drm_enc))
+                rsc_state = SDE_RSC_CLK_STATE;
+        else if ((disp_info->capabilities & MSM_DISPLAY_CAP_CMD_MODE) &&
+                 disp_info->is_primary && !force_vid_rsc)
+                rsc_state = SDE_RSC_CMD_STATE;
+        else
+                rsc_state = SDE_RSC_VID_STATE;
 
         if (IS_SDE_MAJOR_SAME(sde_kms->core_rev, SDE_HW_VER_620) &&
                         (rsc_state == SDE_RSC_VID_STATE))
                 rsc_state = SDE_RSC_CLK_STATE;
 
-	SDE_EVT32(rsc_state, force_vid_rsc);
+        SDE_EVT32(rsc_state, force_vid_rsc);
 
 	prefill_lines = config ? mode_info.prefill_lines +
 		config->inline_rotate_prefill : mode_info.prefill_lines;

@@ -2233,8 +2233,8 @@ static int _ext4_show_options(struct seq_file *seq, struct super_block *sb,
 		SEQ_OPTS_PRINT("max_dir_size_kb=%u", sbi->s_max_dir_size_kb);
 	if (test_opt(sb, DATA_ERR_ABORT))
 		SEQ_OPTS_PUTS("data_err=abort");
-	if (DUMMY_ENCRYPTION_ENABLED(sbi))
-		SEQ_OPTS_PUTS("test_dummy_encryption");
+
+	fscrypt_show_test_dummy_encryption(seq, sep, sb);
 
 	fscrypt_show_test_dummy_encryption(seq, sep, sb);
 

@@ -189,7 +189,7 @@ static struct cam_iommu_cb_set iommu_cb_set;
 
 static struct dentry *smmu_dentry;
 
-static bool smmu_fatal_flag;
+static bool smmu_fatal_flag = true;
 
 static enum dma_data_direction cam_smmu_translate_dir(
 	enum cam_smmu_map_dir dir);
@@ -3255,7 +3255,7 @@ static int cam_smmu_setup_cb(struct cam_context_bank_info *cb,
 			goto end;
 		}
 
-		iommu_cb_set.non_fatal_fault = !smmu_fatal_flag;
+		iommu_cb_set.non_fatal_fault = smmu_fatal_flag;
 		if (iommu_domain_set_attr(cb->mapping->domain,
 			DOMAIN_ATTR_NON_FATAL_FAULTS,
 			&iommu_cb_set.non_fatal_fault) < 0) {

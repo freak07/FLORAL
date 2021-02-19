@@ -80,7 +80,6 @@ ENTRY(__guest_enter)
 	ret
 
 1:
-
 	add	x29, x0, #VCPU_CONTEXT
 
 	// Restore guest regs x0-x17

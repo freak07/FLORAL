@@ -64,6 +64,8 @@ struct qg_dt {
 	int			min_sleep_time_secs;
 	int			sys_min_volt_mv;
 	int			fvss_vbat_mv;
+	int			fvss_fifo_count;
+	int			fvss_interval_ms;
 	int			tcss_entry_soc;
 	bool			hold_soc_while_full;
 	bool			linearize_soc;
@@ -79,6 +81,8 @@ struct qg_dt {
 	bool			multi_profile_load;
 	bool			tcss_enable;
 	bool			bass_enable;
+	const char		*batt_type_name;
+	bool			qg_cycle_disable;
 };
 
 struct qg_esr_data {
@@ -106,6 +110,7 @@ struct qpnp_qg {
 	struct work_struct	scale_soc_work;
 	struct work_struct	qg_status_change_work;
 	struct delayed_work	qg_sleep_exit_work;
+	struct delayed_work	qg_temp_chk_work;
 	struct notifier_block	nb;
 	struct mutex		bus_lock;
 	struct mutex		data_lock;
@@ -143,8 +148,10 @@ struct qpnp_qg {
 	bool			charge_full;
 	bool			force_soc;
 	bool			fvss_active;
+	bool			vbat_fifo_acc;
 	bool			tcss_active;
 	bool			bass_active;
+	bool			is_charger_mode;
 	int			charge_status;
 	int			charge_type;
 	int			chg_iterm_ma;
@@ -172,12 +179,19 @@ struct qpnp_qg {
 	u32			s2_state_mask;
 	u32			soc_fvss_entry;
 	u32			vbat_fvss_entry;
+	u32			fifo_count;
+	u64			vbat_fifo_avg;
+	u32			vbat_fifo_now[16];
 	ktime_t			last_user_update_time;
 	ktime_t			last_fifo_update_time;
 	unsigned long		last_maint_soc_update_time;
 	unsigned long		suspend_time;
 	struct iio_channel	*batt_therm_chan;
 	struct iio_channel	*batt_id_chan;
+	struct wakeup_source	qg_wakelock;
+
+	/* GPN in eeprom*/
+	const char		*batt_gpn;
 
 	/* soc params */
 	int			catch_up_soc;
@@ -186,8 +200,10 @@ struct qpnp_qg {
 	int			pon_soc;
 	int			batt_soc;
 	int			cc_soc;
+	int			charge_counter;
 	int			full_soc;
 	int			sys_soc;
+	int			cutoff_soc;
 	int			last_adj_ssoc;
 	int			recharge_soc;
 	int			batt_age_level;
@@ -201,6 +217,7 @@ struct qpnp_qg {
 	struct cap_learning	*cl;
 	/* charge counter */
 	struct cycle_counter	*counter;
+	char			cycle_str[BUCKET_COUNT * 6 + 2];
 	/* ttf */
 	struct ttf		*ttf;
 };

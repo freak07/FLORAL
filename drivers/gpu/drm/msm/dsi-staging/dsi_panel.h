@@ -34,6 +34,7 @@
 #define MAX_BL_SCALE_LEVEL 1024
 #define MAX_AD_BL_SCALE_LEVEL 65535
 #define DSI_CMD_PPS_SIZE 135
+#define BL_RANGE_MAX 10
 
 #define DSI_MODE_MAX 5
 #define HBM_RANGE_MAX 4
@@ -49,6 +50,7 @@ enum dsi_backlight_type {
 	DSI_BACKLIGHT_PWM = 0,
 	DSI_BACKLIGHT_WLED,
 	DSI_BACKLIGHT_DCS,
+	DSI_BACKLIGHT_EXTERNAL,
 	DSI_BACKLIGHT_UNKNOWN,
 	DSI_BACKLIGHT_MAX,
 };
@@ -157,6 +159,22 @@ struct hbm_data {
 	struct workqueue_struct *dimming_workq;
 	struct work_struct dimming_work;
 	struct dsi_panel *panel;
+
+	/* IRC register address */
+	u8 irc_addr;
+	u32 irc_bit_offset;
+	u8 *irc_data;
+
+	/* Command to be sent to the panel to irc unlock */
+	struct dsi_panel_cmd_set irc_unlock_cmd;
+	/* Command to be sent to the panel to irc lock  */
+	struct dsi_panel_cmd_set irc_lock_cmd;
+};
+
+struct bl_notifier_data {
+	u32 ranges[BL_RANGE_MAX];
+	u32 num_ranges;
+	u32 cur_range;
 };
 
 struct dsi_backlight_config {
@@ -166,6 +184,7 @@ struct dsi_backlight_config {
 	u32 bl_min_level;
 	u32 bl_max_level;
 	u32 brightness_max_level;
+	u32 brightness_default_level;
 	u32 bl_scale;
 	u32 bl_scale_ad;
 	u32 bl_actual;
@@ -175,6 +194,7 @@ struct dsi_backlight_config {
 	bool allow_bl_update;
 	struct mutex state_lock;
 
+	struct bl_notifier_data *bl_notifier;
 	struct hbm_data *hbm;
 
 	int en_gpio;
@@ -503,6 +523,8 @@ enum hbm_mode_type dsi_panel_get_hbm(struct dsi_panel *panel);
 // special try locking version...
 int dsi_panel_try_update_hbm(struct dsi_panel *panel, enum hbm_mode_type);
 #endif
+
+int dsi_panel_bl_update_irc(struct dsi_backlight_config *bl, bool enable);
 
 int dsi_panel_switch_init(struct dsi_panel *panel);
 void dsi_panel_switch_destroy(struct dsi_panel *panel);

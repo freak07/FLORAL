@@ -30,8 +30,8 @@
 #include "gc.h"
 #include "trace.h"
 #include <trace/events/f2fs.h>
-#include <uapi/linux/f2fs.h>
 #include <trace/events/android_fs.h>
+#include <uapi/linux/f2fs.h>
 
 static int f2fs_filemap_fault(struct vm_fault *vmf)
 {
@@ -3786,7 +3786,8 @@ static int f2fs_sec_trim_file(struct file *filp, unsigned long arg)
 	if (((range.flags & F2FS_TRIM_FILE_DISCARD) &&
 			!f2fs_hw_support_discard(sbi)) ||
 			((range.flags & F2FS_TRIM_FILE_ZEROOUT) &&
-			 IS_ENCRYPTED(inode) && f2fs_is_multi_device(sbi)))
+			 IS_ENCRYPTED(inode) && (f2fs_is_multi_device(sbi) ||
+		         fscrypt_using_hardware_encryption(inode))))
 		return -EOPNOTSUPP;
 
 	file_start_write(filp);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -132,6 +132,7 @@ enum sensor_sub_module {
 	SUB_MODULE_CSID,
 	SUB_MODULE_CSIPHY,
 	SUB_MODULE_OIS,
+	SUB_MODULE_IR_LED,
 	SUB_MODULE_EXT,
 	SUB_MODULE_MAX,
 };
@@ -149,8 +150,6 @@ enum msm_camera_power_seq_type {
 	SENSOR_STANDBY,
 	SENSOR_CUSTOM_GPIO1,
 	SENSOR_CUSTOM_GPIO2,
-	SENSOR_CUSTOM_REG3,
-	SENSOR_CUSTOM_REG4,
 	SENSOR_SEQ_TYPE_MAX,
 };
 
@@ -162,17 +161,14 @@ enum cam_sensor_packet_opcodes {
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_CONFIG,
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_STREAMOFF,
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_READREG,
-	CAM_SENSOR_PACKET_OPCODE_SENSOR_READ,
-	CAM_SENSOR_PACKET_OPCODE_SENSOR_SYNC_CMD,
-	CAM_SENSOR_PACKET_OPCODE_SENSOR_SYNC_MASTER,
-	CAM_SENSOR_PACKET_OPCODE_SENSOR_SYNC_SLAVE,
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_NOP = 127
 };
 
 enum cam_actuator_packet_opcodes {
 	CAM_ACTUATOR_PACKET_OPCODE_INIT,
 	CAM_ACTUATOR_PACKET_AUTO_MOVE_LENS,
-	CAM_ACTUATOR_PACKET_MANUAL_MOVE_LENS
+	CAM_ACTUATOR_PACKET_MANUAL_MOVE_LENS,
+	CAM_ACTUATOR_PACKET_REG_READ
 };
 
 enum cam_eeprom_packet_opcodes {
@@ -240,29 +236,6 @@ enum cam_sensor_i2c_cmd_type {
 	CAM_SENSOR_I2C_POLL
 };
 
-enum cam_sensor_sync_role {
-	CAM_SENSOR_SYNC_NONE = 0,
-	CAM_SENSOR_SYNC_MASTER,
-	CAM_SENSOR_SYNC_SLAVE
-};
-
-enum sensor_cmd_meta_type {
-	SENSOR_CMD_META_TYPE_INVALID = 0,
-	SENSOR_CMD_META_TYPE_SYNC_CMD
-};
-
-enum sensor_sync_cmd_type {
-	SENSOR_SYNC_CMD_TYPE_INVALID = 0,
-	SENSOR_SYNC_CMD_TYPE_INIT,
-	SENSOR_SYNC_CMD_TYPE_UPDATE
-};
-
-enum sensor_sync_cmd_flag {
-	SENSOR_SYNC_CMD_FLAG_ROLE_SWITCH = 1,
-	SENSOR_SYNC_CMD_FLAG_ROLE_FPS_UNIFY = 2,
-	SENSOR_SYNC_CMD_FLAG_ROLE_UPDATE = 4,
-};
-
 struct common_header {
 	uint16_t    first_word;
 	uint8_t     third_byte;
@@ -310,7 +283,6 @@ struct cam_sensor_i2c_reg_setting {
 	enum camera_sensor_i2c_type addr_type;
 	enum camera_sensor_i2c_type data_type;
 	unsigned short delay;
-	unsigned short slave_addr;
 };
 
 struct i2c_settings_list {
@@ -331,8 +303,6 @@ struct i2c_data_settings {
 	struct i2c_settings_array streamon_settings;
 	struct i2c_settings_array streamoff_settings;
 	struct i2c_settings_array *per_frame;
-	struct i2c_settings_array master_settings;
-	struct i2c_settings_array slave_settings;
 };
 
 struct cam_sensor_power_ctrl_t {
@@ -344,7 +314,6 @@ struct cam_sensor_power_ctrl_t {
 	struct msm_camera_gpio_num_info *gpio_num_info;
 	struct msm_pinctrl_info pinctrl_info;
 	uint8_t cam_pinctrl_status;
-	uint8_t cam_power_aurora_v2;
 };
 
 struct cam_camera_slave_info {
@@ -352,11 +321,6 @@ struct cam_camera_slave_info {
 	uint16_t sensor_id_reg_addr;
 	uint16_t sensor_id;
 	uint16_t sensor_id_mask;
-};
-
-struct cam_sensor_override_info {
-	uint16_t sensor_slave_addr;
-	uint16_t sensor_id;
 };
 
 struct msm_sensor_init_params {
@@ -416,8 +380,6 @@ enum msm_camera_vreg_name_t {
 	CAM_VAF,
 	CAM_V_CUSTOM1,
 	CAM_V_CUSTOM2,
-	CAM_V_CUSTOM3,
-	CAM_V_CUSTOM4,
 	CAM_VREG_MAX,
 };
 
@@ -436,45 +398,4 @@ struct msm_camera_gpio_conf {
 	struct msm_camera_gpio_num_info *gpio_num_info;
 };
 
-enum camera_sensor_sync_policy_t {
-	CAM_SENSOR_SYNC_XVS,
-	CAM_SENSOR_SYNC_VSYNC,
-	CAM_SENSOR_SYNC_MAX
-};
-
-struct sensor_hw_sync_reg_info {
-	uint32_t stream_on_addr;    /* Stream on */
-	uint32_t gph_addr;          /* Group param hold */
-	uint32_t fll_hi_addr;       /* Frame length lines high */
-	uint32_t fll_lo_addr;       /* Frame length lines low */
-	uint32_t cit_hi_addr;       /* Coarse integration time high */
-	uint32_t cit_lo_addr;       /* Coarse integration time low */
-	uint32_t ms_sel_addr;       /* master/slave select */
-	uint32_t frame_ctrl_addr;   /* Frame length control */
-};
-
-struct cam_cmd_set_sensor_sync {
-	uint32_t cmd_type;    /* command type */
-	uint32_t flags;       /* command flags */
-	uint32_t fll;         /* frame length in lines */
-	uint32_t margin;      /* margin for sensor sync */
-	uint32_t role;        /* sensor sync role */
-	uint32_t hw_type;     /* hardware type */
-	uint64_t data_handle; /* data handle */
-};
-
-struct cam_sensor_hw_sync_ctrl {
-	uint32_t fll;                /* frame length in lines */
-	uint32_t ratio;              /* frame length ratio */
-	uint32_t margin;             /* margin for sensor sync */
-	uint32_t is_hwsync;          /* if hw sync enabled */
-	uint32_t is_master;          /* if in master synbc mode */
-	uint32_t is_stream_on;       /* if stream on */
-	uint32_t role_switch_en;     /* if role switch enabled */
-	uint32_t fps_unify_en;       /* if FPS unify enabled */
-	uint64_t last_sof_timestamp; /* last sof timestamp */
-	int64_t  req_id;             /* current req id */
-	struct cam_sensor_ctrl_t *peer;      /* pinter to peer sensor */
-	struct sensor_hw_sync_reg_info regs; /* sensor regs info */
-};
 #endif /* _CAM_SENSOR_CMN_HEADER_ */

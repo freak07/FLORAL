@@ -116,7 +116,7 @@ int32_t cam_csiphy_update_secure_info(
 	uint32_t clock_lane, adj_lane_mask, temp;
 	int32_t offset;
 
-	if (csiphy_dev->acquire_count >
+	if (csiphy_dev->acquire_count >=
 		CSIPHY_MAX_INSTANCES) {
 		CAM_ERR(CAM_CSIPHY, "Invalid acquire count");
 		return -EINVAL;
@@ -129,7 +129,11 @@ int32_t cam_csiphy_update_secure_info(
 		return -EINVAL;
 	}
 
-	clock_lane =
+	if (cam_cmd_csiphy_info->combo_mode)
+		clock_lane =
+			csiphy_dev->ctrl_reg->csiphy_reg.csiphy_2ph_combo_ck_ln;
+	else
+		clock_lane =
 			csiphy_dev->ctrl_reg->csiphy_reg.csiphy_2ph_clock_lane;
 
 	adj_lane_mask = cam_cmd_csiphy_info->lane_mask & LANE_MASK_2PH &
@@ -140,10 +144,6 @@ int32_t cam_csiphy_update_secure_info(
 
 	if (cam_cmd_csiphy_info->csiphy_3phase)
 		adj_lane_mask = cam_cmd_csiphy_info->lane_mask & LANE_MASK_3PH;
-
-	if (cam_cmd_csiphy_info->combo_mode &&
-		!cam_cmd_csiphy_info->csiphy_3phase)
-		adj_lane_mask = 0x4;
 
 	csiphy_dev->csiphy_info.secure_mode[offset] = 1;
 
@@ -559,7 +559,7 @@ int32_t cam_csiphy_config_dev(struct csiphy_device *csiphy_dev)
 void cam_csiphy_shutdown(struct csiphy_device *csiphy_dev)
 {
 	struct cam_hw_soc_info *soc_info;
-	int32_t i = 0;
+	int32_t i = 0, rc = 0;
 
 	if (csiphy_dev->csiphy_state == CAM_CSIPHY_INIT)
 		return;
@@ -582,7 +582,10 @@ void cam_csiphy_shutdown(struct csiphy_device *csiphy_dev)
 		cam_csiphy_reset(csiphy_dev);
 		cam_soc_util_disable_platform_resource(soc_info, true, true);
 
-		cam_cpas_stop(csiphy_dev->cpas_handle);
+		rc = cam_cpas_stop(csiphy_dev->cpas_handle);
+		if (rc)
+			CAM_ERR(CAM_CSIPHY, "cpas stop failed %d", rc);
+
 		csiphy_dev->csiphy_state = CAM_CSIPHY_ACQUIRE;
 	}
 
@@ -606,6 +609,11 @@ void cam_csiphy_shutdown(struct csiphy_device *csiphy_dev)
 	csiphy_dev->acquire_count = 0;
 	csiphy_dev->start_dev_count = 0;
 	csiphy_dev->csiphy_state = CAM_CSIPHY_INIT;
+
+	/* reset csiphy info */
+	csiphy_dev->csiphy_info.lane_mask = 0;
+	csiphy_dev->csiphy_info.lane_cnt = 0;
+	csiphy_dev->csiphy_info.combo_mode = 0;
 }
 
 static int32_t cam_csiphy_external_cmd(struct csiphy_device *csiphy_dev,
@@ -733,7 +741,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		bridge_params.v4l2_sub_dev_flag = 0;
 		bridge_params.media_entity_flag = 0;
 		bridge_params.priv = csiphy_dev;
-
+		bridge_params.dev_id = CAM_CSIPHY;
 		if (csiphy_acq_params.combo_mode >= 2) {
 			CAM_ERR(CAM_CSIPHY, "Invalid combo_mode %d",
 				csiphy_acq_params.combo_mode);
@@ -838,7 +846,6 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		break;
 	case CAM_RELEASE_DEV: {
 		struct cam_release_dev_cmd release;
-		int32_t offset;
 
 		if (!csiphy_dev->acquire_count) {
 			CAM_ERR(CAM_CSIPHY, "No valid devices to release");
@@ -880,15 +887,6 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			csiphy_dev->csiphy_info.lane_cnt = 0;
 			csiphy_dev->csiphy_info.combo_mode = 0;
 		}
-
-		/* reset secure mode */
-		offset = cam_csiphy_get_instance_offset(csiphy_dev,
-		release.dev_handle);
-		if (csiphy_dev->csiphy_info.secure_mode[offset] ==
-			CAM_SECURE_MODE_SECURE) {
-			csiphy_dev->csiphy_info.secure_mode[offset] =
-				CAM_SECURE_MODE_NON_SECURE;
-		}
 	}
 		break;
 	case CAM_CONFIG_DEV: {
@@ -920,8 +918,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			goto release_mutex;
 		}
 
-		if (csiphy_dev->start_dev_count >=
-			csiphy_dev->acquire_count) {
+		if (csiphy_dev->csiphy_state == CAM_CSIPHY_START) {
 			csiphy_dev->start_dev_count++;
 			goto release_mutex;
 		}
@@ -930,23 +927,6 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			config.dev_handle);
 		if (offset < 0 || offset >= CSIPHY_MAX_INSTANCES) {
 			CAM_ERR(CAM_CSIPHY, "Invalid offset");
-			goto release_mutex;
-		}
-
-		if (csiphy_dev->csiphy_state == CAM_CSIPHY_START) {
-			if (csiphy_dev->csiphy_info.secure_mode[offset] == 1) {
-				rc = cam_csiphy_notify_secure_mode(
-					csiphy_dev,
-					CAM_SECURE_MODE_SECURE, offset);
-			}
-			if (rc < 0) {
-				csiphy_dev->csiphy_info.secure_mode[offset] =
-					CAM_SECURE_MODE_NON_SECURE;
-				cam_cpas_stop(csiphy_dev->cpas_handle);
-				goto release_mutex;
-			}
-
-			csiphy_dev->start_dev_count++;
 			goto release_mutex;
 		}
 
@@ -970,7 +950,10 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			if (rc < 0) {
 				csiphy_dev->csiphy_info.secure_mode[offset] =
 					CAM_SECURE_MODE_NON_SECURE;
-				cam_cpas_stop(csiphy_dev->cpas_handle);
+				rc = cam_cpas_stop(csiphy_dev->cpas_handle);
+				if (rc < 0)
+					CAM_ERR(CAM_CSIPHY,
+						"de-voting CPAS: %d", rc);
 				goto release_mutex;
 			}
 		}
@@ -978,30 +961,21 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		rc = cam_csiphy_enable_hw(csiphy_dev);
 		if (rc != 0) {
 			CAM_ERR(CAM_CSIPHY, "cam_csiphy_enable_hw failed");
-			if (csiphy_dev->csiphy_info.secure_mode[offset] == 1) {
-				cam_csiphy_notify_secure_mode(csiphy_dev,
-					CAM_SECURE_MODE_NON_SECURE, offset);
-				csiphy_dev->csiphy_info.secure_mode[offset] =
-					CAM_SECURE_MODE_NON_SECURE;
-			}
-			cam_cpas_stop(csiphy_dev->cpas_handle);
+			rc = cam_cpas_stop(csiphy_dev->cpas_handle);
+			if (rc < 0)
+				CAM_ERR(CAM_CSIPHY, "de-voting CPAS: %d", rc);
 			goto release_mutex;
 		}
-
 		rc = cam_csiphy_config_dev(csiphy_dev);
 		if (csiphy_dump == 1)
 			cam_csiphy_mem_dmp(&csiphy_dev->soc_info);
 
 		if (rc < 0) {
 			CAM_ERR(CAM_CSIPHY, "cam_csiphy_config_dev failed");
-			if (csiphy_dev->csiphy_info.secure_mode[offset] == 1) {
-				cam_csiphy_notify_secure_mode(csiphy_dev,
-					CAM_SECURE_MODE_NON_SECURE, offset);
-				csiphy_dev->csiphy_info.secure_mode[offset] =
-					CAM_SECURE_MODE_NON_SECURE;
-			}
 			cam_csiphy_disable_hw(csiphy_dev);
-			cam_cpas_stop(csiphy_dev->cpas_handle);
+			rc = cam_cpas_stop(csiphy_dev->cpas_handle);
+			if (rc < 0)
+				CAM_ERR(CAM_CSIPHY, "de-voting CPAS: %d", rc);
 			goto release_mutex;
 		}
 		csiphy_dev->start_dev_count++;

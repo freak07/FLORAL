@@ -88,6 +88,7 @@ lkdtm-$(CONFIG_LKDTM)		+= lkdtm_usercopy.o
 
 obj-$(CONFIG_ACCESS_RAMOOPS)    += access_ramoops.o
 
+KASAN_SANITIZE_lkdtm_rodata.o	:= n
 KCOV_INSTRUMENT_lkdtm_rodata.o	:= n
 CFLAGS_lkdtm_rodata.o		+= $(DISABLE_LTO)
 
@@ -102,6 +103,7 @@ obj-$(CONFIG_OKL4_USER_VIPC)    += okl4-vipc.o
 obj-$(CONFIG_OKL4_GUEST)        += okl4-panic.o
 obj-$(CONFIG_OKL4_LINK_SHBUF)    += okl4-link-shbuf.o
 
+obj-$(CONFIG_CITADEL)          += citadel-spi.o
 obj-$(CONFIG_SYSTRACE) += systrace.o
 
 obj-$(CONFIG_UCI)  += uci/

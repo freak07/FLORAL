@@ -472,7 +472,14 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(comp_clamp_level),
 	POWER_SUPPLY_ATTR(adapter_cc_mode),
 	POWER_SUPPLY_ATTR(skin_health),
+	POWER_SUPPLY_ATTR(apsd_rerun),
+	POWER_SUPPLY_ATTR(apsd_timeout),
 	POWER_SUPPLY_ATTR(dead_battery),
+	POWER_SUPPLY_ATTR(voltage_fifo),
+	POWER_SUPPLY_ATTR(cc_uah),
+	POWER_SUPPLY_ATTR(cutoff_soc),
+	POWER_SUPPLY_ATTR(sys_soc),
+	POWER_SUPPLY_ATTR(batt_soc),
 	/* Capacity Estimation */
 	POWER_SUPPLY_ATTR(delta_cc_sum),
 	POWER_SUPPLY_ATTR(delta_vfsoc_sum),
@@ -481,8 +488,6 @@ static struct device_attribute power_supply_attrs[] = {
 	/* Resistance Estimaton */
 	POWER_SUPPLY_ATTR(resistance_avg),
 	POWER_SUPPLY_ATTR(batt_res_filt_cnts),
-	POWER_SUPPLY_ATTR(apsd_rerun),
-	POWER_SUPPLY_ATTR(apsd_timeout),
 	/* Charge pump properties */
 	POWER_SUPPLY_ATTR(cp_status1),
 	POWER_SUPPLY_ATTR(cp_status2),
@@ -604,7 +609,7 @@ int power_supply_uevent(struct device *dev, struct kobj_uevent_env *env)
 
 		if (!attr->attr.name) {
 			dev_info(dev, "%s:%d FAKE attr.name=NULL skip\n",
-				__FILE__, __LINE__);
+				__FILE__, __LINE__, __func__);
 			continue;
 		}
 

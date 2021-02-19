@@ -552,7 +552,8 @@ Optional properties:
 					to identify the default topology for the
 					display. The first set is indexed by the
 					value 0.
-- qcom,mdss-dsi-ext-bridge-mode:	External bridge chip is connected instead of panel.
+- qcom,mdss-dsi-ext-bridge:		Array of u32 values which specifies the external bridge chip reg number, it
+					should match the port config.
 - google,mdss-dsi-panel-vendor		string: panel vendor name
 - google,mdss-dsi-panel-sn-location	Panel serial number is read by MIPI command. And it is defined by a
 					set of 3 values in the order:

@@ -392,8 +392,9 @@ static int _sde_connector_update_bl_scale(struct sde_connector *c_conn)
 	else
 		bl_config->bl_scale_ad = c_conn->bl_scale_ad;
 
-	SDE_DEBUG("bl_scale = %u, bl_scale_ad = %u\n",
-		bl_config->bl_scale, bl_config->bl_scale_ad);
+	SDE_DEBUG("bl_scale = %u, bl_scale_ad = %u\n, bl_actual = %u",
+		bl_config->bl_scale, bl_config->bl_scale_ad,
+		bl_config->bl_actual);
 	if (bl_config->bl_device)
 		backlight_update_status(bl_config->bl_device);
 

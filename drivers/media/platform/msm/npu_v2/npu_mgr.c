@@ -91,7 +91,7 @@ static struct npu_misc_cmd *npu_find_misc_cmd(struct npu_host_ctx *ctx,
 	uint32_t trans_id);
 static int npu_get_fw_caps(struct npu_device *npu_dev);
 
-/*
+/* -------------------------------------------------------------------------
  * Function Definitions - Init / Deinit
  */
 

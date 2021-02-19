@@ -28,8 +28,9 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/of.h>
-#include <linux/power_supply.h>
+#include <linux/regmap.h>
 
+#include "google_psy.h"
 #include "google_bms.h"
 
 #define GBMS_DEFAULT_FV_UV_RESOLUTION   25000
@@ -39,6 +40,8 @@
 #define GBMS_DEFAULT_CV_TIER_OV_CNT     10
 #define GBMS_DEFAULT_CV_TIER_SWITCH_CNT 3
 #define GBMS_DEFAULT_CV_OTV_MARGIN      0
+#define GBMS_DEFAULT_CHG_LAST_TIER_DEC_CURRENT  50000
+#define GBMS_DEFAULT_CHG_LAST_TIER_TERM_CURRENT 150000
 
 static const char *psy_chgt_str[] = {
 	"Unknown", "None", "Trickle", "Fast", "Taper"
@@ -242,6 +245,27 @@ int gbms_init_chg_profile_internal(struct gbms_chg_profile *profile,
 		profile->volt_limits[vi] = profile->volt_limits[vi] /
 		    profile->fv_uv_resolution * profile->fv_uv_resolution;
 
+	ret = of_property_read_u32(node,
+			    "google,chg-last-tier-vpack-tolerance",
+			    &profile->chg_last_tier_vpack_tolerance);
+	if (ret < 0)
+		profile->chg_last_tier_vpack_tolerance = 0;
+
+	if (profile->chg_last_tier_vpack_tolerance > 0) {
+		ret = of_property_read_u32(node,
+			    "google,chg-last-tier-dec-current",
+			    &profile->chg_last_tier_dec_current);
+		if (ret < 0)
+			profile->chg_last_tier_dec_current =
+				    GBMS_DEFAULT_CHG_LAST_TIER_DEC_CURRENT;
+		ret = of_property_read_u32(node,
+			    "google,chg-last-tier-term-current",
+			    &profile->chg_last_tier_term_current);
+		if (ret < 0)
+			profile->chg_last_tier_term_current =
+				    GBMS_DEFAULT_CHG_LAST_TIER_TERM_CURRENT;
+	}
+
 	return 0;
 }
 
@@ -361,11 +385,74 @@ uint8_t gbms_gen_chg_flags(int chg_status, int chg_type)
 	return flags;
 }
 
+static int gbms_gen_state(union gbms_charger_state *chg_state,
+			  struct power_supply *chg_psy)
+{
+	int vchrg, chg_type, chg_status, ioerr;
+
+	/* TODO: if (chg_drv->chg_mode == CHG_DRV_MODE_NOIRDROP) vchrg = 0; */
+	/* Battery needs to know charger voltage and state to run the irdrop
+	 * compensation code, can disable here sending a 0 vchgr
+	 */
+	vchrg = GPSY_GET_PROP(chg_psy, POWER_SUPPLY_PROP_VOLTAGE_NOW);
+	chg_type = GPSY_GET_PROP(chg_psy, POWER_SUPPLY_PROP_CHARGE_TYPE);
+	chg_status = GPSY_GET_INT_PROP(chg_psy, POWER_SUPPLY_PROP_STATUS,
+						&ioerr);
+	if (vchrg < 0 || chg_type < 0 || ioerr < 0) {
+		pr_err("MSC_CHG error vchrg=%d chg_type=%d chg_status=%d\n",
+			vchrg, chg_type, chg_status);
+		return -EINVAL;
+	}
+
+	chg_state->f.chg_status = chg_status;
+	chg_state->f.chg_type = chg_type;
+	chg_state->f.flags = gbms_gen_chg_flags(chg_state->f.chg_status,
+						chg_state->f.chg_type);
+	chg_state->f.vchrg = vchrg / 1000; /* vchrg is in uA, f.vchrg us mA */
+
+	return 0;
+}
+
+/* read or generate charge state */
+int gbms_read_charger_state(union gbms_charger_state *chg_state,
+			    struct power_supply *chg_psy)
+{
+	union power_supply_propval val;
+	int ret = 0;
+
+	ret = power_supply_get_property(chg_psy,
+					POWER_SUPPLY_PROP_CHARGE_CHARGER_STATE,
+					&val);
+	if (ret == 0) {
+		chg_state->v = val.int64val;
+	} else {
+		int ichg;
+
+		ret = gbms_gen_state(chg_state, chg_psy);
+		if (ret < 0)
+			return ret;
+
+		ichg = GPSY_GET_PROP(chg_psy, POWER_SUPPLY_PROP_CURRENT_NOW);
+		if (ichg > 0)
+			chg_state->f.icl = ichg / 1000;
+
+		pr_info("MSC_CHG chg_state=%lx [0x%x:%d:%d:%d] ichg=%d\n",
+				(unsigned long)chg_state->v,
+				chg_state->f.flags,
+				chg_state->f.chg_type,
+				chg_state->f.chg_status,
+				chg_state->f.vchrg,
+				ichg);
+	}
+
+	return 0;
+}
+
 /* ------------------------------------------------------------------------- */
 
 /* convert cycle counts array to string */
 int gbms_cycle_count_cstr_bc(char *buf, size_t size,
-				const u16 *ccount, int bcnt)
+			     const u16 *ccount, int bcnt)
 {
 	int len = 0, i;
 
@@ -379,10 +466,10 @@ int gbms_cycle_count_cstr_bc(char *buf, size_t size,
 /* parse the result of gbms_cycle_count_cstr_bc() back to array */
 int gbms_cycle_count_sscan_bc(u16 *ccount, int bcnt, const char *buff)
 {
-	int i, val[bcnt];
+	int i, val[10];
 
 	/* sscanf has 10 fixed conversions */
-	if (bcnt != 10)
+	if (bcnt != GBMS_CCBIN_BUCKET_COUNT)
 		return -ERANGE;
 
 	if (sscanf(buff, "%d %d %d %d %d %d %d %d %d %d",
