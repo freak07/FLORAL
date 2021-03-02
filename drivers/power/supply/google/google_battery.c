@@ -781,7 +781,7 @@ void ssoc_change_curve(struct batt_ssoc_state *ssoc_state, qnum_t delta,
 	/* force dsg curve when connect/disconnect with battery at 100% */
 	if (ssoc_level >= SSOC_FULL) {
 		type = SSOC_UIC_TYPE_DSG;
-		gdf -=  delta;
+		gdf -= delta;
 	}
 
 	ssoc_change_curve_at_gdf(ssoc_state, gdf,
@@ -4160,6 +4160,10 @@ static int batt_init_fs(struct batt_drv *batt_drv)
 		debugfs_create_u32("fake_capacity", 0600, de,
 				    &batt_drv->fake_capacity);
 
+		/* defender */
+		debugfs_create_u32("fake_capacity", 0600, de,
+				    &batt_drv->fake_capacity);
+
 		/* health charging */
 		debugfs_create_file("chg_health_thr_soc", 0600, de,
 				    batt_drv, &debug_chg_health_thr_soc_fops);
@@ -5260,6 +5264,28 @@ static void google_battery_init_work(struct work_struct *work)
 	if (ret < 0)
 		batt_drv->ssoc_state.rl_soc_threshold =
 				DEFAULT_BATT_DRV_RL_SOC_THRESHOLD;
+
+	ret = of_property_read_u32(node, "google,bd-trickle-recharge-soc",
+				&batt_drv->ssoc_state.bd_trickle_recharge_soc);
+	if (ret < 0)
+		batt_drv->ssoc_state.bd_trickle_recharge_soc =
+					DEFAULT_BD_RL_SOC_THRESHOLD;
+
+	batt_drv->ssoc_state.bd_trickle_dry_run = false;
+
+	batt_drv->ssoc_state.bd_trickle_enable =
+		of_property_read_bool(node, "google,bd-trickle-enable");
+
+	ret = of_property_read_u32(node, "google,bd-trickle-reset-sec",
+				   &batt_drv->ssoc_state.bd_trickle_reset_sec);
+	if (ret < 0)
+		batt_drv->ssoc_state.bd_trickle_reset_sec =
+				DEFAULT_BD_TRICKLE_RESET_SEC;
+
+	ret = of_property_read_u32(node, "google,ssoc-delta",
+				   &batt_drv->ssoc_state.ssoc_delta);
+	if (ret < 0)
+		batt_drv->ssoc_state.ssoc_delta = SSOC_DELTA;
 
 	ret = of_property_read_u32(node, "google,bd-trickle-recharge-soc",
 				&batt_drv->ssoc_state.bd_trickle_recharge_soc);
