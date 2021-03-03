@@ -584,8 +584,7 @@ static int ipu_adapter_ab_mfd_atomic_sync32_shared_memory(struct device *dev,
 		mutex_unlock(&dev_data->sync_lock);
 		return -ENOLINK;
 	}
-
-	if ((uintptr_t)buffer_vaddr % sizeof(uintptr_t) != 0) {
+	if ((unsigned long)buffer_vaddr % sizeof(uint32_t) != 0) {
 		dev_err(dev, "%s: error: unaligned access\n", __func__);
 		mutex_unlock(&dev_data->sync_lock);
 		return -EINVAL;
