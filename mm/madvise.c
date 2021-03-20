@@ -330,7 +330,7 @@ static int madvise_cold_or_pageout_pte_range(pmd_t *pmd,
 		pmd_t orig_pmd;
 		unsigned long next = pmd_addr_end(addr, end);
 
-		tlb_remove_check_page_size_change(tlb, HPAGE_PMD_SIZE);
+		tlb_change_page_size(tlb, HPAGE_PMD_SIZE);
 		ptl = pmd_trans_huge_lock(pmd, vma);
 		if (!ptl)
 			return 0;
@@ -391,7 +391,7 @@ regular_page:
 	if (pmd_trans_unstable(pmd))
 		return 0;
 #endif
-	tlb_remove_check_page_size_change(tlb, PAGE_SIZE);
+	tlb_change_page_size(tlb, PAGE_SIZE);
 	orig_pte = pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
 	flush_tlb_batched_pending(mm);
 	arch_enter_lazy_mmu_mode();
