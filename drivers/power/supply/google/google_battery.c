@@ -2732,7 +2732,7 @@ static int batt_chg_logic(struct batt_drv *batt_drv)
 		__pm_stay_awake(&batt_drv->poll_ws);
 		batt_drv->batt_fast_update_cnt = BATT_WORK_FAST_RETRY_CNT;
 		mod_delayed_work(system_wq, &batt_drv->batt_work,
-				 BATT_WORK_FAST_RETRY_MS);
+				 msecs_to_jiffies(BATT_WORK_FAST_RETRY_MS));
 
 		/* TODO: move earlier and include the change to the curve */
 		ssoc_change_state(&batt_drv->ssoc_state, 1);
@@ -4160,10 +4160,6 @@ static int batt_init_fs(struct batt_drv *batt_drv)
 		debugfs_create_u32("fake_capacity", 0600, de,
 				    &batt_drv->fake_capacity);
 
-		/* defender */
-		debugfs_create_u32("fake_capacity", 0600, de,
-				    &batt_drv->fake_capacity);
-
 		/* health charging */
 		debugfs_create_file("chg_health_thr_soc", 0600, de,
 				    batt_drv, &debug_chg_health_thr_soc_fops);
@@ -4826,6 +4822,9 @@ static void gbatt_set_capacity(struct batt_drv *batt_drv, int capacity)
 
 static int gbatt_set_health(struct batt_drv *batt_drv, int health)
 {
+	int ret = 0;
+	union power_supply_propval val;
+
 	if (health > POWER_SUPPLY_HEALTH_HOT ||
 	    health < POWER_SUPPLY_HEALTH_UNKNOWN)
 		return -EINVAL;
@@ -4835,6 +4834,13 @@ static int gbatt_set_health(struct batt_drv *batt_drv, int health)
 	/* disable health charging if in overheat */
 	if (health == POWER_SUPPLY_HEALTH_OVERHEAT)
 		msc_logic_health(batt_drv);
+
+	val.intval = health;
+	ret = power_supply_set_property(batt_drv->fg_psy,
+					POWER_SUPPLY_PROP_HEALTH,
+					&val);
+	if (ret < 0)
+		pr_err("failed to write fg_psy health\n");
 
 	return 0;
 }
@@ -4960,7 +4966,11 @@ static int gbatt_get_property(struct power_supply *psy,
 
 	/* health */
 	case POWER_SUPPLY_PROP_HEALTH:
-		if (batt_drv->batt_health != POWER_SUPPLY_HEALTH_UNKNOWN) {
+		if (batt_drv->batt_health == POWER_SUPPLY_HEALTH_OVERHEAT &&
+		    gbms_temp_defend_dry_run(false, false)) {
+			val->intval = POWER_SUPPLY_HEALTH_GOOD;
+		} else if (batt_drv->batt_health !=
+			   POWER_SUPPLY_HEALTH_UNKNOWN) {
 			val->intval = batt_drv->batt_health;
 		} else if (!batt_drv->fg_psy) {
 			val->intval = POWER_SUPPLY_HEALTH_UNKNOWN;
@@ -5220,10 +5230,10 @@ static struct power_supply_desc gbatt_psy_desc = {
 
 static void google_battery_init_work(struct work_struct *work)
 {
-	struct power_supply *fg_psy;
 	struct batt_drv *batt_drv = container_of(work, struct batt_drv,
 						 init_work.work);
 	struct device_node *node = batt_drv->device->of_node;
+	struct power_supply *fg_psy = batt_drv->fg_psy;
 	int ret = 0;
 
 	batt_rl_reset(batt_drv);
@@ -5240,14 +5250,17 @@ static void google_battery_init_work(struct work_struct *work)
 	mutex_init(&batt_drv->stats_lock);
 	mutex_init(&batt_drv->cc_data.lock);
 
-	fg_psy = power_supply_get_by_name(batt_drv->fg_psy_name);
-	if (!fg_psy) {
-		pr_info("failed to get \"%s\" power supply, retrying...\n",
-			batt_drv->fg_psy_name);
-		goto retry_init_work;
-	}
+	if (!batt_drv->fg_psy) {
 
-	batt_drv->fg_psy = fg_psy;
+		fg_psy = power_supply_get_by_name(batt_drv->fg_psy_name);
+		if (!fg_psy) {
+			pr_info("failed to get \"%s\" power supply, retrying...\n",
+				batt_drv->fg_psy_name);
+			goto retry_init_work;
+		}
+
+		batt_drv->fg_psy = fg_psy;
+	}
 
 	if (!batt_drv->batt_present) {
 		ret = GPSY_GET_PROP(fg_psy, POWER_SUPPLY_PROP_PRESENT);
@@ -5272,9 +5285,6 @@ static void google_battery_init_work(struct work_struct *work)
 					DEFAULT_BD_RL_SOC_THRESHOLD;
 
 	batt_drv->ssoc_state.bd_trickle_dry_run = false;
-
-	batt_drv->ssoc_state.bd_trickle_enable =
-		of_property_read_bool(node, "google,bd-trickle-enable");
 
 	ret = of_property_read_u32(node, "google,bd-trickle-reset-sec",
 				   &batt_drv->ssoc_state.bd_trickle_reset_sec);
@@ -5578,30 +5588,32 @@ static int google_battery_probe(struct platform_device *pdev)
 static int google_battery_remove(struct platform_device *pdev)
 {
 	struct batt_drv *batt_drv = platform_get_drvdata(pdev);
+	struct batt_ttf_stats *ttf_stats;
 
-	if (batt_drv) {
-		struct batt_ttf_stats *ttf_stats = &batt_drv->ttf_stats;
+	if (!batt_drv)
+		return 0;
 
-		if (batt_drv->history)
-			gbms_storage_cleanup_device(batt_drv->history);
-		if (batt_drv->fg_psy)
-			power_supply_put(batt_drv->fg_psy);
+	ttf_stats = &batt_drv->ttf_stats;
 
-		gbms_free_chg_profile(&batt_drv->chg_profile);
+	if (batt_drv->ssoc_log)
+		debugfs_logbuffer_unregister(batt_drv->ssoc_log);
+	if (ttf_stats->ttf_log)
+		debugfs_logbuffer_unregister(ttf_stats->ttf_log);
+	if (batt_drv->tz_dev)
+		thermal_zone_of_sensor_unregister(batt_drv->device,
+				batt_drv->tz_dev);
+	if (batt_drv->history)
+		gbms_storage_cleanup_device(batt_drv->history);
 
-		wakeup_source_trash(&batt_drv->msc_ws);
-		wakeup_source_trash(&batt_drv->batt_ws);
-		wakeup_source_trash(&batt_drv->taper_ws);
-		wakeup_source_trash(&batt_drv->poll_ws);
+	if (batt_drv->fg_psy)
+		power_supply_put(batt_drv->fg_psy);
 
-		if (batt_drv->ssoc_log)
-			debugfs_logbuffer_unregister(batt_drv->ssoc_log);
-		if (ttf_stats->ttf_log)
-			debugfs_logbuffer_unregister(ttf_stats->ttf_log);
-		if (batt_drv->tz_dev)
-			thermal_zone_of_sensor_unregister(batt_drv->device,
-					batt_drv->tz_dev);
-	}
+	gbms_free_chg_profile(&batt_drv->chg_profile);
+
+	wakeup_source_trash(&batt_drv->msc_ws);
+	wakeup_source_trash(&batt_drv->batt_ws);
+	wakeup_source_trash(&batt_drv->taper_ws);
+	wakeup_source_trash(&batt_drv->poll_ws);
 
 	return 0;
 }
