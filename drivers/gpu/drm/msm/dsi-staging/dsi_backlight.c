@@ -328,9 +328,9 @@ static void uci_user_listener(void) {
 
 	bool new_replace_gamma_table_dynamic = !!uci_get_user_property_int_mm("replace_gamma_table_dynamic", 0, 0, 1);
 
-	int new_replace_gamma_dynamic_red = uci_get_user_property_int_mm("replace_gamma_dynamic_red", 10, 0, 20);
-	int new_replace_gamma_dynamic_green = uci_get_user_property_int_mm("replace_gamma_dynamic_green", 10, 0, 20);
-	int new_replace_gamma_dynamic_blue = uci_get_user_property_int_mm("replace_gamma_dynamic_blue", 10, 0, 20);
+	int new_replace_gamma_dynamic_red = uci_get_user_property_int_mm("replace_gamma_dynamic_red", 10, 0, 25);
+	int new_replace_gamma_dynamic_green = uci_get_user_property_int_mm("replace_gamma_dynamic_green", 10, 0, 25);
+	int new_replace_gamma_dynamic_blue = uci_get_user_property_int_mm("replace_gamma_dynamic_blue", 10, 0, 25);
 	int new_replace_gamma_dynamic_red_low = uci_get_user_property_int_mm("replace_gamma_dynamic_red_low", 10, 0, 20);
 	int new_replace_gamma_dynamic_green_low = uci_get_user_property_int_mm("replace_gamma_dynamic_green_low", 10, 0, 20);
 	int new_replace_gamma_dynamic_blue_low = uci_get_user_property_int_mm("replace_gamma_dynamic_blue_low", 10, 0, 20);
