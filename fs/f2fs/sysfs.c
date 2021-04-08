@@ -93,8 +93,7 @@ static ssize_t lifetime_write_kbytes_show(struct f2fs_attr *a,
 {
 	return sprintf(buf, "%llu\n",
 			(unsigned long long)(sbi->kbytes_written +
-			((f2fs_get_sectors_written(sbi) -
-				sbi->sectors_written_start) >> 1)));
+			BD_PART_WRITTEN(sbi)));
 }
 
 static ssize_t sb_status_show(struct f2fs_attr *a,

@@ -1388,26 +1388,6 @@ static void commit_checkpoint(struct f2fs_sb_info *sbi,
 	f2fs_submit_merged_write(sbi, META_FLUSH);
 }
 
-static inline u64 get_sectors_written(struct block_device *bdev)
-{
-	return (u64)part_stat_read(bdev->bd_part, sectors[1]);
-}
-
-u64 f2fs_get_sectors_written(struct f2fs_sb_info *sbi)
-{
-	if (f2fs_is_multi_device(sbi)) {
-		u64 sectors = 0;
-		int i;
-
-		for (i = 0; i < sbi->s_ndevs; i++)
-			sectors += get_sectors_written(FDEV(i).bdev);
-
-		return sectors;
-	}
-
-	return get_sectors_written(sbi->sb->s_bdev);
-}
-
 static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 {
 	struct f2fs_checkpoint *ckpt = F2FS_CKPT(sbi);
@@ -1418,6 +1398,7 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	__u32 crc32 = 0;
 	int i;
 	int cp_payload_blks = __cp_payload(sbi);
+	struct super_block *sb = sbi->sb;
 	struct curseg_info *seg_i = CURSEG_I(sbi, CURSEG_HOT_NODE);
 	u64 kbytes_written;
 	int err;
@@ -1512,8 +1493,9 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 
 	/* Record write statistics in the hot node summary */
 	kbytes_written = sbi->kbytes_written;
-	kbytes_written += (f2fs_get_sectors_written(sbi) -
-				sbi->sectors_written_start) >> 1;
+	if (sb->s_bdev->bd_part)
+		kbytes_written += BD_PART_WRITTEN(sbi);
+
 	seg_i->journal->info.kbytes_written = cpu_to_le64(kbytes_written);
 
 	if (__remain_node_summaries(cpc->reason)) {
