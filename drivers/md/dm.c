@@ -1528,7 +1528,7 @@ static void __split_and_process_bio(struct mapped_device *md,
  */
 static blk_qc_t dm_make_request(struct request_queue *q, struct bio *bio)
 {
-	int rw = bio_data_dir(bio);
+	int  __maybe_unused rw = bio_data_dir(bio);
 	struct mapped_device *md = q->queuedata;
 	int srcu_idx;
 	struct dm_table *map;
