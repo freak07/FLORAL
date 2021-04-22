@@ -307,10 +307,10 @@ int checkEcho(u8 *cmd, int size)
 		pr_err("checkEcho: Error Size = %d not valid!\n", size);
 		return ERROR_OP_NOT_ALLOW;
 	} else {
-		if ((size + 3) > FIFO_EVENT_SIZE)
-			size = FIFO_EVENT_SIZE - 3;
+		if ((size + 4) > FIFO_EVENT_SIZE)
+			size = FIFO_EVENT_SIZE - 4;
 		/* Echo event 0x43 0x01 xx xx xx xx xx fifo_status
-		 * therefore command with more than 5 bytes will be trunked */
+		 * therefore command with more than 4 bytes will be trunked */
 
 		event_to_search[0] = EVT_ID_STATUS_UPDATE;
 		event_to_search[1] = EVT_TYPE_STATUS_ECHO;
@@ -364,13 +364,16 @@ int checkEcho(u8 *cmd, int size)
 int setScanMode(u8 mode, u8 settings)
 {
 	u8 cmd[3] = { FTS_CMD_SCAN_MODE, mode, settings };
+	u8 cmd1[7] = {0xFA, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00};
 	int ret, size = 3;
 
 	pr_debug("%s: Setting scan mode: mode = %02X settings = %02X !\n",
 		__func__, mode, settings);
 	if (mode == SCAN_MODE_LOW_POWER)
 		size = 2;
-	ret = fts_write(cmd, size);
+	ret = fts_write(cmd1, 7);
+	if(ret >= OK)
+		ret = fts_write(cmd, size);
 	/* use write instead of writeFw because can be called while the
 	 * interrupt are enabled */
 	if (ret < OK) {
@@ -399,12 +402,21 @@ int setScanMode(u8 mode, u8 settings)
   */
 int setFeatures(u8 feat, u8 *settings, int size)
 {
-	u8 cmd[2 + size];
+	u8 *cmd;
 	int i = 0;
 	int ret;
-	char buff[(2 + 1) * size + 1];
-	int buff_len = sizeof(buff);
+	char *buff;
+	int buff_len = ((2 + 1) * size + 1) * sizeof(char);
 	int index = 0;
+	u8 cmd1[7] = {0xFA, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+	cmd = kzalloc((2 + size) * sizeof(u8), GFP_KERNEL);
+	buff = kzalloc(buff_len, GFP_KERNEL);
+	if ((buff == NULL) || (cmd == NULL)) {
+		kfree(buff);
+		kfree(cmd);
+		return ERROR_ALLOC;
+        }
 
 	pr_info("%s: Setting feature: feat = %02X !\n", __func__, feat);
 	cmd[0] = FTS_CMD_FEATURE;
@@ -415,14 +427,20 @@ int setFeatures(u8 feat, u8 *settings, int size)
 					"%02X ", settings[i]);
 	}
 	pr_info("%s: Settings = %s\n", __func__, buff);
-	ret = fts_write(cmd, 2 + size);
+	ret = fts_write(cmd1, 7);
+	if(ret >= OK)
+		ret = fts_write(cmd, 2 + size);
 	/* use write instead of writeFw because can be called while the
 	 * interrupts are enabled */
 	if (ret < OK) {
 		pr_err("%s: write failed...ERROR %08X !\n", __func__, ret);
+		kfree(buff);
+		kfree(cmd);
 		return ret | ERROR_SET_FEATURE_FAIL;
 	}
 	pr_info("%s: Setting feature OK!\n", __func__);
+	kfree(cmd);
+	kfree(buff);
 	return OK;
 }
 /** @}*/
@@ -442,11 +460,20 @@ int setFeatures(u8 feat, u8 *settings, int size)
   */
 int writeSysCmd(u8 sys_cmd, u8 *sett, int size)
 {
-	u8 cmd[2 + size];
+	u8 *cmd;
 	int ret;
-	char buff[(2 + 1) * size + 1];
-	int buff_len = sizeof(buff);
+	char *buff;
+	int buff_len = ((2 + 1) * size + 1) * sizeof(char);
 	int index = 0;
+	u8 cmd1[7] = {0xFA, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+	cmd = kzalloc((2 + size) * sizeof(u8), GFP_KERNEL);
+	buff = kzalloc(buff_len, GFP_KERNEL);
+	if ((buff == NULL) || (cmd == NULL)) {
+	        kfree(buff);
+		kfree(cmd);
+		return ERROR_ALLOC;
+        }
 
 	cmd[0] = FTS_CMD_SYSTEM;
 	cmd[1] = sys_cmd;
@@ -459,14 +486,19 @@ int writeSysCmd(u8 sys_cmd, u8 *sett, int size)
 	pr_info("%s: Command = %02X %02X %s\n", __func__, cmd[0],
 		 cmd[1], buff);
 	pr_info("%s: Writing Sys command...\n", __func__);
-	if (sys_cmd != SYS_CMD_LOAD_DATA)
-		ret = fts_writeFwCmd(cmd, 2 + size);
+	if (sys_cmd != SYS_CMD_LOAD_DATA) {
+		ret = fts_write(cmd1, 7);
+		if(ret >= OK)
+			ret = fts_writeFwCmd(cmd, 2 + size);
+	}
 	else {
 		if (size >= 1)
 			ret = requestSyncFrame(sett[0]);
 		else {
 			pr_err("%s: No setting argument! ERROR %08X\n",
 				__func__, ERROR_OP_NOT_ALLOW);
+			kfree(cmd);
+			kfree(buff);
 			return ERROR_OP_NOT_ALLOW;
 		}
 	}
@@ -475,6 +507,8 @@ int writeSysCmd(u8 sys_cmd, u8 *sett, int size)
 	else
 		pr_info("%s: FINISHED!\n", __func__);
 
+	kfree(cmd);
+	kfree(buff);
 	return ret;
 }
 /** @}*/
@@ -957,6 +991,7 @@ int requestSyncFrame(u8 type)
 	u8 readData[DATA_HEADER] = { 0 };
 	int ret, retry = 0, retry2 = 0, time_to_count;
 	int count, new_count;
+	u8 cmd[7] = {0xFA, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 	pr_info("%s: Starting to get a sync frame...\n", __func__);
 
@@ -984,7 +1019,9 @@ int requestSyncFrame(u8 type)
 
 		pr_info("%s: Requesting frame %02X  attempt = %d\n",
 			__func__,  type, retry2 + 1);
-		ret = fts_write(request, ARRAY_SIZE(request));
+		ret = fts_write(cmd, 7);
+		if(ret >= OK)
+			ret = fts_write(request, ARRAY_SIZE(request));
 		if (ret >= OK) {
 			pr_info("%s: Polling for new count...\n", __func__);
 			time_to_count = TIMEOUT_REQU_DATA / TIMEOUT_RESOLUTION;
@@ -1119,9 +1156,12 @@ int writeHostDataMemory(u8 type, u8 *data, u8 msForceLen, u8 msSenseLen,
 	int res;
 	int size = (msForceLen * msSenseLen) + (ssForceLen + ssSenseLen);
 	u8 sett = SPECIAL_WRITE_HOST_MEM_TO_FLASH;
-	u8 temp[size + SYNCFRAME_DATA_HEADER];
+	u8 *temp;
 
-	memset(temp, 0, size + SYNCFRAME_DATA_HEADER);
+	temp = kzalloc((size + SYNCFRAME_DATA_HEADER) * sizeof(u8), GFP_KERNEL);
+	if (temp == NULL)
+                return ERROR_ALLOC;
+
 	pr_info("%s: Starting to write Host Data Memory\n", __func__);
 
 	temp[0] = 0x5A;
@@ -1141,6 +1181,7 @@ int writeHostDataMemory(u8 type, u8 *data, u8 msForceLen, u8 msSenseLen,
 	if (res < OK) {
 		pr_err("%s: error while writing the buffer! ERROR %08X\n",
 			__func__, res);
+		kfree(temp);
 		return res;
 	}
 
@@ -1151,12 +1192,14 @@ int writeHostDataMemory(u8 type, u8 *data, u8 msForceLen, u8 msSenseLen,
 		if (res < OK) {
 			pr_err("%s: error while writing into the flash! ERROR %08X\n",
 				__func__, res);
+			kfree(temp);
 			return res;
 		}
 	}
 
 
 	pr_info("%s: write Host Data Memory FINISHED!\n", __func__);
+	kfree(temp);
 	return OK;
 }
 

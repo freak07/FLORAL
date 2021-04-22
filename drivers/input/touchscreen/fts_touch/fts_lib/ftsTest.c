@@ -68,9 +68,10 @@ int initTestToDo(void)
 
 #ifndef COMPUTE_INIT_METHOD
 	tests.MutualRawAdjITO = 1;
+	tests.MutualRawMapITO = 1;
 
-	tests.MutualRaw = 1;
-	tests.MutualRawMap = 0;
+	tests.MutualRaw = 0;
+	tests.MutualRawMap = 1;
 	tests.MutualRawGap = 0;
 	tests.MutualRawAdj = 0;
 	tests.MutualRawAdjGap = 0;
@@ -78,7 +79,7 @@ int initTestToDo(void)
 
 	tests.MutualRawLP = 0;
 	tests.MutualRawGapLP = 0;
-	tests.MutualRawMapLP = 0;
+	tests.MutualRawMapLP = 1;
 	tests.MutualRawAdjLP = 0;
 
 	tests.MutualCx1 = 0;
@@ -88,8 +89,8 @@ int initTestToDo(void)
 	tests.MutualCxTotalAdj = 0;
 
 	tests.MutualCx1LP = 0;
-	tests.MutualCx2LP = 1;
-	tests.MutualCx2AdjLP = 1;
+	tests.MutualCx2LP = 0;
+	tests.MutualCx2AdjLP = 0;
 	tests.MutualCxTotalLP = 0;
 	tests.MutualCxTotalAdjLP = 0;
 
@@ -106,16 +107,18 @@ int initTestToDo(void)
 	tests.MutualKeyCxTotal = 0;
 #endif
 
-	tests.SelfForceRaw = 1;
+	tests.SelfForceRaw = 0;
 	tests.SelfForceRawGap = 0;
+	tests.SelfForceRawMap = 1;
 
-	tests.SelfForceRawLP = 1;
+	tests.SelfForceRawLP = 0;
 	tests.SelfForceRawGapLP = 0;
+	tests.SelfForceRawMapLP = 1;
 
 	tests.SelfForceIx1 = 0;
 	tests.SelfForceIx2 = 0;
 	tests.SelfForceIx2Adj = 0;
-	tests.SelfForceIxTotal = 1;
+	tests.SelfForceIxTotal = 0;
 	tests.SelfForceIxTotalAdj = 0;
 	tests.SelfForceCx1 = 0;
 	tests.SelfForceCx2 = 0;
@@ -125,7 +128,7 @@ int initTestToDo(void)
 	tests.SelfForceIx1LP = 0;
 	tests.SelfForceIx2LP = 0;
 	tests.SelfForceIx2AdjLP = 0;
-	tests.SelfForceIxTotalLP = 1;
+	tests.SelfForceIxTotalLP = 0;
 	tests.SelfForceIxTotalAdjLP = 0;
 	tests.SelfForceCx1LP = 0;
 	tests.SelfForceCx2LP = 0;
@@ -133,16 +136,18 @@ int initTestToDo(void)
 	tests.SelfForceCxTotalLP = 0;
 	tests.SelfForceCxTotalAdjLP = 0;
 
-	tests.SelfSenseRaw = 1;
+	tests.SelfSenseRaw = 0;
 	tests.SelfSenseRawGap = 0;
+	tests.SelfSenseRawMap = 1;
 
 	tests.SelfSenseRawLP = 0;
 	tests.SelfSenseRawGapLP = 0;
+	tests.SelfSenseRawMapLP = 1;
 
 	tests.SelfSenseIx1 = 0;
 	tests.SelfSenseIx2 = 0;
 	tests.SelfSenseIx2Adj = 0;
-	tests.SelfSenseIxTotal = 1;
+	tests.SelfSenseIxTotal = 0;
 	tests.SelfSenseIxTotalAdj = 0;
 	tests.SelfSenseCx1 = 0;
 	tests.SelfSenseCx2 = 0;
@@ -161,6 +166,7 @@ int initTestToDo(void)
 	tests.SelfSenseCxTotalAdjLP = 0;
 #else
 	tests.MutualRawAdjITO = 1;
+	tests.MutualRawMapITO = 1;
 
 	tests.MutualRaw = 1;  /* in case of YOCTA please use Map */
 	tests.MutualRawMap = 0;
@@ -597,8 +603,8 @@ int checkLimitsMinMax(short *data, int row, int column, int min, int max)
 		for (j = 0; j < column; j++) {
 			if (data[i * column + j] < min || data[i * column + j] >
 			    max) {
-				pr_debug("Node[%d,%d] = %d exceed limit [%d, %d]\n",
-					i, j, data[i * column + j], min, max);
+				pr_info("%s: Node[%d,%d] = %d exceed limit [%d, %d]\n",
+					__func__, i, j, data[i * column + j], min, max);
 				count++;
 			}
 		}
@@ -723,8 +729,8 @@ int checkLimitsMap(i8 *data, int row, int column, int *min, int *max)
 		for (j = 0; j < column; j++) {
 			if (data[i * column + j] < min[i * column + j] ||
 			    data[i * column + j] > max[i * column + j]) {
-				pr_debug("Node[%d,%d] = %d exceed limit [%d, %d]\n",
-					i, j, data[i * column + j],
+				pr_info("%s: Node[%d,%d] = %d exceed limit [%d, %d]\n",
+					__func__, i, j, data[i * column + j],
 					min[i * column + j],
 					max[i * column + j]);
 				count++;
@@ -758,8 +764,8 @@ int checkLimitsMapTotal(short *data, int row, int column, int *min, int *max)
 		for (j = 0; j < column; j++) {
 			if (data[i * column + j] < min[i * column + j] ||
 			    data[i * column + j] > max[i * column + j]) {
-				pr_debug("Node[%d,%d] = %d exceed limit [%d, %d]\n",
-					i, j, data[i * column + j],
+				pr_info("%s: Node[%d,%d] = %d exceed limit [%d, %d]\n",
+					__func__, i, j, data[i * column + j],
 					min[i * column + j],
 					max[i * column + j]);
 				count++;
@@ -793,8 +799,8 @@ int checkLimitsMapFromU(u8 *data, int row, int column, int *min, int *max)
 		for (j = 0; j < column; j++) {
 			if (data[i * column + j] < min[i * column + j] ||
 			    data[i * column + j] > max[i * column + j]) {
-				pr_debug("Node[%d,%d] = %d exceed limit [%d, %d]\n",
-					i, j, data[i * column + j],
+				pr_info("%s: Node[%d,%d] = %d exceed limit [%d, %d]\n",
+					__func__, i, j, data[i * column + j],
 					min[i * column + j],
 					max[i * column + j]);
 				count++;
@@ -828,8 +834,8 @@ int checkLimitsMapTotalFromU(u16 *data, int row, int column, int *min, int *max)
 		for (j = 0; j < column; j++) {
 			if (data[i * column + j] < min[i * column + j] ||
 			    data[i * column + j] > max[i * column + j]) {
-				pr_debug("Node[%d,%d] = %d exceed limit [%d, %d]\n",
-					i, j, data[i * column + j],
+				pr_info("%s: Node[%d,%d] = %d exceed limit [%d, %d]\n",
+					__func__, i, j, data[i * column + j],
 					min[i * column + j],
 					max[i * column + j]);
 				count++;
@@ -860,8 +866,8 @@ int checkLimitsMapAdj(u8 *data, int row, int column, int *max)
 	for (i = 0; i < row; i++) {
 		for (j = 0; j < column; j++) {
 			if (data[i * column + j] > max[i * column + j]) {
-				pr_debug("Node[%d,%d] = %d exceed limit > %d\n",
-					i, j,
+				pr_info("%s: Node[%d,%d] = %d exceed limit > %d\n",
+					__func__, i, j,
 					data[i * column + j],
 					max[i * column + j]);
 				count++;
@@ -892,8 +898,8 @@ int checkLimitsMapAdjTotal(u16 *data, int row, int column, int *max)
 	for (i = 0; i < row; i++) {
 		for (j = 0; j < column; j++) {
 			if (data[i * column + j] > max[i * column + j]) {
-				pr_debug("Node[%d,%d] = %d exceed limit > %d\n",
-					i, j,
+				pr_info("%s: Node[%d,%d] = %d exceed limit > %d\n",
+					__func__, i, j,
 					data[i * column + j],
 					max[i * column + j]);
 				count++;
@@ -923,6 +929,8 @@ int production_test_ito(const char *path_limits, TestToDo *todo,
 	MutualSenseFrame msRawFrame;
 	MutualSenseFrame *ptr_frame = NULL;
 	int *thresholds = NULL;
+	int *thresholds_min = NULL;
+	int *thresholds_max = NULL;
 	u16 *adj = NULL;
 	int trows, tcolumns;
 
@@ -958,7 +966,7 @@ int production_test_ito(const char *path_limits, TestToDo *todo,
 	pr_info("ITO Command = OK!\n");
 
 	pr_info("MS RAW ITO ADJ TEST:\n");
-	if (todo->MutualRawAdjITO == 1) {
+	if (todo->MutualRawAdjITO == 1 || todo->MutualRawMapITO == 1) {
 		pr_info("Collecting MS Raw data...\n");
 
 		if (frame != NULL) {
@@ -1064,16 +1072,60 @@ int production_test_ito(const char *path_limits, TestToDo *todo,
 
 		kfree(adj);
 		adj = NULL;
-	} else
-		pr_info("MS RAW ITO ADJ TEST:.................SKIPPED\n");
+
+		pr_info("MS RAW ITO MIN MAX TEST:\n");
+		if (todo->MutualRawMapITO == 1) {
+			res = parseProductionTestLimits(path_limits,
+				&limit_file, MS_RAW_ITO_EACH_NODE_MIN,
+				&thresholds_min, &trows, &tcolumns);
+			if (res < OK || (trows !=
+				(*ptr_frame).header.force_node ||
+				tcolumns != (*ptr_frame).header.sense_node)) {
+				pr_err("production_test_data: parseProductionMS_RAW_ITO_EACH_NODE_MIN failed..."
+					"ERROR %08X\n", ERROR_PROD_TEST_DATA);
+				res |= ERROR_PROD_TEST_DATA;
+				goto ERROR;
+			}
+
+			res = parseProductionTestLimits(path_limits,
+				&limit_file, MS_RAW_ITO_EACH_NODE_MAX,
+				&thresholds_max, &trows, &tcolumns);
+			if (res < OK || (trows !=
+				(*ptr_frame).header.force_node ||
+				tcolumns != (*ptr_frame).header.sense_node)) {
+				pr_err("production_test_data: parseProductionMS_RAW_ITO_EACH_NODE_MAX failed..."
+					"ERROR %08X\n", ERROR_PROD_TEST_DATA);
+				res |= ERROR_PROD_TEST_DATA;
+				goto ERROR;
+			}
+
+			res = checkLimitsMapTotal((*ptr_frame).node_data,
+				(*ptr_frame).header.force_node,
+				(*ptr_frame).header.sense_node, thresholds_min,
+				thresholds_max);
+			if (res != OK) {
+				pr_err("production_test_data: checkLimitsMinMax"
+					" MS RAW ITO failed... ERROR COUNT = %d\n",
+					res);
+				pr_err("MS RAW ITO MIN MAX TEST:.................FAIL\n\n");
+				res |= ERROR_PROD_TEST_DATA;
+				goto ERROR;
+			} else {
+				pr_info("MS RAW ITO MIN MAX TEST:................OK\n");
+			}
+		} else {
+			pr_info("MS RAW ITO MIN MAX TEST:.................SKIPPED\n");
+		}
+	} else {
+		pr_info("MS RAW ITO TEST:.................SKIPPED\n");
+	}
 
 ERROR:
-	if (thresholds != NULL)
-		kfree(thresholds);
-	if (adj != NULL)
-		kfree(adj);
-	if (msRawFrame.node_data != NULL)
-		kfree(msRawFrame.node_data);
+	kfree(thresholds);
+	kfree(adj);
+	kfree(msRawFrame.node_data);
+	kfree(thresholds_min);
+	kfree(thresholds_max);
 	freeLimitsFile(&limit_file);
 	res |= fts_system_reset();
 	if (res < OK) {
@@ -1270,7 +1322,11 @@ int production_test_ms_raw(const char *path_limits, int stop_on_fail,
 		msleep(WAIT_FOR_FRESH_FRAMES);
 		ret |= setScanMode(SCAN_MODE_ACTIVE, 0x00);
 		msleep(WAIT_AFTER_SENSEOFF);
+#ifdef READ_FILTERED_RAW
+		ret |= getMSFrame3(MS_FILTER, &msRawFrame);
+#else
 		ret |= getMSFrame3(MS_RAW, &msRawFrame);
+#endif
 		if (ret < OK) {
 			pr_err("production_test_data: getMSFrame failed... ERROR %08X\n",
 				ERROR_PROD_TEST_DATA);
@@ -1767,12 +1823,16 @@ int production_test_ms_raw_lp(const char *path_limits, int stop_on_fail,
 	/************** Mutual Sense Test **************/
 	pr_info("MS RAW LP DATA TEST:\n");
 	if (todo->MutualRawLP == 1 || todo->MutualRawGapLP == 1 ||
-	    todo->MutualRawAdjLP == 1) {
+	    todo->MutualRawAdjLP == 1 || todo->MutualRawMapLP) {
 		ret = setScanMode(SCAN_MODE_LOCKED, LOCKED_LP_ACTIVE);
 		msleep(WAIT_FOR_FRESH_FRAMES);
 		ret |= setScanMode(SCAN_MODE_ACTIVE, 0x00);
 		msleep(WAIT_AFTER_SENSEOFF);
+#ifdef READ_FILTERED_RAW
+		ret |= getMSFrame3(MS_FILTER, &msRawFrame);
+#else
 		ret |= getMSFrame3(MS_RAW, &msRawFrame);
+#endif
 		if (ret < 0) {
 			pr_err("production_test_data: getMSFrame failed... ERROR %08X\n",
 				ERROR_PROD_TEST_DATA);
@@ -3353,7 +3413,11 @@ int production_test_ss_raw(const char *path_limits, int stop_on_fail,
 	msleep(WAIT_FOR_FRESH_FRAMES);
 	ret |= setScanMode(SCAN_MODE_ACTIVE, 0x00);
 	msleep(WAIT_AFTER_SENSEOFF);
+#ifdef READ_FILTERED_RAW
+	ret |= getSSFrame3(SS_FILTER, &ssRawFrame);
+#else
 	ret |= getSSFrame3(SS_RAW, &ssRawFrame);
+#endif
 	if (ret < 0) {
 		pr_err("production_test_data: getSSFrame failed... ERROR %08X\n",
 			ERROR_PROD_TEST_DATA);
@@ -3725,7 +3789,11 @@ int production_test_ss_raw_lp(const char *path_limits, int stop_on_fail,
 	msleep(WAIT_FOR_FRESH_FRAMES);
 	ret |= setScanMode(SCAN_MODE_ACTIVE, 0x00);
 	msleep(WAIT_AFTER_SENSEOFF);
+#ifdef READ_FILTERED_RAW
+	ret |= getSSFrame3(SS_DETECT_FILTER, &ssRawFrame);
+#else
 	ret |= getSSFrame3(SS_DETECT_RAW, &ssRawFrame);
+#endif
 	if (ret < 0) {
 		pr_err("production_test_data: getSSFrame failed... ERROR %08X\n",
 			ERROR_PROD_TEST_DATA);
@@ -6780,7 +6848,7 @@ int tp_sensitivity_compute_gains(MutualSenseFrame *frame, short target,
 {
 	int ret = OK;
 	int i = 0;
-	u8 gains[frame->node_data_size];
+	u8 *gains;
 
 	if ((frame->node_data == NULL) || (frame->node_data_size == 0)) {
 		pr_err("%s: Invalid frame data passed as argument! ERROR %08X\n",
@@ -6788,7 +6856,9 @@ int tp_sensitivity_compute_gains(MutualSenseFrame *frame, short target,
 		return ERROR_OP_NOT_ALLOW;
 	}
 
-	memset(gains, 0, frame->node_data_size);
+	gains = kzalloc(frame->node_data_size * sizeof(u8), GFP_KERNEL);
+	if (gains == NULL)
+		return ERROR_ALLOC;
 
 	pr_info("%s: Start to compute Digital Gains...\n", __func__);
 	for (i = 0; i < frame->node_data_size; i++)
@@ -6826,6 +6896,7 @@ int tp_sensitivity_compute_gains(MutualSenseFrame *frame, short target,
 		ret = OK;
 	}
 
+	kfree(gains);
 	return ret;
 }
 

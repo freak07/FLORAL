@@ -32,8 +32,12 @@
 #ifndef _LINUX_FTS_I2C_H_
 #define _LINUX_FTS_I2C_H_
 
+#define TOUCHSCREEN_HEATMAP
+
 #include <linux/device.h>
+#ifdef TOUCHSCREEN_HEATMAP
 #include <linux/input/heatmap.h>
+#endif
 #include <linux/pm_qos.h>
 #include <linux/input/touch_offload.h>
 #include <drm/drm_panel.h>
@@ -44,6 +48,7 @@
 #include <linux/input/touch_bus_negotiator.h>
 #endif
 
+#undef DYNAMIC_REFRESH_RATE
 /****************** CONFIGURATION SECTION ******************/
 /** @defgroup conf_section	 Driver Configuration Section
   * Settings of the driver code in order to suit the HW set up and the
@@ -52,9 +57,9 @@
   */
 /* **** CODE CONFIGURATION **** */
 #define FTS_TS_DRV_NAME		"fts"	/* driver name */
-#define FTS_TS_DRV_VERSION	"5.2.16.8"	/* driver version string
+#define FTS_TS_DRV_VERSION	"5.2.16.14"	/* driver version string
 							 * */
-#define FTS_TS_DRV_VER		0x05021008	/* driver version u32 format */
+#define FTS_TS_DRV_VER		0x0502100E	/* driver version u32 format */
 
 /* #define DEBUG */	/* /< define to print more logs in the kernel log
 			 * and better follow the code flow */
@@ -70,16 +75,16 @@
 /* If both COMPUTE_INIT_METHOD and PRE_SAVED_METHOD are not defined,
  * driver will be automatically configured as GOLDEN_VALUE_METHOD
  */
-#define COMPUTE_INIT_METHOD  /* Allow to compute init data on phone during
+/*#define COMPUTE_INIT_METHOD   Allow to compute init data on phone during
 			      * production
 			      */
 #define SKIP_PRODUCTION_TEST /* Allow to skip Production test */
 
-#ifndef COMPUTE_INIT_METHOD
-#define PRE_SAVED_METHOD /* Pre-Saved Method used
+//#ifndef COMPUTE_INIT_METHOD
+/*#define PRE_SAVED_METHOD  Pre-Saved Method used
 			  * during production
 			  */
-#endif
+//#endif
 
 /*#define FW_H_FILE*/			/* include the FW data as header file */
 #ifdef FW_H_FILE
@@ -200,7 +205,7 @@
 
 /**@}*/
 /*********************************************************/
-
+#ifdef TOUCHSCREEN_HEATMAP
 /* **** LOCAL HEATMAP FEATURE *** */
 #define LOCAL_HEATMAP_WIDTH 7
 #define LOCAL_HEATMAP_HEIGHT 7
@@ -219,7 +224,7 @@ struct heatmap_report {
 	strength_t data[LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT];
 } __attribute__((packed));
 /* **** END **** */
-
+#endif
 /*
   * Configuration mode
   *
@@ -285,9 +290,12 @@ struct fts_hw_platform_data {
 	int x_axis_max;
 	int y_axis_max;
 	bool auto_fw_update;
+#ifdef TOUCHSCREEN_HEATMAP
 	bool heatmap_mode_full_init;
+#endif
 	struct drm_panel *panel;
 	u32 initial_panel_index;
+	u32 *force_pi_cfg_ver;
 };
 
 /* Bits for the bus reference mask */
@@ -316,12 +324,13 @@ typedef enum {
  *			(LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT)
  * FTS_HEATMAP_FULL	- read full mutual sense strength frame
  */
+#ifdef TOUCHSCREEN_HEATMAP
 enum {
 	FTS_HEATMAP_OFF		= 0,
 	FTS_HEATMAP_PARTIAL	= 1,
 	FTS_HEATMAP_FULL	= 2
 };
-
+#endif
 /*
   * Forward declaration
   */
@@ -396,9 +405,9 @@ struct fts_ts_info {
 	struct completion bus_resumed;		/* resume_work complete */
 
 	struct pm_qos_request pm_qos_req;
-
+#ifdef TOUCHSCREEN_HEATMAP
 	struct v4l2_heatmap v4l2;
-
+#endif
 #ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	struct touch_offload_context offload;
 #endif
@@ -436,8 +445,12 @@ struct fts_ts_info {
 
 	struct fts_disp_extinfo extinfo;	/* Display extended info */
 
+#ifdef CONFIG_DRM
 	struct notifier_block notifier;	/* Notify on suspend/resume */
+#endif
+#ifdef DYNAMIC_REFRESH_RATE
 	int display_refresh_rate;	/* Display rate in Hz */
+#endif
 	bool sensor_sleep;		/* True if suspend called */
 	struct wakeup_source wakesrc;	/* Wake Lock struct */
 
@@ -451,9 +464,9 @@ struct fts_ts_info {
 	int stylus_enabled;	/* Stylus mode */
 	int cover_enabled;	/* Cover mode */
 	int grip_enabled;	/* Grip mode */
-
+#ifdef TOUCHSCREEN_HEATMAP
 	int heatmap_mode;	/* heatmap mode*/
-
+#endif
 	/* Stop changing motion filter and keep fw design */
 	bool use_default_mf;
 	/* Motion filter finite state machine (FSM) state */
@@ -474,6 +487,8 @@ struct fts_ts_info {
 
 	/* Touch simulation details */
 	struct fts_touchsim touchsim;
+
+	u8 scanning_frequency;
 
 	/* Preallocated i/o read buffer */
 	u8 io_read_buf[READ_CHUNK + DUMMY_FIFO];

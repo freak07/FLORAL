@@ -23,8 +23,15 @@
 #define FTS_HARDWARE_H
 
 /* DIGITAL CHIP INFO */
+#define ALIX
+
+#ifdef ALIX
+#define DCHIP_ID_0			0x36	/* /< LSB chip ID for FTM5 */
+#define DCHIP_ID_1			0x48	/* /< MSB chip ID for FTM5 */
+#else
 #define DCHIP_ID_0			0x36	/* /< LSB chip ID for FTM5 */
 #define DCHIP_ID_1			0x39	/* /< MSB chip ID for FTM5 */
+#endif
 
 #define DCHIP_FW_VER_BYTE		2	/* /< number of bytes of the fw
 						 * versions */
@@ -40,8 +47,12 @@
 						 * a single i2c write on mem,
 						 * max allowed value is 2kB */
 
+#define READ_FILTERED_RAW	/* /< To understand
+				* which type of RAW data to read
+				* OCTA panel needs to read Filtered RAW */
+
 /* PROTOCOL INFO */
-#define SPI_INETERFACE
+#define I2C_INTERFACE
 #ifdef I2C_INTERFACE
 #define I2C_SAD				0x49	/* /< slave address of the IC */
 #else
@@ -295,6 +306,10 @@
 								 * GPIO config
 								 * register */
 #define ADDR_GPIO_CONFIG_REG2	((u64)0x000000002000003F)	/* /< address of
+								 * GPIO config
+								 * register */
+
+#define ADDR_GPIO_CONFIG_REG3	((u64)0x000000002000003E)	/* /< address of
 								 * GPIO config
 								 * register */
 
