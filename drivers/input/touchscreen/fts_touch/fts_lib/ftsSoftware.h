@@ -465,9 +465,6 @@ typedef enum {
 						 * Subsection Area */
 
 #define EVT_TYPE_ERROR_ESD		0xF0	/* /< ESD error */
-
-#define EVT_TYPE_ERROR_OSC_TRIM		0x24	/* /< OSC Trim error */
-#define EVT_TYPE_ERROR_AOFFSET_TRIM	0x29	/* /< Aoffset Trim error */
 /** @}*/
 
 

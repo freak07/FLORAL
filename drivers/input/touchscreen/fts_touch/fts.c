@@ -1510,9 +1510,7 @@ static void touchsim_work(struct work_struct *work)
 	struct fts_ts_info *info  = container_of(touchsim,
 						struct fts_ts_info,
 						touchsim);
-#ifdef TOUCHSCREEN_HEATMAP
 	ktime_t timestamp = ktime_get();
-#endif
 
 	/* prevent CPU from entering deep sleep */
 	pm_qos_update_request(&info->pm_qos_req, 100);
@@ -1529,9 +1527,8 @@ static void touchsim_work(struct work_struct *work)
 
 	input_sync(info->input_dev);
 
-#ifdef TOUCHSCREEN_HEATMAP
 	heatmap_read(&info->v4l2, ktime_to_ns(timestamp));
-#endif
+
 
 	pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 }
@@ -1964,25 +1961,15 @@ static ssize_t stm_fts_cmd_show(struct device *dev,
 			else
 				setScanMode(SCAN_MODE_LOCKED, LOCKED_ACTIVE);
 			msleep(WAIT_FOR_FRESH_FRAMES);
-			/* Skip sensing off when typeOfCommand[2]=0x01
-			 * to avoid sense on force cal after reading raw data
+			setScanMode(SCAN_MODE_ACTIVE, 0x00);
+			msleep(WAIT_AFTER_SENSEOFF);
+			/* Delete the events related to some touch
+			 * (allow to call this function while touching
+			 * the screen without having a flooding of the
+			 * FIFO)
 			 */
-			if (!(numberParameters >= 3 &&
-				typeOfCommand[2] == 0x01)) {
-				setScanMode(SCAN_MODE_ACTIVE, 0x00);
-				msleep(WAIT_AFTER_SENSEOFF);
-				/* Delete the events related to some touch
-				 * (allow to call this function while touching
-				 * the screen without having a flooding of the
-				 * FIFO)
-				 */
-				flushFIFO();
-			}
-#ifdef READ_FILTERED_RAW
-			res = getMSFrame3(MS_FILTER, &frameMS);
-#else
+			flushFIFO();
 			res = getMSFrame3(MS_RAW, &frameMS);
-#endif
 			if (res < 0) {
 				pr_err("Error while taking the MS frame... ERROR %08X\n",
 					res);
@@ -2019,33 +2006,20 @@ static ssize_t stm_fts_cmd_show(struct device *dev,
 			else
 				setScanMode(SCAN_MODE_LOCKED, LOCKED_ACTIVE);
 			msleep(WAIT_FOR_FRESH_FRAMES);
-			/* Skip sensing off when typeOfCommand[2]=0x01
-			 * to avoid sense on force cal after reading raw data
+			setScanMode(SCAN_MODE_ACTIVE, 0x00);
+			msleep(WAIT_AFTER_SENSEOFF);
+			flushFIFO();
+			/* delete the events related to some touch
+			 * (allow to call this function while touching
+			 * the screen without having a flooding of the
+			 * FIFO)
 			 */
-			if (!(numberParameters >= 3 &&
-				typeOfCommand[2] == 0x01)) {
-				setScanMode(SCAN_MODE_ACTIVE, 0x00);
-				msleep(WAIT_AFTER_SENSEOFF);
-				flushFIFO();
-				/* delete the events related to some touch
-				 * (allow to call this function while touching
-				 * the screen without having a flooding of the
-				 * FIFO)
-				 */
-			}
 			if (numberParameters >= 2 &&
 				typeOfCommand[1] == LOCKED_LP_DETECT)
-#ifdef READ_FILTERED_RAW
-				res = getSSFrame3(SS_DETECT_FILTER, &frameSS);
-#else
 				res = getSSFrame3(SS_DETECT_RAW, &frameSS);
-#endif
 			else
-#ifdef READ_FILTERED_RAW
-				res = getSSFrame3(SS_FILTER, &frameSS);
-#else
 				res = getSSFrame3(SS_RAW, &frameSS);
-#endif
+
 			if (res < OK) {
 				pr_err("Error while taking the SS frame... ERROR %08X\n",
 					res);
@@ -2143,18 +2117,12 @@ static ssize_t stm_fts_cmd_show(struct device *dev,
 			break;
 		case 0x17:	/* Read mutual strength */
 			pr_info("Get 1 MS Strength\n");
-			/* Skip sensing off when typeOfCommand[1]=0x01
-			 * to avoid sense on force cal after reading raw data
-			 */
-			if (!(numberParameters >= 2 &&
-				typeOfCommand[1] == 0x01)) {
-				setScanMode(SCAN_MODE_ACTIVE, 0xFF);
-				msleep(WAIT_FOR_FRESH_FRAMES);
-				setScanMode(SCAN_MODE_ACTIVE, 0x00);
-				msleep(WAIT_AFTER_SENSEOFF);
-				/* Flush outstanding touch events */
-				flushFIFO();
-			}
+			setScanMode(SCAN_MODE_ACTIVE, 0xFF);
+			msleep(WAIT_FOR_FRESH_FRAMES);
+			setScanMode(SCAN_MODE_ACTIVE, 0x00);
+			msleep(WAIT_AFTER_SENSEOFF);
+			/* Flush outstanding touch events */
+			flushFIFO();
 			nodes = getMSFrame3(MS_STRENGTH, &frameMS);
 			if (nodes < 0) {
 				res = nodes;
@@ -2687,7 +2655,6 @@ END:
  * 1 = FTS_HEATMAP_PARTIAL
  * 2 = FTS_HEATMAP_FULL
  */
-#ifdef TOUCHSCREEN_HEATMAP
 static ssize_t fts_heatmap_mode_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -2715,7 +2682,6 @@ static ssize_t fts_heatmap_mode_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n",
 			 info->heatmap_mode);
 }
-#endif
 
 static DEVICE_ATTR(infoblock_getdata, (0444),
 		   fts_infoblock_getdata_show, NULL);
@@ -2727,10 +2693,8 @@ static DEVICE_ATTR(fw_file_test, 0444, fts_fw_test_show, NULL);
 static DEVICE_ATTR(status, 0444, fts_status_show, NULL);
 static DEVICE_ATTR(stm_fts_cmd, 0664, stm_fts_cmd_show,
 		   stm_fts_cmd_store);
-#ifdef TOUCHSCREEN_HEATMAP
 static DEVICE_ATTR(heatmap_mode, 0664, fts_heatmap_mode_show,
 		   fts_heatmap_mode_store);
-#endif
 #ifdef USE_ONE_FILE_NODE
 static DEVICE_ATTR(feature_enable, 0664,
 		   fts_feature_enable_show, fts_feature_enable_store);
@@ -2789,9 +2753,7 @@ static struct attribute *fts_attr_group[] = {
 	&dev_attr_fw_file_test.attr,
 	&dev_attr_status.attr,
 	&dev_attr_stm_fts_cmd.attr,
-#ifdef TOUCHSCREEN_HEATMAP
 	&dev_attr_heatmap_mode.attr,
-#endif
 #ifdef USE_ONE_FILE_NODE
 	&dev_attr_feature_enable.attr,
 #else
@@ -3357,18 +3319,9 @@ static bool fts_status_event_handler(struct fts_ts_info *info, unsigned
 		break;
 
 	case EVT_TYPE_STATUS_NOISE:
-		if(info->scanning_frequency != event[3]) {
-			pr_info("%s: Scanning frequency changed from %02X to %02X\n",
-				__func__, info->scanning_frequency, event[3]);
-			pr_info("%s: Noise Status Event = %02X %02X %02X %02X %02X %02X\n",
-				__func__, event[2], event[3],
-				event[4], event[5], event[6], event[7]);
-			info->scanning_frequency = event[3];
-		} else {
-			pr_debug("%s: Noise Status Event = %02X %02X %02X %02X %02X %02X\n",
-				__func__, event[2], event[3], event[4],
-				event[5], event[6], event[7]);
-		}
+		pr_debug("%s: Noise Status Event = %02X %02X %02X %02X %02X %02X\n",
+			__func__, event[2], event[3], event[4], event[5],
+			event[6], event[7]);
 		break;
 
 	case EVT_TYPE_STATUS_STIMPAD:
@@ -3726,7 +3679,6 @@ static bool fts_user_report_event_handler(struct fts_ts_info *info, unsigned
 	return false;
 }
 
-#ifdef TOUCHSCREEN_HEATMAP
 static void heatmap_enable(void)
 {
 	u8 command[] = {FTS_CMD_SYSTEM, SYS_CMD_LOAD_DATA,
@@ -3859,7 +3811,6 @@ static bool read_heatmap_raw(struct v4l2_heatmap *v4l2)
 
 	return true;
 }
-#endif
 
 /* Update a state machine used to toggle control of the touch IC's motion
  * filter.
@@ -4165,13 +4116,11 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	}
 #endif
 
-#ifdef TOUCHSCREEN_HEATMAP
 	/* TODO(spfetsch): if the mutual strength heatmap was already read into
 	 * the touch offload interface, use it here instead of reading again.
 	 */
 	if (processed_pointer_event)
 		heatmap_read(&info->v4l2, ktime_to_ns(info->timestamp));
-#endif
 
 	/* Disable the firmware motion filter during single touch */
 	update_motion_filter(info);
@@ -4180,6 +4129,7 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	fts_set_bus_ref(info, FTS_BUS_REF_IRQ, false);
 	return IRQ_HANDLED;
 }
+/** @}*/
 
 #ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 static void fts_offload_report(void *handle,
@@ -4348,7 +4298,7 @@ static int fts_identify_panel(struct fts_ts_info *info)
 		if (ret < 0) {
 			pr_err("%s: fts_read_panel_extinfo failed with ret=%d.\n",
 			       __func__, ret);
-			goto get_panel_info_failed;
+			return ret;
 		}
 	}
 
@@ -4416,7 +4366,6 @@ static int fts_identify_panel(struct fts_ts_info *info)
 	// panel was not detected from the list in the device tree, fall back to
 	// using predefined FW and limits paths hardcoded into the driver.
 	// --------------------------------------------------------------------
-get_panel_info_failed:
 	name = NULL;
 	if (info->board->panel)
 		of_property_read_string_index(np, "st,firmware_names",
@@ -4444,7 +4393,7 @@ get_panel_info_failed:
 	info->board->sensor_inverted = (inverted != 0);
 	pr_info("Sensor inverted = %u\n", inverted);
 
-	return ret;
+	return 0;
 }
 
 /**
@@ -4465,9 +4414,6 @@ static int fts_fw_update(struct fts_ts_info *info)
 	int ret;
 	int error = 0;
 	int init_type = NO_INIT;
-	int index;
-	int prop_len = 0;
-	struct device_node *np = info->dev->of_node;
 
 #if defined(PRE_SAVED_METHOD) || defined(COMPUTE_INIT_METHOD)
 	int keep_cx = 1;
@@ -4479,9 +4425,11 @@ static int fts_fw_update(struct fts_ts_info *info)
 	 * there is extinfo to read but is not yet available.
 	 */
 	ret = fts_read_panel_extinfo(info, 10);
-	if (ret < 0)
+	if (ret < 0) {
 		pr_err("%s: Failed or timed out during read of extinfo. ret=%d\n",
 		       __func__, ret);
+		goto out;
+	}
 
 	/* Identify panel given extinfo that may have been received. */
 	ret = fts_identify_panel(info);
@@ -4501,35 +4449,6 @@ static int fts_fw_update(struct fts_ts_info *info)
 	} else {
 		pr_info("%s: NO CRC Error or Impossible to read CRC register!\n",
 			__func__);
-	}
-
-	if (of_property_read_bool(np, "st,force-pi-cfg-ver-map")) {
-		prop_len = of_property_count_u32_elems(np,
-			"st,force-pi-cfg-ver-map");
-		info->board->force_pi_cfg_ver = devm_kzalloc(info->dev,
-			sizeof(u32) * prop_len, GFP_KERNEL);
-		if (info->board->force_pi_cfg_ver != NULL) {
-			for (index = 0; index < prop_len; index++) {
-				of_property_read_u32_index(np,
-					"st,force-pi-cfg-ver-map",
-					index,
-					&info->board->force_pi_cfg_ver[index]);
-				pr_info("%s: force PI config version: %04X",
-					__func__,
-					info->board->force_pi_cfg_ver[index]);
-				if(systemInfo.u16_cfgVer ==
-					info->board->force_pi_cfg_ver[index]) {
-					pr_info("%s System config version %04X, do panel init",
-					__func__, systemInfo.u16_cfgVer);
-					init_type = SPECIAL_PANEL_INIT;
-				}
-			}
-		} else {
-			pr_err("%s: force_pi_cfg_ver is NULL", __func__);
-		}
-	} else {
-		pr_info("%s: of_property_read_bool(np, \"st,force-pi-cfg-ver-map\") failed.\n",
-		__func__);
 	}
 
 	if (info->board->auto_fw_update) {
@@ -4571,6 +4490,7 @@ static int fts_fw_update(struct fts_ts_info *info)
 			if (ret < OK) {
 				pr_info("%s: No Panel CRC Error Found!\n",
 					__func__);
+				init_type = NO_INIT;
 			} else {
 				pr_err("%s: Panel CRC Error FOUND! CRC ERROR = %02X\n",
 					__func__, ret);
@@ -4680,9 +4600,7 @@ static int fts_chip_initialization(struct fts_ts_info *info, int init_type)
 	int ret2 = 0;
 	int retry;
 	int initretrycnt = 0;
-#ifdef COMPUTE_INIT_METHOD
 	const char *limits_file = info->board->limits_name;
-#endif
 
 	/* initialization error, retry initialization */
 	for (retry = 0; retry < RETRY_INIT_BOOT; retry++) {
@@ -4897,11 +4815,9 @@ static int fts_init_sensing(struct fts_ts_info *info)
 {
 	int error = 0;
 
-#ifdef CONFIG_DRM
 	error |= msm_drm_register_client(&info->notifier);/* register the
 							   * suspend/resume
 							   * function */
-#endif
 	error |= fts_interrupt_install(info);	/* register event handler */
 	error |= fts_mode_handler(info, 0);	/* enable the features and
 						 * sensing */
@@ -4911,9 +4827,7 @@ static int fts_init_sensing(struct fts_ts_info *info)
 		pr_err("%s Init after Probe error (ERROR = %08X)\n",
 			__func__, error);
 
-#ifdef TOUCHSCREEN_HEATMAP
 	heatmap_enable();
-#endif
 
 	return error;
 }
@@ -5155,10 +5069,8 @@ static void fts_resume_work(struct work_struct *work)
 
 	info->sensor_sleep = false;
 
-#ifdef TOUCHSCREEN_HEATMAP
 	/* heatmap must be enabled after every chip reset (fts_system_reset) */
 	heatmap_enable();
-#endif
 
 	fts_enableInterrupt(true);
 
@@ -5275,7 +5187,6 @@ int fts_set_bus_ref(struct fts_ts_info *info, u16 ref, bool enable)
   * This function schedule a suspend or resume work according to the event
   * received.
   */
-#ifdef CONFIG_DRM
 static int fts_screen_state_chg_callback(struct notifier_block *nb,
 					 unsigned long val, void *data)
 {
@@ -5311,7 +5222,6 @@ static int fts_screen_state_chg_callback(struct notifier_block *nb,
 		break;
 	}
 
-#ifdef DYNAMIC_REFRESH_RATE
 	if (info->display_refresh_rate != evdata->refresh_rate) {
 		info->display_refresh_rate = evdata->refresh_rate;
 		if (gpio_is_valid(info->board->disp_rate_gpio))
@@ -5320,7 +5230,6 @@ static int fts_screen_state_chg_callback(struct notifier_block *nb,
 		pr_debug("Refresh rate changed to %d Hz.\n",
 			info->display_refresh_rate);
 	}
-#endif
 
 	return NOTIFY_OK;
 }
@@ -5328,7 +5237,6 @@ static int fts_screen_state_chg_callback(struct notifier_block *nb,
 static struct notifier_block fts_noti_block = {
 	.notifier_call = fts_screen_state_chg_callback,
 };
-#endif
 
 /**
   * From the name of the power regulator get/put the actual regulator structs
@@ -5498,7 +5406,6 @@ static int fts_set_gpio(struct fts_ts_info *info)
 				__func__);
 	}
 
-#ifdef DYNAMIC_REFRESH_RATE
 	if (gpio_is_valid(bdata->disp_rate_gpio)) {
 		retval = fts_gpio_setup(bdata->disp_rate_gpio, true, 1,
 					(info->display_refresh_rate == 90));
@@ -5506,7 +5413,6 @@ static int fts_set_gpio(struct fts_ts_info *info)
 			pr_err("%s: Failed to configure disp_rate_gpio\n",
 				__func__);
 	}
-#endif
 
 	if (bdata->reset_gpio >= 0) {
 		retval = fts_gpio_setup(bdata->reset_gpio, true, 1, 0);
@@ -5562,7 +5468,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 				return -EPROBE_DEFER;
 			panel = of_drm_find_panel(panelmap.np);
 			of_node_put(panelmap.np);
-			if (!IS_ERR_OR_NULL(panel)) {
+			if (panel) {
 				bdata->panel = panel;
 				bdata->initial_panel_index = panelmap.args[0];
 				break;
@@ -5617,13 +5523,11 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 		pr_info("Automatic firmware update disabled\n");
 	}
 
-#ifdef TOUCHSCREEN_HEATMAP
 	bdata->heatmap_mode_full_init = false;
 	if (of_property_read_bool(np, "st,heatmap_mode_full")) {
 		bdata->heatmap_mode_full_init = true;
 		pr_info("Full heatmap enabled\n");
 	}
-#endif
 
 	if (panel && panel->funcs && panel->funcs->get_timings &&
 	    panel->funcs->get_timings(panel, 1, &timing) > 0) {
@@ -5704,10 +5608,8 @@ static int fts_probe(struct spi_device *client)
 	info->client = client;
 	info->dev = &info->client->dev;
 
-#ifdef DYNAMIC_REFRESH_RATE
 	/* Set default display refresh rate */
 	info->display_refresh_rate = 60;
-#endif
 
 	dev_set_drvdata(info->dev, info);
 
@@ -5894,19 +5796,15 @@ static int fts_probe(struct spi_device *client)
 	info->grip_enabled = 0;
 
 	info->resume_bit = 1;
-#ifdef CONFIG_DRM
 	info->notifier = fts_noti_block;
-#endif
 
 	/* Set initial heatmap mode based on the device tree configuration.
 	 * Default is partial heatmap mode.
 	 */
-#ifdef TOUCHSCREEN_HEATMAP
 	if (info->board->heatmap_mode_full_init)
 		info->heatmap_mode = FTS_HEATMAP_FULL;
 	else
 		info->heatmap_mode = FTS_HEATMAP_PARTIAL;
-#endif
 
 	/* init motion filter mode */
 	info->use_default_mf = false;
@@ -5931,7 +5829,6 @@ static int fts_probe(struct spi_device *client)
 		goto ProbeErrorExit_6;
 	}
 
-#ifdef TOUCHSCREEN_HEATMAP
 	/*
 	 * Heatmap_probe must be called before irq routine is registered,
 	 * because heatmap_read is called from interrupt context.
@@ -5951,7 +5848,6 @@ static int fts_probe(struct spi_device *client)
 	error = heatmap_probe(&info->v4l2);
 	if (error < OK)
 		goto ProbeErrorExit_6;
-#endif
 
 #ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	/* Hard-coded C2 caps */
@@ -6037,17 +5933,13 @@ ProbeErrorExit_7:
 	if(info->touchsim.wq)
 		destroy_workqueue(info->touchsim.wq);
 
-#ifdef CONFIG_DRM
 	msm_drm_unregister_client(&info->notifier);
-#endif
 
 #ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	touch_offload_cleanup(&info->offload);
 #endif
 
-#ifdef TOUCHSCREEN_HEATMAP
 	heatmap_remove(&info->v4l2);
-#endif
 
 ProbeErrorExit_6:
 	pm_qos_remove_request(&info->pm_qos_req);
@@ -6115,15 +6007,11 @@ static int fts_remove(struct spi_device *client)
 	touch_offload_cleanup(&info->offload);
 #endif
 
-#ifdef TOUCHSCREEN_HEATMAP
 	heatmap_remove(&info->v4l2);
-#endif
 
 	pm_qos_remove_request(&info->pm_qos_req);
 
-#ifdef CONFIG_DRM
 	msm_drm_unregister_client(&info->notifier);
-#endif
 
 	/* unregister the device */
 	input_unregister_device(info->input_dev);
