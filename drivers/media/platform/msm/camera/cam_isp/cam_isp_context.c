@@ -33,7 +33,7 @@ static const char isp_dev_name[] = "cam-isp";
  * in order to handle timing issue of IRQ when system performance drop and SOC
  * IFE hardware unstable.
  */
-static const uint32_t isp_max_active_req_count = 3;
+static const uint32_t isp_max_active_req_count = 4;
 
 #define INC_HEAD(head, max_entries) \
 	(atomic64_add_return(1, head) % \

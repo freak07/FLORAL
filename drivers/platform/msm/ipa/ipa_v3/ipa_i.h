@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1383,6 +1383,7 @@ struct ipa3_stats {
 	u32 tx_non_linear;
 	u32 rx_page_drop_cnt;
 	struct ipa3_page_recycle_stats page_recycle_stats[2];
+	u32 rx_drop_pkts;
 };
 
 /* offset for each stats */
@@ -1763,6 +1764,7 @@ struct ipa3_app_clock_vote {
  * @rt_rule_cache: routing rule cache
  * @hdr_cache: header cache
  * @hdr_offset_cache: header offset cache
+ * @fnr_stats_cache: FnR stats cache
  * @hdr_proc_ctx_cache: processing context cache
  * @hdr_proc_ctx_offset_cache: processing context offset cache
  * @rt_tbl_cache: routing table cache
@@ -1856,6 +1858,7 @@ struct ipa3_context {
 	struct kmem_cache *rt_rule_cache;
 	struct kmem_cache *hdr_cache;
 	struct kmem_cache *hdr_offset_cache;
+	struct kmem_cache *fnr_stats_cache;
 	struct kmem_cache *hdr_proc_ctx_cache;
 	struct kmem_cache *hdr_proc_ctx_offset_cache;
 	struct kmem_cache *rt_tbl_cache;

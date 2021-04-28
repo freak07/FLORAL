@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1159,7 +1159,8 @@ static ssize_t ipa3_read_stats(struct file *file, char __user *ubuf,
 		"lan_rx_empty=%u\n"
 		"lan_repl_rx_empty=%u\n"
 		"flow_enable=%u\n"
-		"flow_disable=%u\n",
+		"flow_disable=%u\n"
+		"rx_drop_pkts=%u\n",
 		"rx_page_drop_cnt=%u\n",
 		ipa3_ctx->stats.tx_sw_pkts,
 		ipa3_ctx->stats.tx_hw_pkts,
@@ -1177,7 +1178,8 @@ static ssize_t ipa3_read_stats(struct file *file, char __user *ubuf,
 		ipa3_ctx->stats.lan_repl_rx_empty,
 		ipa3_ctx->stats.flow_enable,
 		ipa3_ctx->stats.flow_disable,
-		ipa3_ctx->stats.rx_page_drop_cnt);
+		ipa3_ctx->stats.rx_page_drop_cnt,
+		ipa3_ctx->stats.rx_drop_pkts);
 	cnt += nbytes;
 
 	for (i = 0; i < IPAHAL_PKT_STATUS_EXCEPTION_MAX; i++) {
@@ -1997,6 +1999,11 @@ static ssize_t ipa3_read_nat4(
 		goto bail;
 	}
 
+	if (nm_ptr->sram_in_use) {
+		IPADBG("SRAM based table with client 0, enable clk\n");
+		IPA_ACTIVE_CLIENTS_INC_SPECIAL("SRAM");
+	}
+
 	if (ipa3_ctx->ipa_hw_type >= IPA_HW_v4_0) {
 		ipa3_read_pdn_table();
 	} else {
@@ -2058,6 +2065,11 @@ static ssize_t ipa3_read_nat4(
 		dev,
 		num_ddr_ents,
 		num_sram_ents);
+
+	if (nm_ptr->sram_in_use) {
+		IPADBG("SRAM based table with client 0, disable clk\n");
+		IPA_ACTIVE_CLIENTS_DEC_SPECIAL("SRAM");
+	}
 
 bail:
 	mutex_unlock(&dev->lock);
