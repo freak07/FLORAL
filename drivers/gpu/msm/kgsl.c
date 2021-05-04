@@ -532,6 +532,7 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 	if (entry->id != 0)
 		idr_remove(&entry->priv->mem_idr, entry->id);
 	entry->id = 0;
+
 	spin_unlock(&entry->priv->mem_lock);
 
 	kgsl_mmu_put_gpuaddr(&entry->memdesc);
@@ -2401,6 +2402,7 @@ static int kgsl_setup_anon_useraddr(struct kgsl_pagetable *pagetable,
 	size_t offset, size_t size)
 {
 	/* Map an anonymous memory chunk */
+	int ret;
 
 	if (size == 0 || offset != 0 ||
 		!IS_ALIGNED(size, PAGE_SIZE))
@@ -2411,8 +2413,6 @@ static int kgsl_setup_anon_useraddr(struct kgsl_pagetable *pagetable,
 	entry->memdesc.flags |= (uint64_t)KGSL_MEMFLAGS_USERMEM_ADDR;
 
 	if (kgsl_memdesc_use_cpu_map(&entry->memdesc)) {
-		int ret;
-
 		/* Register the address in the database */
 		ret = kgsl_mmu_set_svm_region(pagetable,
 			(uint64_t) hostptr, (uint64_t) size);
@@ -2423,7 +2423,12 @@ static int kgsl_setup_anon_useraddr(struct kgsl_pagetable *pagetable,
 		entry->memdesc.gpuaddr = (uint64_t) hostptr;
 	}
 
-	return memdesc_sg_virt(&entry->memdesc, hostptr);
+	ret = memdesc_sg_virt(&entry->memdesc, hostptr);
+
+	if (ret && kgsl_memdesc_use_cpu_map(&entry->memdesc))
+		kgsl_mmu_put_gpuaddr(&entry->memdesc);
+
+	return ret;
 }
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
@@ -4436,8 +4441,7 @@ kgsl_gpumem_vm_close(struct vm_area_struct *vma)
 	 * gone away
 	 */
 	if (!atomic_dec_return(&entry->map_count))
-		atomic_long_sub(entry->memdesc.size,
-				&entry->priv->gpumem_mapped);
+		atomic64_sub(entry->memdesc.size, &entry->priv->gpumem_mapped);
 
 	kgsl_mem_entry_put(entry);
 }
@@ -4836,7 +4840,7 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 	vma->vm_file = file;
 
 	if (atomic_inc_return(&entry->map_count) == 1)
-		atomic_long_add(entry->memdesc.size,
+		atomic64_add(entry->memdesc.size,
 				&entry->priv->gpumem_mapped);
 
 	trace_kgsl_mem_mmap(entry, vma->vm_start);
