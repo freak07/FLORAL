@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -137,8 +137,7 @@ static ssize_t time_show(struct device *dev,
 	ret = mhi_get_remote_time_sync(mhi_dev, &t_host, &t_device);
 	if (ret) {
 		MHI_ERR("Failed to obtain time, ret:%d\n", ret);
-		return scnprintf(buf, PAGE_SIZE,
-				 "Request failed or feature unsupported\n");
+		return ret;
 	}
 
 	return scnprintf(buf, PAGE_SIZE, "local: %llu remote: %llu (ticks)\n",
@@ -158,8 +157,7 @@ static ssize_t time_us_show(struct device *dev,
 	ret = mhi_get_remote_time_sync(mhi_dev, &t_host, &t_device);
 	if (ret) {
 		MHI_ERR("Failed to obtain time, ret:%d\n", ret);
-		return scnprintf(buf, PAGE_SIZE,
-				 "Request failed or feature unsupported\n");
+		return ret;
 	}
 
 	return scnprintf(buf, PAGE_SIZE, "local: %llu remote: %llu (us)\n",
@@ -1534,8 +1532,7 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	INIT_WORK(&mhi_cntrl->st_worker, mhi_pm_st_worker);
 	init_waitqueue_head(&mhi_cntrl->state_event);
 
-	mhi_cntrl->wq = alloc_ordered_workqueue("mhi_w",
-						WQ_MEM_RECLAIM | WQ_HIGHPRI);
+	mhi_cntrl->wq = alloc_ordered_workqueue("mhi_w", WQ_HIGHPRI);
 	if (!mhi_cntrl->wq)
 		goto error_alloc_cmd;
 
