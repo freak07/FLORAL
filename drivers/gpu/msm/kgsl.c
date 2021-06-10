@@ -532,6 +532,7 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 	if (entry->id != 0)
 		idr_remove(&entry->priv->mem_idr, entry->id);
 	entry->id = 0;
+
 	spin_unlock(&entry->priv->mem_lock);
 
 	kgsl_mmu_put_gpuaddr(&entry->memdesc);
