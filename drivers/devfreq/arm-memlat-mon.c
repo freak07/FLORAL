@@ -460,7 +460,7 @@ static int memlat_idle_read_events(unsigned int cpu)
 	for (i = 0; i < NUM_COMMON_EVS; i++) {
 		if (common_evs[i].pevent)
 			ret = perf_event_read_local(common_evs[i].pevent,
-				&common_evs[i].cached_total_count, NULL, NULL);
+				&common_evs[i].cached_total_count);
 	}
 
 	for (i = 0; i < cpu_grp->num_mons; i++) {
@@ -473,7 +473,7 @@ static int memlat_idle_read_events(unsigned int cpu)
 		idx = cpu - cpumask_first(&mon->cpus);
 		if (mon->miss_ev[idx].pevent)
 			ret = perf_event_read_local(mon->miss_ev[idx].pevent,
-			&mon->miss_ev[idx].cached_total_count, NULL, NULL);
+			&mon->miss_ev[idx].cached_total_count);
 	}
 exit:
 	spin_unlock_irqrestore(&cpu_grp->mon_active_lock, flags);
