@@ -422,6 +422,13 @@
 		alignment = <0x0 0x400000>;
 		size = <0x0 0x6400000>;
 	};
+
+	qseecom_mem: qseecom_region@0x9e400000 {
+		compatible = "shared-dma-pool";
+		no-map;
+		reg = <0 0x9e400000 0 0x1800000>;
+	};
+
 };
 
 &ion {
