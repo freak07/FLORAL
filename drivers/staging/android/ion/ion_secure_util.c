@@ -197,15 +197,14 @@ int ion_hyp_assign_sg(struct sg_table *sgt, int *dest_vm_list,
 			dest_perms[i] = PERM_READ | PERM_WRITE;
 	}
 
-	if ((l != -1) && (m != -1)) {
-		dest_perms[l] = PERM_READ;
-	} else if ((j != -1) && (k != -1) && (m != -1)) {
+	if ((j != -1) && (k != -1) && (m != -1)) {
 		dest_perms[j] = PERM_READ;
 		dest_perms[m] = PERM_READ;
 	} else if ((j != -1) && (k != -1) && (l != -1)) {
 		dest_perms[j] = PERM_READ;
 		dest_perms[l] = PERM_READ;
-	}
+	} else if ((j != -1) && (k != -1))
+		dest_perms[j] = PERM_READ;
 
 	ret = hyp_assign_table(sgt, &source_vmid, 1,
 			       dest_vm_list, dest_perms, dest_nelems);
