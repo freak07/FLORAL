@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,6 +16,7 @@
 #include <linux/device.h>
 #include <linux/errno.h>
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/ipa_mhi.h>
 #include <linux/msm_ep_pcie.h>
 #include "mhi_hwio.h"
@@ -32,6 +33,9 @@
 #define MHI_SM_FUNC_EXIT() MHI_SM_DBG("EXIT\n")
 
 #define PCIE_EP_TIMER_US	500000000
+
+#define MHI_IPA_DISABLE_DELAY_MS	10
+#define MHI_IPA_DISABLE_COUNTER	20
 
 static inline const char *mhi_sm_dev_event_str(enum mhi_dev_event state)
 {
@@ -600,7 +604,7 @@ static int mhi_sm_prepare_suspend(enum mhi_dev_state new_state)
 {
 	enum mhi_dev_state old_state;
 	struct ep_pcie_inactivity inact_param;
-	int res = 0, rc;
+	int res = 0, rc, wait_timeout = 0;
 
 	MHI_SM_DBG("Switching event:%d\n", new_state);
 
@@ -675,13 +679,22 @@ static int mhi_sm_prepare_suspend(enum mhi_dev_state new_state)
 	if ((old_state == MHI_DEV_M0_STATE) &&
 			((new_state == MHI_DEV_M2_STATE) ||
 			 (new_state == MHI_DEV_M3_STATE))) {
-		if (mhi_sm_ctx->mhi_dev->use_ipa) {
-			MHI_SM_DBG("Disable IPA with ipa_dma_disable()\n");
+	if (mhi_sm_ctx->mhi_dev->use_ipa) {
+		while (wait_timeout < MHI_IPA_DISABLE_COUNTER) {
+			/* wait for the disable to finish */
 			res = ipa_dma_disable();
-			if (res) {
-				MHI_SM_ERR("IPA disable failed\n");
-				goto exit;
+			if (!res)
+				break;
+			MHI_SM_ERR("IPA disable fail cnt:%d\n",	wait_timeout);
+			msleep(MHI_IPA_DISABLE_DELAY_MS);
+			wait_timeout++;
 			}
+
+		if (wait_timeout >= MHI_IPA_DISABLE_COUNTER) {
+			MHI_SM_ERR("Fail to disable IPA for M3\n");
+			goto exit;
+		}
+		MHI_SM_ERR("IPA DMA successfully disabled\n");
 		}
 	}
 
