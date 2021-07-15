@@ -228,6 +228,7 @@ struct smq_invoke_ctx {
 	unsigned int *attrs;
 	struct fastrpc_mmap **maps;
 	struct fastrpc_buf *buf;
+	struct fastrpc_buf *lbuf;
 	size_t used;
 	struct fastrpc_file *fl;
 	uint32_t handle;
@@ -288,6 +289,7 @@ struct fastrpc_channel_ctx {
 	struct mutex rpmsg_mutex;
 	uint64_t sesscount;
 	uint64_t ssrcount;
+	int in_hib;
 	void *handle;
 	uint64_t prevssrcount;
 	int issubsystemup;
@@ -317,7 +319,6 @@ struct fastrpc_apps {
 	struct smq_invoke_ctx *ctxtable[FASTRPC_CTX_MAX];
 	bool legacy_remote_heap;
 	struct wakeup_source *wake_source;
-	int in_hib;
 };
 
 struct fastrpc_mmap {
@@ -399,6 +400,8 @@ struct fastrpc_file {
 	/* Identifies the device (MINOR_NUM_DEV / MINOR_NUM_SECURE_DEV) */
 	int dev_minor;
 	char *debug_buf;
+	/* To indicate attempt has been made to allocate memory for debug_buf */
+	int debug_buf_alloced_attempted;
 	/* Flag to enable PM wake/relax voting for every remote invoke */
 	int wake_enable;
 };
@@ -530,6 +533,7 @@ static void fastrpc_buf_free(struct fastrpc_buf *buf, int cache)
 {
 	struct fastrpc_file *fl = buf == NULL ? NULL : buf->fl;
 	int vmid, err = 0;
+	struct fastrpc_apps __maybe_unused *me = &gfa;
 
 	if (!fl)
 		return;
@@ -808,7 +812,7 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, uint32_t flags)
 			sess = fl->sctx;
 
 		vmid = fl->apps->channel[fl->cid].vmid;
-		if (vmid && map->phys) {
+		if (vmid && map->phys && (me->channel[fl->cid].in_hib == 0)) {
 			int srcVM[2] = {VMID_HLOS, vmid};
 
 			hyp_assign_phys(map->phys, buf_page_size(map->size),
@@ -1905,6 +1909,7 @@ static int fastrpc_invoke_send(struct smq_invoke_ctx *ctx,
 	struct fastrpc_channel_ctx *channel_ctx = NULL;
 	int err = 0, cid = -1;
 
+	channel_ctx = &fl->apps->channel[fl->cid];
 	cid = fl->cid;
 	VERIFY(err, cid >= ADSP_DOMAIN_ID && cid < NUM_CHANNELS);
 	if (err) {
@@ -1912,7 +1917,6 @@ static int fastrpc_invoke_send(struct smq_invoke_ctx *ctx,
 		goto bail;
 	}
 
-	channel_ctx = &fl->apps->channel[fl->cid];
 	mutex_lock(&channel_ctx->smd_mutex);
 	msg->pid = fl->tgid;
 	msg->tid = current->pid;
@@ -2070,7 +2074,6 @@ static int fastrpc_internal_invoke(struct fastrpc_file *fl, uint32_t mode,
 		wait_for_completion(&ctx->work);
 	else
 		interrupted = wait_for_completion_interruptible(&ctx->work);
-
 	pm_awake_voted = ctx->pm_awake_voted;
 	VERIFY(err, 0 == (err = interrupted));
 	if (err)
@@ -2230,6 +2233,7 @@ static int fastrpc_init_process(struct fastrpc_file *fl,
 			fastrpc_buf_free(fl->init_mem, 0);
 
 		fl->init_mem = imem;
+
 		inbuf.pageslen = 1;
 		ra[0].buf.pv = (void *)&inbuf;
 		ra[0].buf.len = sizeof(inbuf);
@@ -2370,7 +2374,8 @@ bail:
 		me->staticpd_flags = 0;
 	if (mem && err) {
 		if (mem->flags == ADSP_MMAP_REMOTE_HEAP_ADDR
-			&& me->channel[fl->cid].rhvm.vmid)
+			&& me->channel[fl->cid].rhvm.vmid
+			&& me->channel[fl->cid].in_hib == 0)
 			hyp_assign_phys(mem->phys, (uint64_t)mem->size,
 					me->channel[fl->cid].rhvm.vmid,
 					me->channel[fl->cid].rhvm.vmcount,
@@ -2545,7 +2550,8 @@ static int fastrpc_munmap_on_dsp_rh(struct fastrpc_file *fl, uint64_t phys,
 		err = scm_call2(SCM_SIP_FNID(SCM_SVC_PIL,
 			TZ_PIL_CLEAR_PROTECT_MEM_SUBSYS_ID), &desc);
 	} else if (flags == ADSP_MMAP_REMOTE_HEAP_ADDR) {
-		if (me->channel[fl->cid].rhvm.vmid) {
+		if ((me->channel[fl->cid].rhvm.vmid)
+				&& (me->channel[fl->cid].in_hib == 0)) {
 			VERIFY(err, !hyp_assign_phys(phys,
 					(uint64_t)size,
 					me->channel[fl->cid].rhvm.vmid,
@@ -3397,6 +3403,7 @@ static int fastrpc_channel_open(struct fastrpc_file *fl)
 		me->channel[cid].prevssrcount =
 					me->channel[cid].ssrcount;
 	}
+	me->channel[cid].in_hib = 0;
 	mutex_unlock(&me->channel[cid].smd_mutex);
 
 bail:
@@ -3406,11 +3413,8 @@ bail:
 static int fastrpc_device_open(struct inode *inode, struct file *filp)
 {
 	int err = 0;
-	struct dentry *debugfs_file;
 	struct fastrpc_file *fl = NULL;
 	struct fastrpc_apps *me = &gfa;
-	char strpid[PID_SIZE];
-	int buf_size = 0;
 
 	/*
 	 * Indicates the device node opened
@@ -3429,18 +3433,6 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 	if (err)
 		return err;
 
-	snprintf(strpid, PID_SIZE, "%d", current->pid);
-	buf_size = strlen(current->comm) + strlen("_") + strlen(strpid) + 1;
-	VERIFY(err, NULL != (fl->debug_buf = kzalloc(buf_size, GFP_KERNEL)));
-	if (err) {
-		kfree(fl);
-		return err;
-	}
-	snprintf(fl->debug_buf, UL_SIZE, "%.10s%s%d",
-			current->comm, "_", current->pid);
-	debugfs_file = debugfs_create_file(fl->debug_buf, 0644, debugfs_root,
-						fl, &debugfs_fops);
-
 	context_list_ctor(&fl->clst);
 	spin_lock_init(&fl->hlock);
 	INIT_HLIST_HEAD(&fl->maps);
@@ -3449,14 +3441,11 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 	INIT_HLIST_HEAD(&fl->remote_bufs);
 	INIT_HLIST_NODE(&fl->hn);
 	fl->sessionid = 0;
-	fl->tgid = current->tgid;
 	fl->apps = me;
 	fl->mode = FASTRPC_MODE_SERIAL;
 	fl->cid = -1;
 	fl->dev_minor = dev_minor;
 	fl->init_mem = NULL;
-	if (debugfs_file != NULL)
-		fl->debugfs_file = debugfs_file;
 	memset(&fl->perf, 0, sizeof(fl->perf));
 	fl->qos_request = 0;
 	fl->dsp_proc_init = 0;
@@ -3470,12 +3459,52 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+static int fastrpc_set_process_info(struct fastrpc_file *fl)
+{
+	int err = 0, buf_size = 0;
+	char strpid[PID_SIZE];
+
+	fl->tgid = current->tgid;
+	snprintf(strpid, PID_SIZE, "%d", current->pid);
+	if (debugfs_root) {
+		buf_size = strlen(current->comm) + strlen("_")
+			+ strlen(strpid) + 1;
+		spin_lock(&fl->hlock);
+		if (fl->debug_buf_alloced_attempted) {
+			spin_unlock(&fl->hlock);
+			return err;
+		}
+		fl->debug_buf_alloced_attempted = 1;
+		spin_unlock(&fl->hlock);
+		fl->debug_buf = kzalloc(buf_size, GFP_KERNEL);
+		if (!fl->debug_buf) {
+			err = -ENOMEM;
+			return err;
+		}
+		snprintf(fl->debug_buf, UL_SIZE, "%.10s%s%d",
+			current->comm, "_", current->pid);
+		fl->debugfs_file = debugfs_create_file(fl->debug_buf, 0644,
+			debugfs_root, fl, &debugfs_fops);
+		if (IS_ERR_OR_NULL(fl->debugfs_file)) {
+			pr_warn("Error: %s: %s: failed to create debugfs file %s\n",
+				current->comm, __func__, fl->debug_buf);
+			fl->debugfs_file = NULL;
+			kfree(fl->debug_buf);
+			fl->debug_buf = NULL;
+		}
+	}
+	return err;
+}
+
 static int fastrpc_get_info(struct fastrpc_file *fl, uint32_t *info)
 {
 	int err = 0;
 	uint32_t cid;
 
 	VERIFY(err, fl != NULL);
+	if (err)
+		goto bail;
+	err = fastrpc_set_process_info(fl);
 	if (err)
 		goto bail;
 	if (fl->cid == -1) {
@@ -3815,8 +3844,6 @@ static int fastrpc_restart_notifier_cb(struct notifier_block *nb,
 		ctx->ssrcount++;
 		ctx->issubsystemup = 0;
 		mutex_unlock(&me->channel[cid].smd_mutex);
-		if (cid == 0)
-			me->staticpd_flags = 0;
 	} else if (code == SUBSYS_RAMDUMP_NOTIFICATION) {
 		if (me->channel[0].remoteheap_ramdump_dev &&
 				notifdata->enable_ramdump) {
@@ -4071,9 +4098,102 @@ static int fastrpc_cb_probe(struct device *dev)
 	}
 
 	chan->sesscount++;
-	debugfs_global_file = debugfs_create_file("global", 0644, debugfs_root,
-							NULL, &debugfs_fops);
+	if (debugfs_root) {
+		debugfs_global_file = debugfs_create_file("global", 0644,
+			debugfs_root, NULL, &debugfs_fops);
+		if (IS_ERR_OR_NULL(debugfs_global_file)) {
+			pr_warn("Error: %s: %s: failed to create debugfs global file\n",
+				current->comm, __func__);
+			debugfs_global_file = NULL;
+		}
+	}
 bail:
+	return err;
+}
+
+
+static int fastrpc_cb_legacy_probe(struct device *dev)
+{
+	struct fastrpc_channel_ctx *chan;
+	struct fastrpc_session_ctx *first_sess = NULL, *sess = NULL;
+	const char *name;
+	unsigned int *sids = NULL, sids_size = 0;
+	int err = 0, ret = 0, i;
+
+	unsigned int start = 0x80000000;
+
+	VERIFY(err, NULL != (name = of_get_property(dev->of_node,
+					 "label", NULL)));
+	if (err)
+		goto bail;
+
+	for (i = 0; i < NUM_CHANNELS; i++) {
+		if (!gcinfo[i].name)
+			continue;
+		if (!strcmp(name, gcinfo[i].name))
+			break;
+	}
+	VERIFY(err, i < NUM_CHANNELS);
+	if (err)
+		goto bail;
+
+	chan = &gcinfo[i];
+	VERIFY(err, chan->sesscount < NUM_SESSIONS);
+	if (err)
+		goto bail;
+
+	first_sess  = &chan->session[chan->sesscount];
+
+	VERIFY(err, NULL != of_get_property(dev->of_node,
+				"sids", &sids_size));
+	if (err)
+		goto bail;
+
+	VERIFY(err, NULL != (sids = kzalloc(sids_size, GFP_KERNEL)));
+	if (err)
+		goto bail;
+	ret = of_property_read_u32_array(dev->of_node, "sids", sids,
+					sids_size/sizeof(unsigned int));
+	if (ret)
+		goto bail;
+
+	VERIFY(err, !IS_ERR_OR_NULL(first_sess->smmu.mapping =
+				arm_iommu_create_mapping(&platform_bus_type,
+						start, 0x78000000)));
+	if (err)
+		goto bail;
+
+	VERIFY(err, !arm_iommu_attach_device(dev, first_sess->smmu.mapping));
+	if (err) {
+		pr_err("adsprpc: %s: attaching iommu device failed for %s with err %d",
+			__func__, dev_name(dev), err);
+		goto bail;
+	}
+
+
+	for (i = 0; i < sids_size/sizeof(unsigned int); i++) {
+		VERIFY(err, chan->sesscount < NUM_SESSIONS);
+		if (err)
+			goto bail;
+		sess = &chan->session[chan->sesscount];
+		sess->smmu.cb = sids[i];
+		sess->smmu.dev = dev;
+		sess->smmu.dev_name = dev_name(dev);
+		sess->smmu.mapping = first_sess->smmu.mapping;
+		sess->smmu.enabled = 1;
+		sess->used = 0;
+		sess->smmu.coherent = false;
+		sess->smmu.secure = false;
+		chan->sesscount++;
+		if (!sess->smmu.dev->dma_parms)
+			sess->smmu.dev->dma_parms = devm_kzalloc(sess->smmu.dev,
+				sizeof(*sess->smmu.dev->dma_parms), GFP_KERNEL);
+		dma_set_max_seg_size(sess->smmu.dev, DMA_BIT_MASK(32));
+		dma_set_seg_boundary(sess->smmu.dev,
+					(unsigned long)DMA_BIT_MASK(64));
+	}
+bail:
+	kfree(sids);
 	return err;
 }
 
@@ -4171,6 +4291,10 @@ static int fastrpc_probe(struct platform_device *pdev)
 	if (of_device_is_compatible(dev->of_node,
 					"qcom,msm-fastrpc-compute-cb"))
 		return fastrpc_cb_probe(dev);
+
+	if (of_device_is_compatible(dev->of_node,
+					"qcom,msm-fastrpc-legacy-compute-cb"))
+		return fastrpc_cb_legacy_probe(dev);
 
 	if (of_device_is_compatible(dev->of_node,
 					"qcom,msm-adsprpc-mem-region")) {
@@ -4331,8 +4455,12 @@ static int fastrpc_restore(struct device *dev)
 	struct platform_device *ion_pdev;
 	struct cma *cma;
 	uint32_t val;
+	int cid;
 
 	pr_info("adsprpc: restore enter\n");
+	for (cid = 0; cid < NUM_CHANNELS; cid++)
+		me->channel[cid].in_hib = 1;
+
 	if (of_device_is_compatible(dev->of_node,
 					"qcom,msm-adsprpc-mem-region")) {
 		me->dev = dev;
@@ -4399,7 +4527,7 @@ static struct platform_driver fastrpc_driver = {
 
 static const struct rpmsg_device_id fastrpc_rpmsg_match[] = {
 	{ FASTRPC_GLINK_GUID },
-	{ },
+	{ FASTRPC_SMD_GUID },
 };
 
 static const struct of_device_id fastrpc_rpmsg_of_match[] = {
@@ -4428,6 +4556,12 @@ static int __init fastrpc_device_init(void)
 	int ret = 0;
 
 	debugfs_root = debugfs_create_dir("adsprpc", NULL);
+	if (IS_ERR_OR_NULL(debugfs_root)) {
+		pr_warn("Error: %s: %s: failed to create debugfs root dir\n",
+			current->comm, __func__);
+		debugfs_remove_recursive(debugfs_root);
+		debugfs_root = NULL;
+	}
 
 	ret = fastrpc_init_sysfs();
 	if (ret) {
@@ -4442,7 +4576,7 @@ static int __init fastrpc_device_init(void)
 	if (err)
 		goto register_bail;
 	VERIFY(err, 0 == alloc_chrdev_region(&me->dev_no, 0, NUM_CHANNELS,
-					DEVICE_NAME));
+		DEVICE_NAME));
 	if (err)
 		goto alloc_chrdev_bail;
 	cdev_init(&me->cdev, &fops);
@@ -4481,6 +4615,7 @@ static int __init fastrpc_device_init(void)
 		if (i == CDSP_DOMAIN_ID)
 			me->channel[i].dev = dev;
 		me->channel[i].ssrcount = 0;
+		me->channel[i].in_hib = 0;
 		me->channel[i].prevssrcount = 0;
 		me->channel[i].issubsystemup = 1;
 		me->channel[i].ramdumpenabled = 0;

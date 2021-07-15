@@ -1662,7 +1662,6 @@ int gsi_halt_channel_ee(unsigned int chan_idx, unsigned int ee, int *code);
 void gsi_wdi3_write_evt_ring_db(unsigned long chan_hdl, uint32_t db_addr_low,
 	uint32_t db_addr_high);
 
-
 /**
  * gsi_wdi3_dump_register - dump wdi3 related gsi registers
  *

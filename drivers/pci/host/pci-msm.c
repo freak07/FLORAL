@@ -50,7 +50,6 @@
 #include <linux/compiler.h>
 #include <linux/ipc_logging.h>
 #include <linux/msm_pcie.h>
-#include <linux/kthread.h>
 
 #define PCIE_VENDOR_ID_QCOM		0x17cb
 
@@ -1706,11 +1705,6 @@ static void msm_pcie_sel_debug_testcase(struct msm_pcie_dev_t *dev,
 
 		break;
 	case MSM_PCIE_DUMP_PCIE_REGISTER_SPACE:
-		if (!base_sel) {
-			PCIE_DBG_FS(dev, "Invalid base_sel: 0x%x\n", base_sel);
-			break;
-		}
-
 		if (((base_sel - 1) >= MSM_PCIE_MAX_RES) ||
 					(!dev->res[base_sel - 1].resource)) {
 			PCIE_DBG_FS(dev, "PCIe: RC%d Resource does not exist\n",
@@ -1718,7 +1712,10 @@ static void msm_pcie_sel_debug_testcase(struct msm_pcie_dev_t *dev,
 			break;
 		}
 
-		if (base_sel - 1 == MSM_PCIE_RES_PARF) {
+		if (!base_sel) {
+			PCIE_DBG_FS(dev, "Invalid base_sel: 0x%x\n", base_sel);
+			break;
+		} else if (base_sel - 1 == MSM_PCIE_RES_PARF) {
 			pcie_parf_dump(dev);
 			break;
 		} else if (base_sel - 1 == MSM_PCIE_RES_PHY) {
@@ -5884,14 +5881,12 @@ static void msm_pcie_check_l1ss_support_all(struct msm_pcie_dev_t *dev)
 	pci_walk_bus(dev->dev->bus, msm_pcie_check_l1ss_support, dev);
 }
 
-static int __msm_pcie_probe(void *arg)
+static int msm_pcie_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	int rc_idx = -1;
 	int i, j;
-	struct platform_device *pdev;
 
-	pdev = (struct platform_device *)arg;
 	PCIE_GEN_DBG("%s\n", __func__);
 
 	mutex_lock(&pcie_drv.drv_lock);
@@ -6380,24 +6375,6 @@ out:
 	return ret;
 }
 
-static int msm_pcie_probe(struct platform_device *pdev)
-{
-#ifdef CONFIG_PLATFORM_AUTO
-	struct task_struct *msm_pcie_task =
-			kthread_run(__msm_pcie_probe, pdev,
-					"msm_pcie_probe");
-	if (IS_ERR(msm_pcie_task))
-		return PTR_ERR(msm_pcie_task);
-	else
-		return 0;
-#else
-	int ret = 0;
-
-	ret = __msm_pcie_probe(pdev);
-	return ret;
-#endif
-}
-
 static int msm_pcie_remove(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -6852,6 +6829,7 @@ int msm_pci_probe(struct pci_dev *pci_dev,
 
 static struct pci_device_id msm_pci_device_id[] = {
 	{PCI_DEVICE(0x17cb, 0x0108)},
+	{PCI_DEVICE(0x17cb, 0x0109)},
 	{PCI_DEVICE(0x17cb, 0x1000)},
 	{0},
 };

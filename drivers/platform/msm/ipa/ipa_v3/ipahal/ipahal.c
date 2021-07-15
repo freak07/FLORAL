@@ -49,6 +49,8 @@ static const char *ipahal_pkt_status_exception_to_str
 	__stringify(IPAHAL_PKT_STATUS_EXCEPTION_SW_FILT),
 	__stringify(IPAHAL_PKT_STATUS_EXCEPTION_NAT),
 	__stringify(IPAHAL_PKT_STATUS_EXCEPTION_IPV6CT),
+	__stringify(IPAHAL_PKT_STATUS_EXCEPTION_UCP),
+	__stringify(IPAHAL_PKT_STATUS_EXCEPTION_CSUM),
 };
 
 static u16 ipahal_imm_cmd_get_opcode(enum ipahal_imm_cmd_name cmd);
@@ -978,6 +980,9 @@ static void ipa_pkt_status_parse(
 		else
 			exception_type = IPAHAL_PKT_STATUS_EXCEPTION_NAT;
 		break;
+	case 128:
+		exception_type = IPAHAL_PKT_STATUS_EXCEPTION_UCP;
+		break;
 	case 229:
 		exception_type = IPAHAL_PKT_STATUS_EXCEPTION_CSUM;
 		break;
@@ -1423,6 +1428,9 @@ static int ipahal_cp_proc_ctx_to_hw_buff_v3(enum ipa_hdr_proc_type type,
 		case IPA_HDR_PROC_802_3_TO_802_3:
 			ctx->cmd.value = IPA_HDR_UCP_802_3_TO_802_3;
 			break;
+		case IPA_HDR_PROC_SET_DSCP:
+			ctx->cmd.value = IPA_HDR_UCP_SET_DSCP;
+			break;
 		default:
 			IPAHAL_ERR("unknown ipa_hdr_proc_type %d", type);
 			WARN_ON(1);
@@ -1474,6 +1482,9 @@ static int ipahal_get_proc_ctx_needed_len_v3(enum ipa_hdr_proc_type type)
 		break;
 	case IPA_HDR_PROC_ETHII_TO_ETHII_EX:
 		ret = sizeof(struct ipa_hw_hdr_proc_ctx_add_hdr_cmd_seq_ex);
+		break;
+	case IPA_HDR_PROC_SET_DSCP:
+		ret = sizeof(struct ipa_hw_hdr_proc_ctx_add_hdr_cmd_seq);
 		break;
 	default:
 		/* invalid value to make sure failure */

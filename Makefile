@@ -572,8 +572,12 @@ KBUILD_MODULES :=
 KBUILD_BUILTIN := 1
 
 # If we have only "make modules", don't compile built-in objects.
+# When we're building modules with modversions, we need to consider
+# the built-in objects during the descend as well, in order to
+# make sure the checksums are up to date before we record them.
+
 ifeq ($(MAKECMDGOALS),modules)
-  KBUILD_BUILTIN :=
+  KBUILD_BUILTIN := $(if $(CONFIG_MODVERSIONS),1)
 endif
 
 # If we have "make <whatever> modules", compile modules
@@ -1201,7 +1205,7 @@ $(sort $(vmlinux-deps)): $(vmlinux-dirs) ;
 
 PHONY += $(vmlinux-dirs)
 $(vmlinux-dirs): prepare scripts
-	$(Q)$(MAKE) $(build)=$@
+	$(Q)$(MAKE) $(build)=$@ need-builtin=1
 
 define filechk_kernel.release
 	echo "$(KERNELVERSION)$$($(CONFIG_SHELL) $(srctree)/scripts/setlocalversion $(srctree))"
@@ -1271,7 +1275,7 @@ endif
 endif
 
 # Disable clang-specific config options when using a different compiler
-clang-specific-configs := LTO_CLANG CFI_CLANG SHADOW_CALL_STACK
+clang-specific-configs := LTO_CLANG CFI_CLANG SHADOW_CALL_STACK INIT_STACK_ALL
 
 PHONY += check-clang-specific-options
 check-clang-specific-options: $(KCONFIG_CONFIG) FORCE
@@ -1354,8 +1358,8 @@ else
 endif
 define filechk_utsrelease.h
 	if [ `echo -n "$(UTS_RELEASE)" | wc -c ` -gt $(uts_len) ]; then \
-	  echo '"$(UTS_RELEASE)" exceeds $(uts_len) characters' >&2;    \
-	  exit 1;                                                       \
+		echo '"$(UTS_RELEASE)" exceeds $(uts_len) characters' >&2;    \
+		exit 1;                                                       \
 	fi;                                                             \
 	(echo \#define UTS_RELEASE \"$(UTS_RELEASE)\";)
 endef
@@ -1446,13 +1450,6 @@ ifdef CONFIG_MODULES
 # By default, build modules as well
 
 all: modules
-
-# When we're building modules with modversions, we need to consider
-# the built-in objects during the descend as well, in order to
-# make sure the checksums are up to date before we record them.
-ifdef CONFIG_MODVERSIONS
-  KBUILD_BUILTIN := 1
-endif
 
 # Build modules
 #

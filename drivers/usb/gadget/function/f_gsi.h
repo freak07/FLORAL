@@ -44,8 +44,7 @@
 #define GSI_MAX_CTRL_PKT_SIZE 8192
 #define GSI_CTRL_DTR (1 << 0)
 
-#define GSI_NUM_IN_RNDIS_BUFFERS 50
-#define GSI_NUM_IN_RMNET_BUFFERS 50
+#define GSI_NUM_IN_RNDIS_RMNET_ECM_BUFFERS 50
 #define GSI_NUM_IN_BUFFERS 15
 #define GSI_IN_BUFF_SIZE 2048
 #define GSI_IN_RMNET_BUFF_SIZE 31744
@@ -375,8 +374,8 @@ static struct usb_interface_descriptor rmnet_gsi_interface_desc = {
 	.bDescriptorType =	USB_DT_INTERFACE,
 	.bNumEndpoints =	3,
 	.bInterfaceClass =	USB_CLASS_VENDOR_SPEC,
-	.bInterfaceSubClass =	USB_CLASS_VENDOR_SPEC,
-	.bInterfaceProtocol =	USB_CLASS_VENDOR_SPEC,
+	.bInterfaceSubClass =	USB_SUBCLASS_VENDOR_SPEC,
+	.bInterfaceProtocol =	0x50,
 	/* .iInterface = DYNAMIC */
 };
 
@@ -1343,9 +1342,9 @@ static struct usb_interface_descriptor qdss_gsi_data_intf_desc = {
 	.bDescriptorType    =	USB_DT_INTERFACE,
 	.bAlternateSetting  =   0,
 	.bNumEndpoints      =	1,
-	.bInterfaceClass    =	0xff,
-	.bInterfaceSubClass =	0xff,
-	.bInterfaceProtocol =	0xff,
+	.bInterfaceClass    =	USB_CLASS_VENDOR_SPEC,
+	.bInterfaceSubClass =	USB_SUBCLASS_VENDOR_SPEC,
+	.bInterfaceProtocol =	0x80,
 };
 
 static struct usb_endpoint_descriptor qdss_gsi_fs_data_desc = {

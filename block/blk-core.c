@@ -350,34 +350,6 @@ void blk_sync_queue(struct request_queue *q)
 }
 EXPORT_SYMBOL(blk_sync_queue);
 
-void blk_set_preempt_only(struct request_queue *q, bool preempt_only)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(q->queue_lock, flags);
-	if (preempt_only)
-		queue_flag_set(QUEUE_FLAG_PREEMPT_ONLY, q);
-	else
-		queue_flag_clear(QUEUE_FLAG_PREEMPT_ONLY, q);
-	spin_unlock_irqrestore(q->queue_lock, flags);
-
-	/*
-	 * The synchronize_rcu() implicied in blk_mq_freeze_queue()
-	 * or the explicit one will make sure the above write on
-	 * PREEMPT_ONLY is observed in blk_queue_enter() before
-	 * running blk_mq_unfreeze_queue().
-	 *
-	 * blk_mq_freeze_queue() also drains up any request in queue,
-	 * so blk_queue_enter() will see the above updated value of
-	 * PREEMPT flag before any new allocation.
-	 */
-	if (!blk_mq_freeze_queue(q))
-		synchronize_rcu();
-
-	blk_mq_unfreeze_queue(q);
-}
-EXPORT_SYMBOL(blk_set_preempt_only);
-
 /**
  * __blk_run_queue_uncond - run a queue whether or not it has been stopped
  * @q:	The queue to run
@@ -843,22 +815,14 @@ struct request_queue *blk_alloc_queue(gfp_t gfp_mask)
 }
 EXPORT_SYMBOL(blk_alloc_queue);
 
-int blk_queue_enter(struct request_queue *q, unsigned int op)
+int blk_queue_enter(struct request_queue *q, bool nowait)
 {
 	while (true) {
 
-		rcu_read_lock_sched();
-		if (__percpu_ref_tryget_live(&q->q_usage_counter)) {
-			if (likely((op & REQ_PREEMPT) ||
-					!blk_queue_preempt_only(q))) {
-				rcu_read_unlock_sched();
-				return 0;
-			} else
-				percpu_ref_put(&q->q_usage_counter);
-		}
-		rcu_read_unlock_sched();
+		if (percpu_ref_tryget_live(&q->q_usage_counter))
+			return 0;
 
-		if (op & REQ_NOWAIT)
+		if (nowait)
 			return -EBUSY;
 
 		/*
@@ -871,10 +835,8 @@ int blk_queue_enter(struct request_queue *q, unsigned int op)
 		smp_rmb();
 
 		wait_event(q->mq_freeze_wq,
-			   (!atomic_read(&q->mq_freeze_depth) &&
-			   ((op & REQ_PREEMPT) ||
-			    !blk_queue_preempt_only(q))) ||
-			    blk_queue_dying(q));
+			   !atomic_read(&q->mq_freeze_depth) ||
+			   blk_queue_dying(q));
 		if (blk_queue_dying(q))
 			return -ENODEV;
 	}
@@ -1500,8 +1462,8 @@ static struct request *blk_old_get_request(struct request_queue *q,
 	/* create ioc upfront */
 	create_io_context(gfp_mask, q->node);
 
-	ret = blk_queue_enter(q, (gfp_mask & __GFP_DIRECT_RECLAIM) ? op :
-			      op | REQ_NOWAIT);
+	ret = blk_queue_enter(q, !(gfp_mask & __GFP_DIRECT_RECLAIM) ||
+			      (op & REQ_NOWAIT));
 	if (ret)
 		return ERR_PTR(ret);
 	spin_lock_irq(q->queue_lock);
@@ -1531,7 +1493,6 @@ struct request *blk_get_request(struct request_queue *q, unsigned int op,
 		req = blk_mq_alloc_request(q, op,
 			(gfp_mask & __GFP_DIRECT_RECLAIM) ?
 				0 : BLK_MQ_REQ_NOWAIT);
-
 		if (!IS_ERR(req) && q->mq_ops->initialize_rq_fn)
 			q->mq_ops->initialize_rq_fn(req);
 	} else {
@@ -2280,7 +2241,19 @@ blk_qc_t generic_make_request(struct bio *bio)
 	 * yet.
 	 */
 	struct bio_list bio_list_on_stack[2];
+	bool flags = 0;
+	struct request_queue *q = bio->bi_disk->queue;
 	blk_qc_t ret = BLK_QC_T_NONE;
+
+	if (bio->bi_opf & REQ_NOWAIT)
+		flags = BLK_MQ_REQ_NOWAIT;
+	else if (blk_queue_enter(q, flags) < 0) {
+		if (!blk_queue_dying(q) && (bio->bi_opf & REQ_NOWAIT))
+			bio_wouldblock_error(bio);
+		else
+			bio_io_error(bio);
+		return ret;
+	}
 
 	if (!generic_make_request_checks(bio))
 		goto out;
@@ -2318,17 +2291,26 @@ blk_qc_t generic_make_request(struct bio *bio)
 	bio_list_init(&bio_list_on_stack[0]);
 	current->bio_list = bio_list_on_stack;
 	do {
-		struct request_queue *q = bio->bi_disk->queue;
+		bool enter_succeeded = true;
 
-		if (likely(blk_queue_enter(q, bio->bi_opf) == 0)) {
+		if (unlikely(q != bio->bi_disk->queue)) {
+			if (q)
+				blk_queue_exit(q);
+			q = bio->bi_disk->queue;
+			flags = 0;
+			if (bio->bi_opf & REQ_NOWAIT)
+				flags = BLK_MQ_REQ_NOWAIT;
+			if (blk_queue_enter(q, flags) < 0)
+				enter_succeeded = false;
+		}
+
+		if (enter_succeeded) {
 			struct bio_list lower, same;
 
 			/* Create a fresh bio_list for all subordinate requests */
 			bio_list_on_stack[1] = bio_list_on_stack[0];
 			bio_list_init(&bio_list_on_stack[0]);
 			ret = q->make_request_fn(q, bio);
-
-			blk_queue_exit(q);
 
 			/* sort new bios into those for a lower level
 			 * and those for the same level
@@ -2350,12 +2332,15 @@ blk_qc_t generic_make_request(struct bio *bio)
 				bio_wouldblock_error(bio);
 			else
 				bio_io_error(bio);
+			q = NULL;
 		}
 		bio = bio_list_pop(&bio_list_on_stack[0]);
 	} while (bio);
 	current->bio_list = NULL; /* deactivate */
 
 out:
+	if (q)
+		blk_queue_exit(q);
 	return ret;
 }
 EXPORT_SYMBOL(generic_make_request);

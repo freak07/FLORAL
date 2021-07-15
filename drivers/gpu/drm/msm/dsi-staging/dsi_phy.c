@@ -103,6 +103,11 @@ static const struct of_device_id msm_dsi_phy_of_match[] = {
 	{}
 };
 
+int dsi_phy_get_version(struct msm_dsi_phy *phy)
+{
+	return phy->ver_info->version;
+}
+
 static int dsi_phy_regmap_init(struct platform_device *pdev,
 			       struct msm_dsi_phy *phy)
 {
@@ -364,6 +369,13 @@ static int dsi_phy_settings_init(struct platform_device *pdev,
 
 	phy->allow_phy_power_off = of_property_read_bool(pdev->dev.of_node,
 			"qcom,panel-allow-phy-poweroff");
+#ifdef CONFIG_UCI
+	pr_info("%s checking for override msm dsi phy name %s\n",__func__,phy->name);
+	if (phy->name && strstr(phy->name,"phy-0")) {
+		pr_info("%s override qcom,panel-allow-phy-poweroff current: %d -> 1\n",__func__, phy->allow_phy_power_off);
+		phy->allow_phy_power_off = true;
+	}
+#endif
 
 	of_property_read_u32(pdev->dev.of_node,
 			"qcom,dsi-phy-regulator-min-datarate-bps",

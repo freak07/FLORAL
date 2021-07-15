@@ -33,6 +33,7 @@
 #include <linux/msm-bus-board.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
+#include <soc/qcom/boot_stats.h>
 
 #include "ep_pcie_com.h"
 #include <asm/dma-iommu.h>
@@ -1909,6 +1910,9 @@ int ep_pcie_core_enable_endpoint(enum ep_pcie_options opt)
 		EP_PCIE_INFO(dev,
 			"PCIe V%d: link initialized for LE PCIe endpoint\n",
 			dev->rev);
+		pr_crit("PCIe - link initialized for LE PCIe endpoint\n");
+		update_marker(
+			"PCIe - link initialized for LE PCIe endpoint\n");
 	}
 
 checkbme:
@@ -1982,6 +1986,7 @@ out:
 int ep_pcie_core_disable_endpoint(void)
 {
 	int rc = 0;
+	u32 val = 0;
 	unsigned long irqsave_flags;
 	struct ep_pcie_dev_t *dev = &ep_pcie_dev;
 
@@ -2011,6 +2016,9 @@ int ep_pcie_core_disable_endpoint(void)
 	}
 	dev->conf_ipa_msi_iatu = false;
 
+	val =  readl_relaxed(dev->elbi + PCIE20_ELBI_SYS_STTS);
+	EP_PCIE_DBG(dev, "PCIe V%d: LTSSM_STATE during disable:0x%x\n",
+		dev->rev, (val >> 0xC) & 0x3f);
 	ep_pcie_pipe_clk_deinit(dev);
 	ep_pcie_clk_deinit(dev);
 	ep_pcie_vreg_deinit(dev);
@@ -3224,6 +3232,21 @@ static int ep_pcie_probe(struct platform_device *pdev)
 		ep_pcie_dev.phy_status_bit_mask_bit = BIT(7);
 	}
 
+	ep_pcie_dev.phy_status_bit_mask_bit = BIT(6);
+
+	ret = of_property_read_u32((&pdev->dev)->of_node,
+				"qcom,phy-status-reg2",
+				&ep_pcie_dev.phy_status_reg);
+	if (ret) {
+		EP_PCIE_DBG(&ep_pcie_dev,
+			"PCIe V%d: phy-status-reg2 does not exist\n",
+			ep_pcie_dev.rev);
+	} else {
+		EP_PCIE_DBG(&ep_pcie_dev, "PCIe V%d: phy-status-reg2:0x%x\n",
+			ep_pcie_dev.rev, ep_pcie_dev.phy_status_reg);
+		ep_pcie_dev.phy_status_bit_mask_bit = BIT(7);
+	}
+
 	ep_pcie_dev.phy_rev = 1;
 	ret = of_property_read_u32((&pdev->dev)->of_node,
 				"qcom,pcie-phy-ver",
@@ -3339,6 +3362,14 @@ static int ep_pcie_probe(struct platform_device *pdev)
 		ep_pcie_gpio_deinit(&ep_pcie_dev);
 		goto irq_failure;
 	}
+
+	/*
+	 * Wakelock is needed to avoid missing BME and other
+	 * interrupts if apps goes into suspend before host
+	 * sets them.
+	 */
+	device_init_wakeup(&ep_pcie_dev.pdev->dev, true);
+	atomic_set(&ep_pcie_dev.ep_pcie_dev_wake, 0);
 
 	/*
 	 * Wakelock is needed to avoid missing BME and other

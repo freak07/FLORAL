@@ -211,7 +211,6 @@ backing_dev	  	RW	set up backend storage for zram to write out
 idle		  	WO	mark allocated slot as idle
 ======================  ======  ===============================================
 
-
 User space is advised to use the following files to read the device statistics.
 
 File /sys/block/zram<id>/stat

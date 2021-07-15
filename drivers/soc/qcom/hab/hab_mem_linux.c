@@ -119,7 +119,7 @@ static struct pages_list *pages_list_lookup(
 		struct importer_context *imp_ctx,
 		uint32_t export_id, struct physical_channel *pchan)
 {
-	struct pages_list *pglist, *tmp;
+	struct pages_list *pglist = NULL, *tmp = NULL;
 
 	read_lock(&imp_ctx->implist_lock);
 	list_for_each_entry_safe(pglist, tmp, &imp_ctx->imp_list, list) {
@@ -275,7 +275,7 @@ static int habmem_get_dma_pages_from_fd(int32_t fd,
 	struct scatterlist *s;
 	struct sg_table *sg_table = NULL;
 	struct dma_buf_attachment *attach = NULL;
-	struct page *page;
+	struct page *page = NULL, *pre_page = NULL;
 	int i, j, rc = 0;
 
 	dmabuf = dma_buf_get(fd);

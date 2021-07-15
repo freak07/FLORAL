@@ -26,7 +26,6 @@
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
 #include <linux/tick.h>
-#include <linux/wakeup_reason.h>
 #include <linux/suspend.h>
 #include <linux/pm_qos.h>
 #include <linux/of_platform.h>
@@ -62,8 +61,6 @@
 #define PSCI_POWER_STATE(reset) (reset << 30)
 #define PSCI_AFFINITY_LEVEL(lvl) ((lvl & 0x3) << 24)
 #define BIAS_HYST (bias_hyst * NSEC_PER_MSEC)
-
-#define MAX_S2IDLE_CPU_ATTEMPTS  24   /* divide by # cpus for max suspends */
 
 enum {
 	MSM_LPM_LVL_DBG_SUSPEND_LIMITS = BIT(0),
@@ -1246,7 +1243,8 @@ static void cluster_prepare(struct lpm_cluster *cluster,
 	if (cluster_configure(cluster, i, from_idle, predicted))
 		goto failed;
 
-	cluster->stats->sleep_time = start_time;
+	if (!IS_ERR_OR_NULL(cluster->stats))
+		cluster->stats->sleep_time = start_time;
 	cluster_prepare(cluster->parent, &cluster->num_children_in_sync, i,
 			from_idle, start_time);
 
@@ -1254,7 +1252,8 @@ static void cluster_prepare(struct lpm_cluster *cluster,
 	return;
 failed:
 	spin_unlock(&cluster->sync_lock);
-	cluster->stats->sleep_time = 0;
+	if (!IS_ERR_OR_NULL(cluster->stats))
+		cluster->stats->sleep_time = 0;
 }
 
 static void cluster_unprepare(struct lpm_cluster *cluster,
@@ -1293,7 +1292,7 @@ static void cluster_unprepare(struct lpm_cluster *cluster,
 	if (!first_cpu || cluster->last_level == cluster->default_level)
 		goto unlock_return;
 
-	if (cluster->stats->sleep_time)
+	if (!IS_ERR_OR_NULL(cluster->stats) && cluster->stats->sleep_time)
 		cluster->stats->sleep_time = end_time -
 			cluster->stats->sleep_time;
 	lpm_stats_cluster_exit(cluster->stats, cluster->last_level, success);
@@ -1544,10 +1543,6 @@ exit:
 static void lpm_cpuidle_s2idle(struct cpuidle_device *dev,
 		struct cpuidle_driver *drv, int idx)
 {
-	static DEFINE_SPINLOCK(s2idle_lock);
-	static struct cpumask idling_cpus;
-	static int s2idle_sleep_attempts;
-	static bool s2idle_aborted;
 	struct lpm_cpu *cpu = per_cpu(cpu_lpm, dev->cpu);
 	const struct cpumask *cpumask = get_cpu_mask(dev->cpu);
 	bool success = false;
@@ -1561,28 +1556,6 @@ static void lpm_cpuidle_s2idle(struct cpuidle_device *dev,
 		return;
 	}
 
-	spin_lock(&s2idle_lock);
-	if (cpumask_empty(&idling_cpus)) {
-		s2idle_sleep_attempts = 0;
-		s2idle_aborted = false;
-	} else if (s2idle_aborted) {
-		spin_unlock(&s2idle_lock);
-		return;
-	}
-
-	cpumask_or(&idling_cpus, &idling_cpus, cpumask);
-	if (++s2idle_sleep_attempts > MAX_S2IDLE_CPU_ATTEMPTS) {
-		s2idle_aborted = true;
-	}
-	spin_unlock(&s2idle_lock);
-
-	if (s2idle_aborted) {
-		pr_err("Aborting s2idle suspend: too many iterations\n");
-		log_bad_wake_reason("s2idle soft watchdog");
-		pm_system_wakeup();
-		goto exit;
-	}
-
 	cpu_prepare(cpu, idx, true);
 	cluster_prepare(cpu->parent, cpumask, idx, false, 0);
 
@@ -1590,11 +1563,6 @@ static void lpm_cpuidle_s2idle(struct cpuidle_device *dev,
 
 	cluster_unprepare(cpu->parent, cpumask, idx, false, 0, success);
 	cpu_unprepare(cpu, idx, true);
-
-exit:
-	spin_lock(&s2idle_lock);
-	cpumask_andnot(&idling_cpus, &idling_cpus, cpumask);
-	spin_unlock(&s2idle_lock);
 }
 
 #ifdef CONFIG_CPU_IDLE_MULTIPLE_DRIVERS
@@ -1771,6 +1739,9 @@ static void register_cluster_lpm_stats(struct lpm_cluster *cl,
 
 	cl->stats = lpm_stats_config_level(cl->cluster_name, level_name,
 			cl->nlevels, parent ? parent->stats : NULL, NULL);
+	if (IS_ERR_OR_NULL(cl->stats))
+		pr_info("Cluster (%s) stats not registered\n",
+			cl->cluster_name);
 
 	kfree(level_name);
 

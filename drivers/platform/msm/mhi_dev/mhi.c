@@ -30,6 +30,7 @@
 #include <linux/vmalloc.h>
 #include <linux/dmaengine.h>
 #include <linux/dma-mapping.h>
+#include <soc/qcom/boot_stats.h>
 
 #include "mhi.h"
 #include "mhi_hwio.h"
@@ -1419,6 +1420,9 @@ static void mhi_hwc_cb(void *priv, enum ipa_mhi_event_type event,
 			pr_err("Error configuring interrupts, rc = %d\n", rc);
 			return;
 		}
+
+		mhi_log(MHI_MSG_CRITICAL, "Device in M0 State\n");
+		update_marker("MHI - Device in M0 State\n");
 		break;
 	case IPA_MHI_EVENT_DATA_AVAILABLE:
 		rc = mhi_dev_notify_sm_event(MHI_DEV_EVENT_HW_ACC_WAKEUP);
@@ -2619,6 +2623,10 @@ static int mhi_dev_cache_host_cfg(struct mhi_dev *mhi)
 		"Number of Event rings : %d, HW Event rings : %d\n",
 			mhi->cfg.event_rings, mhi->cfg.hw_event_rings);
 
+	mhi_log(MHI_MSG_VERBOSE,
+		"Number of Event rings : %d, HW Event rings : %d\n",
+			mhi->cfg.event_rings, mhi->cfg.hw_event_rings);
+
 	mhi->cmd_ctx_shadow.size = sizeof(struct mhi_dev_cmd_ctx);
 	mhi->ev_ctx_shadow.size = sizeof(struct mhi_dev_ev_ctx) *
 					mhi->cfg.event_rings;
@@ -3517,6 +3525,26 @@ static int mhi_dev_recover(struct mhi_dev *mhi)
 		rc = mhi_dev_mmio_read(mhi, BHI_INTVEC, &bhi_intvec);
 		if (rc)
 			return rc;
+
+		while (bhi_intvec == 0xffffffff &&
+				bhi_max_cnt < MHI_BHI_INTVEC_MAX_CNT) {
+			/* Wait for Host to set the bhi_intvec */
+			msleep(MHI_BHI_INTVEC_WAIT_MS);
+			mhi_log(MHI_MSG_VERBOSE,
+					"Wait for Host to set BHI_INTVEC\n");
+			rc = mhi_dev_mmio_read(mhi, BHI_INTVEC, &bhi_intvec);
+			if (rc) {
+				pr_err("%s: Get BHI_INTVEC failed\n", __func__);
+				return rc;
+			}
+			bhi_max_cnt++;
+		}
+
+		if (bhi_max_cnt == MHI_BHI_INTVEC_MAX_CNT) {
+			mhi_log(MHI_MSG_ERROR,
+					"Host failed to set BHI_INTVEC\n");
+			return -EINVAL;
+		}
 
 		while (bhi_intvec == 0xffffffff &&
 				bhi_max_cnt < MHI_BHI_INTVEC_MAX_CNT) {

@@ -19,10 +19,8 @@ struct boot_stats {
 	uint32_t bootloader_start;
 	uint32_t bootloader_end;
 	uint32_t kernel_entry;
-	uint32_t bootloader_load_kernel;
 	uint32_t load_kernel_start;
 	uint32_t load_kernel_done;
-	uint32_t bootloader_chksum_time;
 	uint32_t bootloader_chksum_start;
 	uint32_t bootloader_chksum_done;
 };
@@ -43,7 +41,7 @@ static inline phys_addr_t msm_timer_get_pa(void) { return 0; }
 #ifdef CONFIG_MSM_BOOT_TIME_MARKER
 static inline int boot_marker_enabled(void) { return 1; }
 void place_marker(const char *name);
-void destroy_marker(const char *name);
+void update_marker(const char *name);
 void measure_wake_up_time(void);
 #ifdef CONFIG_HIBERNATION
 void update_bootloader_stats(void);
@@ -52,7 +50,7 @@ static inline void update_bootloader_stats(void) { return; }
 #endif /* CONFIG_HIBERNATION */
 #else
 static inline void place_marker(char *name) { };
-static inline void destroy_marker(const char *name) { };
+static inline void update_marker(const char *name) { };
 static inline int boot_marker_enabled(void) { return 0; }
 static inline void measure_wake_up_time(void) { };
 #endif

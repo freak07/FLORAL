@@ -71,6 +71,7 @@
 #define IPA_HOLB_TMR_DIS 0x0
 #define IPA_HOLB_TMR_EN 0x1
 #define IPA_HOLB_TMR_VAL 65535
+#define IPA_HOLB_TMR_VAL_4_5 31
 /*
  * The transport descriptor size was changed to GSI_CHAN_RE_SIZE_16B, but
  * IPA users still use sps_iovec size as FIFO element size.
@@ -93,6 +94,13 @@
 #define PC_RESTORE_CONTEXT_ENTERED              0xFACEFACE
 /*Bit pattern for SW to identify PC restoration completed */
 #define PC_RESTORE_CONTEXT_STATUS_SUCCESS       0xCAFECAFE
+
+#define IPA_WDI2_OVER_GSI() (ipa3_ctx->ipa_wdi2_over_gsi \
+		&& (ipa3_get_wdi_version() == IPA_WDI_2))
+
+/* Bit alignment for IPA4.5 GSI rings */
+#define IPA_LOW_16_BIT_MASK (0xFFFF)
+#define IPA4_5_GSI_RING_SIZE_ALIGN (16 * PAGE_SIZE)
 
 #define IPADBG(fmt, args...) \
 	do { \
@@ -284,6 +292,8 @@ enum {
 #define IPA_TRANSPORT_PROD_TIMEOUT_MSEC 100
 
 #define IPA3_ACTIVE_CLIENTS_TABLE_BUF_SIZE 4096
+
+#define IPA_UC_ACT_TBL_SIZE 1000
 
 #define IPA3_ACTIVE_CLIENT_LOG_TYPE_EP 0
 #define IPA3_ACTIVE_CLIENT_LOG_TYPE_SIMPLE 1
@@ -1805,6 +1815,7 @@ struct ipa3_app_clock_vote {
  * @logbuf: ipc log buffer for high priority messages
  * @logbuf_low: ipc log buffer for low priority messages
  * @ipa_wdi2: using wdi-2.0
+ * @ipa_config_is_auto: is this AUTO use case
  * @ipa_fltrt_not_hashable: filter/route rules not hashable
  * @use_xbl_boot: use xbl loading for IPA FW
  * @use_64_bit_dma_mask: using 64bits dma mask
@@ -1837,6 +1848,7 @@ struct ipa3_app_clock_vote {
  * @app_vote: holds userspace application clock vote count
  * IPA context - holds all relevant info about IPA driver and its state
  * @coal_cmd_pyld: holds the coslescing close frame command payload
+ * @manual_fw_load: bool,if fw load is done manually
  */
 struct ipa3_context {
 	struct ipa3_char_device_context cdev;
@@ -1916,6 +1928,7 @@ struct ipa3_context {
 	bool use_ipa_teth_bridge;
 	bool modem_cfg_emb_pipe_flt;
 	bool ipa_wdi2;
+	bool ipa_config_is_auto;
 	bool ipa_wdi2_over_gsi;
 	bool ipa_wdi3_over_gsi;
 	bool ipa_endp_delay_wa;
@@ -1982,6 +1995,7 @@ struct ipa3_context {
 	int num_ipa_cne_evt_req;
 	struct mutex ipa_cne_evt_lock;
 	bool use_ipa_pm;
+	bool vlan_mode_set;
 	bool vlan_mode_iface[IPA_VLAN_IF_MAX];
 	bool wdi_over_pcie;
 	u32 entire_ipa_block_size;
@@ -2011,7 +2025,15 @@ struct ipa3_context {
 	bool ipa_wan_skb_page;
 	struct ipahal_imm_cmd_pyld *coal_cmd_pyld;
 	struct ipa3_app_clock_vote app_clock_vote;
+	struct ipa_mem_buffer uc_act_tbl;
+	bool uc_act_tbl_valid;
+	struct mutex act_tbl_lock;
+	int uc_act_tbl_total;
+	int uc_act_tbl_socksv5_total;
+	int uc_act_tbl_ipv6_nat_total;
+	int uc_act_tbl_next_index;
 	bool is_modem_up;
+	bool manual_fw_load;
 };
 
 struct ipa3_plat_drv_res {
@@ -2033,6 +2055,7 @@ struct ipa3_plat_drv_res {
 	u32 ee;
 	bool modem_cfg_emb_pipe_flt;
 	bool ipa_wdi2;
+	bool ipa_config_is_auto;
 	bool ipa_wdi2_over_gsi;
 	bool ipa_wdi3_over_gsi;
 	bool ipa_fltrt_not_hashable;
@@ -2060,6 +2083,7 @@ struct ipa3_plat_drv_res {
 	u32 secure_debug_check_action;
 	bool ipa_mhi_proxy;
 	bool ipa_wan_skb_page;
+	bool manual_fw_load;
 };
 
 /**
@@ -2398,6 +2422,21 @@ int ipa3_cfg_ep_holb_by_client(enum ipa_client_type client,
 				const struct ipa_ep_cfg_holb *ipa_ep_cfg);
 
 int ipa3_cfg_ep_ctrl(u32 clnt_hdl, const struct ipa_ep_cfg_ctrl *ep_ctrl);
+
+int ipa3_setup_uc_act_tbl(void);
+
+int ipa3_add_socksv5_conn(struct ipa_socksv5_info *info);
+
+int ipa3_del_socksv5_conn(uint32_t handle);
+
+int ipa3_add_socksv5_conn_usr(struct ipa_kernel_tests_socksv5_uc_tmpl *tmpl);
+
+int ipa3_add_ipv6_nat_uc_activation_entry(
+	struct ipa_ioc_ipv6_nat_uc_act_entry *entry);
+
+int ipa3_del_ipv6_nat_uc_activation_entry(uint16_t index);
+
+int ipa3_del_uc_act_entry(uint16_t index);
 
 /*
  * Header removal / addition
@@ -2918,6 +2957,7 @@ int ipa3_tag_aggr_force_close(int pipe_num);
 
 void ipa3_active_clients_unlock(void);
 int ipa3_wdi_init(void);
+int ipa3_get_wdi_version(void);
 int ipa3_write_qmapid_gsi_wdi_pipe(u32 clnt_hdl, u8 qmap_id);
 int ipa3_write_qmapid_wdi_pipe(u32 clnt_hdl, u8 qmap_id);
 int ipa3_write_qmapid_wdi3_gsi_pipe(u32 clnt_hdl, u8 qmap_id);

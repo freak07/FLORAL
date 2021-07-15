@@ -444,11 +444,11 @@ void diag_pcie_client_cb(struct mhi_dev_client_cb_data *cb_data)
 	case  MHI_STATE_CONNECTED:
 		if (cb_data->channel == pcie_info->out_chan) {
 			DIAG_LOG(DIAG_DEBUG_MUX,
-				"diag: Received connect event from MHI for %d",
+				"diag: Received connect event from MHI for %d\n",
 				pcie_info->out_chan);
 			if (atomic_read(&pcie_info->enabled)) {
 				DIAG_LOG(DIAG_DEBUG_MUX,
-				"diag: Channel %d is already enabled",
+				"diag: Channel %d is already enabled\n",
 				pcie_info->out_chan);
 				return;
 			}
@@ -458,11 +458,11 @@ void diag_pcie_client_cb(struct mhi_dev_client_cb_data *cb_data)
 	case MHI_STATE_DISCONNECTED:
 		if (cb_data->channel == pcie_info->out_chan) {
 			DIAG_LOG(DIAG_DEBUG_MUX,
-				"diag: Received disconnect event from MHI for %d",
+				"diag: Received disconnect event from MHI for %d\n",
 				pcie_info->out_chan);
 			if (!atomic_read(&pcie_info->enabled)) {
 				DIAG_LOG(DIAG_DEBUG_MUX,
-				"diag: Channel %d is already disabled",
+				"diag: Channel %d is already disabled\n",
 				pcie_info->out_chan);
 				return;
 			}

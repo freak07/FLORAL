@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2019, 2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -60,8 +60,6 @@
 #define MSM_VERSION_MAJOR	1
 #define MSM_VERSION_MINOR	2
 #define MSM_VERSION_PATCHLEVEL	0
-
-static struct kmem_cache *kmem_vblank_work_pool;
 
 static void msm_fb_output_poll_changed(struct drm_device *dev)
 {
@@ -256,7 +254,7 @@ static void vblank_ctrl_worker(struct kthread_work *work)
 	else
 		kms->funcs->disable_vblank(kms, priv->crtcs[cur_work->crtc_id]);
 
-	kmem_cache_free(kmem_vblank_work_pool, cur_work);
+	kfree(cur_work);
 }
 
 static int vblank_ctrl_queue_work(struct msm_drm_private *priv,
@@ -267,7 +265,7 @@ static int vblank_ctrl_queue_work(struct msm_drm_private *priv,
 	if (!priv || crtc_id >= priv->num_crtcs)
 		return -EINVAL;
 
-	cur_work = kmem_cache_zalloc(kmem_vblank_work_pool, GFP_ATOMIC);
+	cur_work = kzalloc(sizeof(*cur_work), GFP_ATOMIC);
 	if (!cur_work)
 		return -ENOMEM;
 
@@ -906,16 +904,7 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 	if (ret)
 		goto fail;
 
-	priv->debug_root = debugfs_create_dir("debug",
-					ddev->primary->debugfs_root);
-	if (IS_ERR_OR_NULL(priv->debug_root)) {
-		pr_err("debugfs_root create_dir fail, error %ld\n",
-		       PTR_ERR(priv->debug_root));
-		priv->debug_root = NULL;
-		goto fail;
-	}
-
-	ret = sde_dbg_debugfs_register(priv->debug_root);
+	ret = sde_dbg_debugfs_register(dev);
 	if (ret) {
 		dev_err(dev, "failed to reg sde dbg debugfs: %d\n", ret);
 		goto fail;
@@ -2144,6 +2133,33 @@ msm_gem_smmu_address_space_get(struct drm_device *dev,
 	return funcs->get_address_space(priv->kms, domain);
 }
 
+int msm_get_mixer_count(struct msm_drm_private *priv,
+		const struct drm_display_mode *mode,
+		u32 max_mixer_width, u32 *num_lm)
+{
+	struct msm_kms *kms;
+	const struct msm_kms_funcs *funcs;
+
+	if (!priv) {
+		DRM_ERROR("invalid drm private struct");
+		return -EINVAL;
+	}
+
+	kms = priv->kms;
+	if (!kms) {
+		DRM_ERROR("invalid msm kms struct");
+		return -EINVAL;
+	}
+
+	funcs = kms->funcs;
+	if (!funcs || !funcs->get_mixer_count) {
+		DRM_ERROR("invlaid function pointers");
+		return -EINVAL;
+	}
+
+	return funcs->get_mixer_count(priv->kms, mode,
+			max_mixer_width, num_lm);
+}
 /*
  * We don't know what's the best binding to link the gpu with the drm device.
  * Fow now, we just hunt for all the possible gpus that we support, and add them
@@ -2300,7 +2316,6 @@ static int __init msm_drm_register(void)
 		return -EINVAL;
 
 	DBG("init");
-	kmem_vblank_work_pool = KMEM_CACHE(vblank_work, SLAB_HWCACHE_ALIGN | SLAB_PANIC);
 	msm_smmu_driver_init();
 	msm_dsi_register();
 	msm_edp_register();

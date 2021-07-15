@@ -170,6 +170,8 @@ struct kgsl_mmu {
 	unsigned int secure_align_mask;
 	uint64_t va_padding;
 	unsigned int svm_base32;
+	unsigned int secure_base;
+	unsigned int secure_size;
 	union {
 		struct kgsl_iommu iommu;
 	} priv;

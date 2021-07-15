@@ -105,7 +105,7 @@ _kgsl_pool_get_page(struct kgsl_page_pool *pool)
 		p = container_of((struct list_head *)node, typeof(*p), lru);
 		mod_node_page_state(page_pgdat(p),
 				NR_KERNEL_MISC_RECLAIMABLE,
-				-(PAGE_SIZE << pool->pool_order));
+				-(1 << pool->pool_order));
 	}
 	return p;
 }

@@ -113,6 +113,10 @@
 	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,sdm660")
 #define early_machine_is_sda660()	\
 	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,sda660")
+#define early_machine_is_sdm429w()       \
+	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,sdm429w")
+#define early_machine_is_sda429w()       \
+	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,sda429w")
 #define early_machine_is_trinket_iot()       \
 	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,trinket-iot")
 #define early_machine_is_trinketp_iot()       \
@@ -162,6 +166,8 @@
 #define early_machine_is_atollp()	0
 #define early_machine_is_sdm660()	0
 #define early_machine_is_sda660()	0
+#define early_machine_is_sdm429w()	0
+#define early_machine_is_sda429w()	0
 #define early_machine_is_trinket_iot()	0
 #define early_machine_is_trinketp_iot()	0
 #endif
@@ -212,6 +218,8 @@ enum msm_cpu {
 	MSM_CPU_ATOLL_AB,
 	MSM_CPU_SDM660,
 	MSM_CPU_SDA660,
+	MSM_CPU_SDM429W,
+	MSM_CPU_SDA429W,
 	MSM_CPU_TRINKET_IOT,
 	MSM_CPU_TRINKETP_IOT,
 };

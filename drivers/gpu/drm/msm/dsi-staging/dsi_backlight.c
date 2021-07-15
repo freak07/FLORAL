@@ -35,6 +35,10 @@
 #include <linux/notification/notification.h>
 #endif
 
+#ifdef CONFIG_KLAPSE
+#include <linux/klapse.h>
+#endif
+
 #define BL_NODE_NAME_SIZE 32
 #define BL_BRIGHTNESS_BUF_SIZE 2
 
@@ -126,7 +130,9 @@ static void check_forced_panel_mode_updates(bool force_mode_change) {
 			uci_set_forced_freq(90, force_mode_change);
 		} else*/
 		{
-			uci_release_forced_freq(force_mode_change);
+			if (screen_on) { // only call release when screen is on, otherwise DSI driver will get locked
+				uci_release_forced_freq(force_mode_change);
+			}
 		}
 	}
 }
@@ -943,6 +949,10 @@ static u32 dsi_backlight_calculate(struct dsi_backlight_config *bl,
 	}
 #endif
 
+#ifdef CONFIG_KLAPSE
+	set_rgb_slider(bl_lvl);
+#endif
+
 	return bl_lvl;
 }
 
@@ -1393,6 +1403,7 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 		ntf_screen_on();
 	}
 #endif
+
 	mutex_lock(&bl->state_lock);
 	state = get_state_after_dpms(bl, power_mode);
 #ifdef CONFIG_UCI_NOTIFICATIONS_SCREEN_CALLBACKS
@@ -1424,7 +1435,7 @@ int dsi_backlight_early_dpms(struct dsi_backlight_config *bl, int power_mode)
 	if (is_lp_mode(state)) {
 		rc = dsi_backlight_update_regulator(bl, state);
 		if (rc)
-			pr_warn("Error updating regulator state: 0x%lx (%d)\n",
+			pr_warn("Error updating regulator state: 0x%x (%d)\n",
 				state, rc);
 	}
 	mutex_unlock(&bl->state_lock);
@@ -1449,7 +1460,7 @@ int dsi_backlight_late_dpms(struct dsi_backlight_config *bl, int power_mode)
 		const int rc = dsi_backlight_update_regulator(bl, state);
 
 		if (rc)
-			pr_warn("Error updating regulator state: 0x%lx (%d)\n",
+			pr_warn("Error updating regulator state: 0x%x (%d)\n",
 				state, rc);
 	}
 

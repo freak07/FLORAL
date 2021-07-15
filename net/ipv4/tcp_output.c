@@ -208,7 +208,7 @@ static inline void tcp_event_ack_sent(struct sock *sk, unsigned int pkts,
  * be a multiple of mss if possible. We assume here that mss >= 1.
  * This MUST be enforced by all callers.
  */
-void tcp_select_initial_window(int __space, __u32 mss,
+void tcp_select_initial_window(struct net *net, int __space, __u32 mss,
 			       __u32 *rcv_wnd, __u32 *window_clamp,
 			       int wscale_ok, __u8 *rcv_wscale,
 			       __u32 init_rcv_wnd)
@@ -3357,7 +3357,7 @@ static void tcp_connect_init(struct sock *sk)
 	if (rcv_wnd == 0)
 		rcv_wnd = dst_metric(dst, RTAX_INITRWND);
 
-	tcp_select_initial_window(tcp_full_space(sk),
+	tcp_select_initial_window(sock_net(sk), tcp_full_space(sk),
 				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
 				  &tp->rcv_wnd,
 				  &tp->window_clamp,

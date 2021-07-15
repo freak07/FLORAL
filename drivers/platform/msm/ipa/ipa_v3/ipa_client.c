@@ -75,10 +75,13 @@ int ipa3_enable_data_path(u32 clnt_hdl)
 			(ep->client == IPA_CLIENT_WLAN1_CONS ||
 				ep->client == IPA_CLIENT_USB_CONS)) {
 			holb_cfg.en = IPA_HOLB_TMR_EN;
-			holb_cfg.tmr_val = IPA_HOLB_TMR_VAL;
+			if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_5)
+				holb_cfg.tmr_val = IPA_HOLB_TMR_VAL;
+			else
+				holb_cfg.tmr_val = IPA_HOLB_TMR_VAL_4_5;
 		} else {
-			holb_cfg.tmr_val = 0;
 			holb_cfg.en = IPA_HOLB_TMR_DIS;
+			holb_cfg.tmr_val = 0;
 		}
 		res = ipa3_cfg_ep_holb(clnt_hdl, &holb_cfg);
 	}

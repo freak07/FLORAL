@@ -20,6 +20,12 @@
 #define _IPA_API_H_
 
 struct ipa_api_controller {
+
+	int (*ipa_connect)(const struct ipa_connect_params *in,
+		struct ipa_sps_params *sps, u32 *clnt_hdl);
+
+	int (*ipa_disconnect)(u32 clnt_hdl);
+
 	int (*ipa_reset_endpoint)(u32 clnt_hdl);
 
 	int (*ipa_clear_endpoint_delay)(u32 clnt_hdl);
@@ -489,10 +495,15 @@ struct ipa_api_controller {
 
 	int (*ipa_get_prot_id)(enum ipa_client_type client);
 
+	int (*ipa_add_socksv5_conn)(struct ipa_socksv5_info *info);
+
+	int (*ipa_del_socksv5_conn)(uint32_t handle);
+
 	int (*ipa_conn_qdss_pipes)(struct ipa_qdss_conn_in_params *in,
 		struct ipa_qdss_conn_out_params *out);
 
 	int (*ipa_disconn_qdss_pipes)(void);
+
 };
 
 #ifdef CONFIG_IPA3

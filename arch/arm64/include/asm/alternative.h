@@ -74,7 +74,7 @@ void apply_alternatives(void *start, size_t length);
 	"664:\n\t"							\
 	".org	. - (664b-663b) + (662b-661b)\n\t"			\
 	".org	. - (662b-661b) + (664b-663b)\n\t"			\
-	".previous\n"							\
+	".popsection\n"						\
 	".endif\n"
 
 #define __ALTERNATIVE_CFG_CB(oldinstr, feature, cfg_enabled, cb)	\

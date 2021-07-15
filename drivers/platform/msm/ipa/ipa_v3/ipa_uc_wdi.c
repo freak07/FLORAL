@@ -641,6 +641,17 @@ static int ipa_create_ap_smmu_mapping_sgt(struct sg_table *sgt,
 		start_iova = va;
 	}
 
+	/*
+	 * In IPA4.5, GSI HW has such requirement:
+	 * Lower 16_bits of Ring base + ring length can’t exceed 16 bits
+	 */
+	if (ipa3_ctx->ipa_hw_type == IPA_HW_v4_5 &&
+		((u32)(va & IPA_LOW_16_BIT_MASK) + len) >=
+		IPA4_5_GSI_RING_SIZE_ALIGN) {
+		va = roundup(cb->next_addr, IPA4_5_GSI_RING_SIZE_ALIGN);
+		start_iova = va;
+	}
+
 	for_each_sg(sgt->sgl, sg, sgt->nents, i) {
 		/* directly get sg_tbl PA from wlan-driver */
 		phys = sg->dma_address;
@@ -726,14 +737,14 @@ static void ipa_release_ap_smmu_mappings(enum ipa_client_type client)
 
 	if (IPA_CLIENT_IS_CONS(client)) {
 		start = IPA_WDI_TX_RING_RES;
-		if (ipa3_ctx->ipa_wdi3_over_gsi)
+		if (ipa3_get_wdi_version() == IPA_WDI_3)
 			end = IPA_WDI_TX_DB_RES;
 		else
 			end = IPA_WDI_CE_DB_RES;
 	} else {
 		start = IPA_WDI_RX_RING_RES;
 		if (ipa3_ctx->ipa_wdi2 ||
-			ipa3_ctx->ipa_wdi3_over_gsi)
+			(ipa3_get_wdi_version() == IPA_WDI_3))
 			end = IPA_WDI_RX_COMP_RING_WP_RES;
 		else
 			end = IPA_WDI_RX_RING_RP_RES;
@@ -1179,6 +1190,7 @@ int ipa3_connect_gsi_wdi_pipe(struct ipa_wdi_in_params *in,
 	union gsi_channel_scratch gsi_scratch;
 	phys_addr_t pa;
 	unsigned long va;
+	unsigned long wifi_rx_ri_addr = 0;
 	u32 gsi_db_reg_phs_addr_lsb;
 	u32 gsi_db_reg_phs_addr_msb;
 
@@ -1348,24 +1360,6 @@ int ipa3_connect_gsi_wdi_pipe(struct ipa_wdi_in_params *in,
 		gsi_channel_props.ring_base_addr = va;
 		gsi_channel_props.ring_base_vaddr =  NULL;
 		gsi_channel_props.ring_len = len;
-		pa = in->smmu_enabled ? in->u.ul_smmu.rdy_ring_rp_pa :
-			in->u.ul.rdy_ring_rp_pa;
-		if (ipa_create_gsi_smmu_mapping(IPA_WDI_RX_RING_RP_RES,
-					in->smmu_enabled,
-					pa,
-					NULL,
-					4,
-					false,
-					&va)) {
-			IPAERR("fail to create gsi RX rng RP\n");
-			result = -ENOMEM;
-			goto gsi_timeout;
-		}
-		gsi_scratch.wdi.wifi_rx_ri_addr_low =
-			va & 0xFFFFFFFF;
-		gsi_scratch.wdi.wifi_rx_ri_addr_high =
-			(va & 0xFFFFF00000000) >> 32;
-
 		len = in->smmu_enabled ?
 			in->u.ul_smmu.rdy_comp_ring_size :
 			in->u.ul.rdy_comp_ring_size;
@@ -1386,6 +1380,19 @@ int ipa3_connect_gsi_wdi_pipe(struct ipa_wdi_in_params *in,
 			goto gsi_timeout;
 		}
 		gsi_evt_ring_props.ring_base_addr = va;
+		pa = in->smmu_enabled ? in->u.ul_smmu.rdy_ring_rp_pa :
+			in->u.ul.rdy_ring_rp_pa;
+		if (ipa_create_gsi_smmu_mapping(IPA_WDI_RX_RING_RP_RES,
+					in->smmu_enabled,
+					pa,
+					NULL,
+					4,
+					false,
+					&wifi_rx_ri_addr)) {
+			IPAERR("fail to create gsi RX rng RP\n");
+			result = -ENOMEM;
+			goto gsi_timeout;
+		}
 		gsi_evt_ring_props.ring_base_vaddr = NULL;
 		gsi_evt_ring_props.ring_len = len;
 		pa = in->smmu_enabled ?
@@ -1576,7 +1583,7 @@ int ipa3_connect_wdi_pipe(struct ipa_wdi_in_params *in,
 		}
 	}
 
-	if (ipa3_ctx->ipa_wdi2_over_gsi)
+	if (IPA_WDI2_OVER_GSI())
 		return ipa3_connect_gsi_wdi_pipe(in, out);
 
 	result = ipa3_uc_state_check();
@@ -2099,6 +2106,7 @@ int ipa3_disconnect_gsi_wdi_pipe(u32 clnt_hdl)
 		(ipa3_ctx->ipa_hw_type == IPA_HW_v4_1 &&
 		ipa3_ctx->platform_type == IPA_PLAT_TYPE_APQ))
 		ipa3_uc_debug_stats_dealloc(IPA_HW_PROTOCOL_WDI);
+
 	IPADBG("client (ep: %d) disconnected\n", clnt_hdl);
 
 fail_dealloc_channel:
@@ -2125,7 +2133,7 @@ int ipa3_disconnect_wdi_pipe(u32 clnt_hdl)
 		return -EINVAL;
 	}
 
-	if (ipa3_ctx->ipa_wdi2_over_gsi)
+	if (IPA_WDI2_OVER_GSI())
 		return ipa3_disconnect_gsi_wdi_pipe(clnt_hdl);
 
 	result = ipa3_uc_state_check();
@@ -2204,8 +2212,10 @@ int ipa3_enable_gsi_wdi_pipe(u32 clnt_hdl)
 	if (IPA_CLIENT_IS_CONS(ep->client)) {
 		memset(&holb_cfg, 0, sizeof(holb_cfg));
 		holb_cfg.en = IPA_HOLB_TMR_EN;
-		if (ipa3_ctx->ipa_hw_type == IPA_HW_v4_2)
+		if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_5)
 			holb_cfg.tmr_val = IPA_HOLB_TMR_VAL;
+		else
+			holb_cfg.tmr_val = IPA_HOLB_TMR_VAL_4_5;
 
 		result = ipa3_cfg_ep_holb(clnt_hdl, &holb_cfg);
 	}
@@ -2307,7 +2317,7 @@ int ipa3_enable_wdi_pipe(u32 clnt_hdl)
 		return -EINVAL;
 	}
 
-	if (ipa3_ctx->ipa_wdi2_over_gsi)
+	if (IPA_WDI2_OVER_GSI())
 		return ipa3_enable_gsi_wdi_pipe(clnt_hdl);
 
 	result = ipa3_uc_state_check();
@@ -2372,7 +2382,7 @@ int ipa3_disable_wdi_pipe(u32 clnt_hdl)
 		return -EINVAL;
 	}
 
-	if (ipa3_ctx->ipa_wdi2_over_gsi)
+	if (IPA_WDI2_OVER_GSI())
 		return ipa3_disable_gsi_wdi_pipe(clnt_hdl);
 
 	result = ipa3_uc_state_check();
@@ -2410,6 +2420,7 @@ int ipa3_disable_wdi_pipe(u32 clnt_hdl)
 		ipa3_cfg_ep_ctrl(clnt_hdl, &ep_cfg_ctrl);
 
 		cons_hdl = ipa3_get_ep_mapping(IPA_CLIENT_WLAN1_CONS);
+
 		if (cons_hdl == IPA_EP_NOT_ALLOCATED) {
 			IPAERR("Client %u is not mapped\n",
 				IPA_CLIENT_WLAN1_CONS);
@@ -2545,7 +2556,7 @@ int ipa3_resume_wdi_pipe(u32 clnt_hdl)
 		return -EINVAL;
 	}
 
-	if (ipa3_ctx->ipa_wdi2_over_gsi)
+	if (IPA_WDI2_OVER_GSI())
 		return ipa3_resume_gsi_wdi_pipe(clnt_hdl);
 
 	result = ipa3_uc_state_check();
@@ -2720,7 +2731,7 @@ int ipa3_suspend_wdi_pipe(u32 clnt_hdl)
 		return -EINVAL;
 	}
 
-	if (ipa3_ctx->ipa_wdi2_over_gsi)
+	if (IPA_WDI2_OVER_GSI())
 		return ipa3_suspend_gsi_wdi_pipe(clnt_hdl);
 
 	result = ipa3_uc_state_check();

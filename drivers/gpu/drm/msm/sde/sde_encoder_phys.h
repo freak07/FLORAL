@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -405,7 +405,6 @@ struct sde_encoder_phys_cmd {
 	atomic_t pending_vblank_cnt;
 	wait_queue_head_t pending_vblank_wq;
 	u32 ctl_start_threshold;
-	struct work_struct ctl_wait_work;
 };
 
 /**

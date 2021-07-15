@@ -970,7 +970,7 @@ static int set_config(struct usb_composite_dev *cdev,
 	if (!c)
 		goto done;
 
-	place_marker("M - USB Device is enumerated");
+	update_marker("M - USB Device is enumerated");
 	usb_gadget_set_state(gadget, USB_STATE_CONFIGURED);
 	cdev->config = c;
 
@@ -2482,8 +2482,8 @@ void composite_resume(struct usb_gadget *gadget)
 	/* REVISIT:  should we have config level
 	 * suspend/resume callbacks?
 	 */
-	INFO(cdev, "USB Resume\n");
-	place_marker("M - USB device is resumed");
+	INFO(cdev, "USB Resume end\n");
+	update_marker("M - USB device is resumed");
 	if (cdev->driver->resume)
 		cdev->driver->resume(cdev);
 

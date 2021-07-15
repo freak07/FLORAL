@@ -1232,6 +1232,9 @@ static int anx7625_bridge_attach(struct drm_bridge *bridge)
 		return err;
 	}
 
+	device_link_add(bridge->dev->dev, &anx7625->client->dev,
+			DL_FLAG_PM_RUNTIME);
+
 	return 0;
 }
 
@@ -1294,7 +1297,12 @@ static void anx7625_bridge_enable(struct drm_bridge *bridge)
 	mutex_lock(&anx7625->lock);
 
 	anx7625->enabled = true;
-
+#ifdef CONFIG_PM_SLEEP
+	if (anx7625->out_of_hibr) {
+		anx7625->out_of_hibr = false;
+		update_marker("Hiber: Display up");
+	}
+#endif
 	if (!anx7625->powered)
 		goto out;
 
@@ -1388,6 +1396,17 @@ static int anx7625_i2c_probe(struct i2c_client *client,
 
 	anx7625->client = client;
 	i2c_set_clientdata(client, anx7625);
+
+	/* Check if Bridge Already Powered On */
+	err = Read_Reg(TCPC_INTERFACE, PRODUCT_ID_L, &idl);
+	if (err) {
+		anx7625->skip_enable = false;
+		DRM_DEBUG("ANX7625 Bridge Not powered in Bootloader");
+	} else {
+		/* Match software state */
+		anx7625->powered = true;
+		anx7625->skip_enable = true;
+	}
 
 	err = anx7625_init_pdata(anx7625);
 	if (err) {

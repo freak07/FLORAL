@@ -13,14 +13,34 @@
 #ifndef _IPA_H_
 #define _IPA_H_
 
+#include <linux/if_ether.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/msm_ipa.h>
+#include "linux/msm_gsi.h"
 #include <linux/skbuff.h>
 #include <linux/types.h>
-#include <linux/if_ether.h>
-#include "linux/msm_gsi.h"
+#include <linux/msm-sps.h>
 
 #define IPA_APPS_MAX_BW_IN_MBPS 700
 #define IPA_MAX_CH_STATS_SUPPORTED 5
+
+/**
+ * the attributes of the socksv5 options
+ */
+#define IPA_SOCKSv5_ENTRY_VALID	(1ul << 0)
+#define IPA_SOCKSv5_IPV4	(1ul << 1)
+#define IPA_SOCKSv5_IPV6	(1ul << 2)
+#define IPA_SOCKSv5_OPT_TS	(1ul << 3)
+#define IPA_SOCKSv5_OPT_SACK	(1ul << 4)
+#define IPA_SOCKSv5_OPT_WS_STC	(1ul << 5)
+#define IPA_SOCKSv5_OPT_WS_DMC	(1ul << 6)
+
+#define IPA_SOCKsv5_ADD_COM_ID		15
+#define IPA_SOCKsv5_ADD_V6_V4_COM_PM	1
+#define IPA_SOCKsv5_ADD_V4_V6_COM_PM	2
+#define IPA_SOCKsv5_ADD_V6_V6_COM_PM	3
+
 /**
  * enum ipa_transport_type
  * transport type: either GSI or SPS
@@ -551,6 +571,60 @@ struct ipa_set_wifi_quota {
 typedef void (*ipa_wdi_meter_notifier_cb)(enum ipa_wdi_meter_evt_type evt,
 		       void *data);
 
+/**
+ * struct ipa_connect_params - low-level client connect input parameters. Either
+ * client allocates the data and desc FIFO and specifies that in data+desc OR
+ * specifies sizes and pipe_mem pref and IPA does the allocation.
+ *
+ * @ipa_ep_cfg:	IPA EP configuration
+ * @client:	type of "client"
+ * @client_bam_hdl:	 client SPS handle
+ * @client_ep_idx:	 client PER EP index
+ * @priv:	callback cookie
+ * @notify:	callback
+ *		priv - callback cookie evt - type of event data - data relevant
+ *		to event.  May not be valid. See event_type enum for valid
+ *		cases.
+ * @desc_fifo_sz:	size of desc FIFO
+ * @data_fifo_sz:	size of data FIFO
+ * @pipe_mem_preferred:	if true, try to alloc the FIFOs in pipe mem, fallback
+ *			to sys mem if pipe mem alloc fails
+ * @desc:	desc FIFO meta-data when client has allocated it
+ * @data:	data FIFO meta-data when client has allocated it
+ * @skip_ep_cfg: boolean field that determines if EP should be configured
+ *  by IPA driver
+ * @keep_ipa_awake: when true, IPA will not be clock gated
+ */
+struct ipa_connect_params {
+	struct ipa_ep_cfg ipa_ep_cfg;
+	enum ipa_client_type client;
+	unsigned long client_bam_hdl;
+	u32 client_ep_idx;
+	void *priv;
+	ipa_notify_cb notify;
+	u32 desc_fifo_sz;
+	u32 data_fifo_sz;
+	bool pipe_mem_preferred;
+	struct sps_mem_buffer desc;
+	struct sps_mem_buffer data;
+	bool skip_ep_cfg;
+	bool keep_ipa_awake;
+};
+
+/**
+ *  struct ipa_sps_params - SPS related output parameters resulting from
+ *  low/high level client connect
+ *  @ipa_bam_hdl:	IPA SPS handle
+ *  @ipa_ep_idx:	IPA PER EP index
+ *  @desc:	desc FIFO meta-data
+ *  @data:	data FIFO meta-data
+ */
+struct ipa_sps_params {
+	unsigned long ipa_bam_hdl;
+	u32 ipa_ep_idx;
+	struct sps_mem_buffer desc;
+	struct sps_mem_buffer data;
+};
 
 /**
  * struct ipa_tx_intf - interface tx properties
@@ -606,6 +680,7 @@ struct ipa_ext_intf {
  *  by IPA driver
  * @keep_ipa_awake: when true, IPA will not be clock gated
  * @napi_enabled: when true, IPA call client callback to start polling
+ * @bypass_agg: when true, IPA bypasses the aggregation
  */
 struct ipa_sys_connect_params {
 	struct ipa_ep_cfg ipa_ep_cfg;
@@ -617,6 +692,7 @@ struct ipa_sys_connect_params {
 	bool keep_ipa_awake;
 	struct napi_struct *napi_obj;
 	bool recycle_enabled;
+	bool bypass_agg;
 };
 
 /**
@@ -1254,7 +1330,112 @@ struct ipa_smmu_out_params {
 	bool smmu_enable;
 };
 
+struct iphdr_rsv {
+	struct iphdr ipv4_temp;  /* 20 bytes */
+	uint32_t rsv1;
+	uint32_t rsv2;
+	uint32_t rsv3;
+	uint32_t rsv4;
+	uint32_t rsv5;
+} __packed;
+
+union ip_hdr_temp {
+	struct iphdr_rsv ipv4_rsv;	/* 40 bytes */
+	struct ipv6hdr ipv6_temp;	/* 40 bytes */
+} __packed;
+
+struct ipa_socksv5_uc_tmpl {
+	uint16_t cmd_id;
+	uint16_t rsv;
+	uint32_t cmd_param;
+	uint16_t pkt_count;
+	uint16_t rsv2;
+	uint32_t byte_count;
+	union ip_hdr_temp ip_hdr;
+	/* 2B src/dst port */
+	uint16_t src_port;
+	uint16_t dst_port;
+
+	/* attribute mask */
+	uint32_t ipa_sockv5_mask;
+
+	/* reqquired update 4B/4B Seq/Ack/SACK */
+	uint32_t out_irs;
+	uint32_t out_iss;
+	uint32_t in_irs;
+	uint32_t in_iss;
+
+	/* option 10B: time-stamp */
+	uint32_t out_ircv_tsval;
+	uint32_t in_ircv_tsecr;
+	uint32_t out_ircv_tsecr;
+	uint32_t in_ircv_tsval;
+
+	/* option 2B: window-scaling/dynamic */
+	uint16_t in_isnd_wscale:4;
+	uint16_t out_isnd_wscale:4;
+	uint16_t in_ircv_wscale:4;
+	uint16_t out_ircv_wscale:4;
+	uint16_t MAX_WINDOW_SIZE;
+	/* 11*4 + 40 bytes = 84 bytes */
+	uint32_t rsv3;
+	uint32_t rsv4;
+	uint32_t rsv5;
+	uint32_t rsv6;
+	uint32_t rsv7;
+	uint32_t rsv8;
+	uint32_t rsv9;
+} __packed;
+/*reserve 16 bytes : 16 bytes+ 40 bytes + 44 bytes = 100 bytes (28 bytes left)*/
+
+struct ipa_socksv5_info {
+	/* ipa-uc info */
+	struct ipa_socksv5_uc_tmpl ul_out;
+	struct ipa_socksv5_uc_tmpl dl_out;
+
+	/* ipacm info */
+	struct ipacm_socksv5_info ul_in;
+	struct ipacm_socksv5_info dl_in;
+
+	/* output: handle (index) */
+	uint16_t handle;
+};
+
+struct ipa_ipv6_nat_uc_tmpl {
+	uint16_t cmd_id;
+	uint16_t rsv;
+	uint32_t cmd_param;
+	uint16_t pkt_count;
+	uint16_t rsv2;
+	uint32_t byte_count;
+	uint64_t private_address_lsb;
+	uint64_t private_address_msb;
+	uint64_t public_address_lsb;
+	uint64_t public_address_msb;
+	uint16_t private_port;
+	uint16_t public_port;
+	uint32_t rsv3;
+	uint64_t rsv4;
+	uint64_t rsv5;
+	uint64_t rsv6;
+	uint64_t rsv7;
+	uint64_t rsv8;
+	uint64_t rsv9;
+	uint64_t rsv10;
+	uint64_t rsv11;
+	uint64_t rsv12;
+} __packed;
+
+
+
 #if defined CONFIG_IPA || defined CONFIG_IPA3
+
+/*
+ * Connect / Disconnect
+ */
+int ipa_connect(const struct ipa_connect_params *in, struct ipa_sps_params *sps,
+		u32 *clnt_hdl);
+int ipa_disconnect(u32 clnt_hdl);
 
 /*
  * Resume / Suspend
@@ -1680,7 +1861,31 @@ int ipa_is_vlan_mode(enum ipa_vlan_ifaces iface, bool *res);
  * ipa_get_lan_rx_napi - returns true if NAPI is enabled in the LAN RX dp
  */
 bool ipa_get_lan_rx_napi(void);
+
+/*
+ * ipa_add_socksv5_conn - add socksv5 info to ipa driver
+ */
+int ipa_add_socksv5_conn(struct ipa_socksv5_info *info);
+
+/*
+ * ipa_del_socksv5_conn - del socksv5 info to ipa driver
+ */
+int ipa_del_socksv5_conn(uint32_t handle);
+
 #else /* (CONFIG_IPA || CONFIG_IPA3) */
+
+/* low-level IPA client Connect / Disconnect */
+
+static inline int ipa_connect(const struct ipa_connect_params *in,
+	struct ipa_sps_params *sps, u32 *clnt_hdl)
+{
+	return -EPERM;
+}
+
+static inline int ipa_disconnect(u32 clnt_hdl)
+{
+	return -EPERM;
+}
 
 /*
  * Resume / Suspend
@@ -2549,6 +2754,16 @@ static inline int ipa_get_prot_id(enum ipa_client_type client)
 static inline bool ipa_get_lan_rx_napi(void)
 {
 	return false;
+}
+
+static inline int ipa_add_socksv5_conn(struct ipa_socksv5_info *info)
+{
+	return -EPERM;
+}
+
+static inline int ipa_del_socksv5_conn(uint32_t handle)
+{
+	return -EPERM;
 }
 #endif /* (CONFIG_IPA || CONFIG_IPA3) */
 

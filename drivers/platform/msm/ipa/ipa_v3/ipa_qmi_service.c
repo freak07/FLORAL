@@ -21,6 +21,7 @@
 #include <soc/qcom/subsystem_restart.h>
 #include <linux/ipa.h>
 #include <linux/vmalloc.h>
+#include <soc/qcom/boot_stats.h>
 
 #include "ipa_qmi_service.h"
 #include "ipa_mhi_proxy.h"
@@ -683,6 +684,9 @@ static int ipa3_qmi_init_modem_send_sync_msg(void)
 	}
 
 	pr_info("QMI_IPA_INIT_MODEM_DRIVER_REQ_V01 response received\n");
+
+	place_marker("M - QMI ready for commands");
+
 	return ipa3_check_qmi_response(rc,
 		QMI_IPA_INIT_MODEM_DRIVER_REQ_V01, resp.resp.result,
 		resp.resp.error, "ipa_init_modem_driver_resp_msg_v01");
@@ -791,10 +795,8 @@ static int ipa3_qmi_filter_request_ex_calc_length(
 {
 	int len = 0;
 
-	/*
-	 * caller should validate and send the req instead of sending max
-	 * length, the approximate length is calculated
-	 */
+	/* caller should validate and send the req */
+	/* instead of sending max length,the approximate length is calculated */
 	len += ((sizeof(struct ipa_install_fltr_rule_req_ex_msg_v01)) -
 		(QMI_IPA_MAX_FILTERS_EX_V01 *
 		sizeof(struct ipa_filter_spec_ex_type_v01) -

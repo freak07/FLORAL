@@ -16,7 +16,7 @@
 / {
 	model = "Qualcomm Technologies, Inc. QCS403";
 	qcom,msm-name = "QCS403";
-	qcom,msm-id = <373 0x0>;
+	qcom,msm-id = <373 0x0>, <451 0x0>;
 
 	cpus {
 		/delete-node/ cpu@102;

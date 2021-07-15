@@ -1543,6 +1543,8 @@ static int a6xx_reset(struct kgsl_device *device, int fault)
 	if (i != 0)
 		KGSL_DRV_WARN(device, "Device hard reset tried %d tries\n", i);
 
+	device->pwrctrl.ctrl_flags = flags;
+
 	/*
 	 * If active_cnt is non-zero then the system was active before
 	 * going into a reset - put it back in that state

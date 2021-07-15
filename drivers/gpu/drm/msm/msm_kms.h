@@ -40,8 +40,10 @@
 #define MSM_MODE_FLAG_SEAMLESS_VRR			(1<<3)
 /* Request to switch the bit clk */
 #define MSM_MODE_FLAG_SEAMLESS_DYN_CLK			(1<<4)
+/* Request to switch the panel mode */
+#define MSM_MODE_FLAG_SEAMLESS_POMS			(1<<5)
 /* Request to switch the connector mode, fps only */
-#define MSM_MODE_FLAG_SEAMLESS_DMS_FPS			(1<<5)
+#define MSM_MODE_FLAG_SEAMLESS_DMS_FPS                  (1<<6)
 
 /* As there are different display controller blocks depending on the
  * snapdragon version, the kms support is split out and the appropriate
@@ -121,6 +123,10 @@ struct msm_kms_funcs {
 	int (*cont_splash_config)(struct msm_kms *kms);
 	/* check for continuous splash status */
 	bool (*check_for_splash)(struct msm_kms *kms);
+	/* topology information */
+	int (*get_mixer_count)(const struct msm_kms *kms,
+			const struct drm_display_mode *mode,
+			u32 mode_max_width, u32 *num_lm);
 };
 
 struct msm_kms {
@@ -219,6 +225,13 @@ static inline bool msm_is_mode_dynamic_fps(const struct drm_display_mode *mode)
 static inline bool msm_is_mode_seamless_vrr(const struct drm_display_mode *mode)
 {
 	return mode ? (mode->private_flags & MSM_MODE_FLAG_SEAMLESS_VRR)
+		: false;
+}
+
+static inline bool msm_is_mode_seamless_poms(
+		const struct drm_display_mode *mode)
+{
+	return mode ? (mode->private_flags & MSM_MODE_FLAG_SEAMLESS_POMS)
 		: false;
 }
 

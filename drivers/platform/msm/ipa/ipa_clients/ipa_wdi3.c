@@ -121,7 +121,7 @@ int ipa_wdi_init(struct ipa_wdi_init_in_params *in,
 
 	ipa_wdi_ctx->is_smmu_enabled = out->is_smmu_enabled;
 
-	if (ipa3_ctx->ipa_wdi3_over_gsi)
+	if (IPA_WDI2_OVER_GSI() || (in->wdi_version == IPA_WDI_3))
 		out->is_over_gsi = true;
 	else
 		out->is_over_gsi = false;
@@ -129,10 +129,21 @@ int ipa_wdi_init(struct ipa_wdi_init_in_params *in,
 }
 EXPORT_SYMBOL(ipa_wdi_init);
 
+int ipa3_get_wdi_version(void)
+{
+	if (ipa_wdi_ctx)
+		return ipa_wdi_ctx->wdi_version;
+	/* default version is IPA_WDI_3 */
+	return IPA_WDI_3;
+}
+EXPORT_SYMBOL(ipa3_get_wdi_version);
+
 int ipa_wdi_cleanup(void)
 {
 	struct ipa_wdi_intf_info *entry;
 	struct ipa_wdi_intf_info *next;
+
+	ipa_uc_dereg_rdyCB();
 
 	/* clear interface list */
 	list_for_each_entry_safe(entry, next,
@@ -255,20 +266,22 @@ int ipa_wdi_reg_intf(struct ipa_wdi_reg_intf_in_params *in)
 
 	memset(tx_prop, 0, sizeof(tx_prop));
 	tx_prop[0].ip = IPA_IP_v4;
-	if (!ipa3_ctx->ipa_wdi3_over_gsi)
-		tx_prop[0].dst_pipe = IPA_CLIENT_WLAN1_CONS;
-	else
+	if (ipa_wdi_ctx->wdi_version == IPA_WDI_3)
 		tx_prop[0].dst_pipe = IPA_CLIENT_WLAN2_CONS;
+	else
+		tx_prop[0].dst_pipe = IPA_CLIENT_WLAN1_CONS;
+
 	tx_prop[0].alt_dst_pipe = in->alt_dst_pipe;
 	tx_prop[0].hdr_l2_type = in->hdr_info[0].hdr_type;
 	strlcpy(tx_prop[0].hdr_name, hdr->hdr[IPA_IP_v4].name,
 		sizeof(tx_prop[0].hdr_name));
 
 	tx_prop[1].ip = IPA_IP_v6;
-	if (!ipa3_ctx->ipa_wdi3_over_gsi)
-		tx_prop[1].dst_pipe = IPA_CLIENT_WLAN1_CONS;
-	else
+	if (ipa_wdi_ctx->wdi_version == IPA_WDI_3)
 		tx_prop[1].dst_pipe = IPA_CLIENT_WLAN2_CONS;
+	else
+		tx_prop[1].dst_pipe = IPA_CLIENT_WLAN1_CONS;
+
 	tx_prop[1].alt_dst_pipe = in->alt_dst_pipe;
 	tx_prop[1].hdr_l2_type = in->hdr_info[1].hdr_type;
 	strlcpy(tx_prop[1].hdr_name, hdr->hdr[IPA_IP_v6].name,
@@ -279,10 +292,11 @@ int ipa_wdi_reg_intf(struct ipa_wdi_reg_intf_in_params *in)
 	rx.prop = rx_prop;
 	memset(rx_prop, 0, sizeof(rx_prop));
 	rx_prop[0].ip = IPA_IP_v4;
-	if (!ipa3_ctx->ipa_wdi3_over_gsi)
-		rx_prop[0].src_pipe = IPA_CLIENT_WLAN1_PROD;
-	else
+	if (ipa_wdi_ctx->wdi_version == IPA_WDI_3)
 		rx_prop[0].src_pipe = IPA_CLIENT_WLAN2_PROD;
+	else
+		rx_prop[0].src_pipe = IPA_CLIENT_WLAN1_PROD;
+
 	rx_prop[0].hdr_l2_type = in->hdr_info[0].hdr_type;
 	if (in->is_meta_data_valid) {
 		rx_prop[0].attrib.attrib_mask |= IPA_FLT_META_DATA;
@@ -291,10 +305,11 @@ int ipa_wdi_reg_intf(struct ipa_wdi_reg_intf_in_params *in)
 	}
 
 	rx_prop[1].ip = IPA_IP_v6;
-	if (!ipa3_ctx->ipa_wdi3_over_gsi)
-		rx_prop[1].src_pipe = IPA_CLIENT_WLAN1_PROD;
-	else
+	if (ipa_wdi_ctx->wdi_version == IPA_WDI_3)
 		rx_prop[1].src_pipe = IPA_CLIENT_WLAN2_PROD;
+	else
+		rx_prop[1].src_pipe = IPA_CLIENT_WLAN1_PROD;
+
 	rx_prop[1].hdr_l2_type = in->hdr_info[1].hdr_type;
 	if (in->is_meta_data_valid) {
 		rx_prop[1].attrib.attrib_mask |= IPA_FLT_META_DATA;
