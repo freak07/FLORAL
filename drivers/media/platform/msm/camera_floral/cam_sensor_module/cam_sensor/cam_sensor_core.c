@@ -24,6 +24,10 @@
 #include "../cam_fw_update/fw_update.h"
 #endif
 
+#ifdef CONFIG_UCI
+#include <linux/notification/notification.h>
+#endif
+
 static struct sensor_status_t sensor_status;
 static enum laser_tag_type laser_tag_indicator;
 
@@ -1182,6 +1186,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			"CAM_ACQUIRE_DEV Success, sensor_id:0x%x,sensor_slave_addr:0x%x",
 			s_ctrl->sensordata->slave_info.sensor_id,
 			s_ctrl->sensordata->slave_info.sensor_slave_addr);
+#ifdef CONFIG_UCI
+		ntf_camera_started();
+#endif
 	}
 		break;
 	case CAM_RELEASE_DEV: {
@@ -1244,6 +1251,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		/* reset hw sync control */
 		memset(&s_ctrl->hw_sync_ctrl, 0,
 		       sizeof(struct cam_sensor_hw_sync_ctrl));
+#ifdef CONFIG_UCI
+		ntf_camera_stopped();
+#endif
 	}
 		break;
 	case CAM_QUERY_CAP: {
