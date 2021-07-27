@@ -1,6 +1,6 @@
 /*
 * Copyright by flar2 (c) 2016-2018
-* Copyright by Pal Zoltan Illes (c) 2019
+* Copyright by Pal Zoltan Illes (c) 2020-2021
 * Licensed under GPL-v2 or above.
 */
 #include <linux/module.h>
@@ -15,9 +15,9 @@
 #include <linux/notification/notification.h>
 #endif
 
-#define DRIVER_AUTHOR "flar2 (asegaert at gmail.com)"
+#define DRIVER_AUTHOR "Pal Zoltan Illes"
 #define DRIVER_DESCRIPTION "sweep2sleep driver"
-#define DRIVER_VERSION "4.0"
+#define DRIVER_VERSION "4.1"
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESCRIPTION);
@@ -463,6 +463,8 @@ static int frozen_y = 0;
 static int real_x = 0; // reported thru s2s_freeze_cords by touchscreen driver
 static int real_y = 0;
 
+
+#define FULL_FILTER
 
 #ifdef FULL_FILTER
 static int in_gesture_finger_counter = 0;
