@@ -37,6 +37,7 @@
 
 #ifdef CONFIG_UCI
 #include <linux/uci/uci.h>
+#include <linux/notification/notification.h>
 #endif
 
 #if 1
@@ -54,6 +55,25 @@ static void uci_user_listener(void) {
     touchboost = !!uci_get_user_property_int_mm("touchboost", 1,0,1);
     batterysaver = !!uci_get_user_property_int_mm("batterysaver", 0,0,1);
     batterysaver_level = uci_get_user_property_int_mm("batterysaver_level", 0,0,BATTERY_SAVER_MAX_LEVEL);
+}
+
+static bool suspend_batterysaver = false;
+
+static void ntf_listener(char* event, int num_param, char* str_param) {
+        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
+                pr_info("%s CPUFREQ listener event %s %d %s\n",__func__,event,num_param,str_param);
+        }
+
+        if (!strcmp(event,NTF_EVENT_CAMERA_ON)) {
+                if (!!num_param) {
+                        // camera on..
+			pr_info("%s suspending battery saver, camera on\n",__func__);
+			suspend_batterysaver = true;
+		} else {
+			pr_info("%s stop suspending battery saver, camera off\n",__func__);
+			suspend_batterysaver = false;
+		}
+	}
 }
 #endif
 
@@ -560,7 +580,7 @@ unsigned int cpufreq_driver_resolve_freq(struct cpufreq_policy *policy,
 					 unsigned int target_freq)
 {
 #ifdef CONFIG_UCI
-	if (batterysaver>0) {
+	if (!suspend_batterysaver && batterysaver>0) {
 		unsigned int cpu = policy->cpu;
 		int max = 0;
 		max = get_cpu_max_for_core(cpu,batterysaver_level);
@@ -784,7 +804,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 
 static int skip_or_tune_min_freq(struct cpufreq_policy *cur_policy, struct cpufreq_policy *new_policy) {
 	unsigned int cpu = cur_policy->cpu;
-	if (batterysaver_level==BATTERY_SAVER_MAX_LEVEL) {
+	if (!suspend_batterysaver && batterysaver_level==BATTERY_SAVER_MAX_LEVEL) {
 		int saver_max = 0;
 		saver_max = get_cpu_max_for_core(cpu,batterysaver_level);
 		if (saver_max>=0 && saver_max < new_policy->min) {
@@ -2776,6 +2796,7 @@ static int __init cpufreq_core_init(void)
 
 #ifdef CONFIG_UCI
 	uci_add_user_listener(uci_user_listener);
+	ntf_add_listener(ntf_listener);
 #endif
 
 	return 0;
