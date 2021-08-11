@@ -168,7 +168,6 @@ struct ion_device {
 	struct miscdevice dev;
 	struct plist_head heaps;
 	struct rw_semaphore heap_rwsem;
-	unsigned int heap_count;
 };
 
 /* refer to include/linux/pm.h */
