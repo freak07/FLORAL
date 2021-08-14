@@ -44,8 +44,7 @@ Description:
 What:		/sys/fs/f2fs/<disk>/max_blkaddr
 Date:		November 2019
 Contact:	"Ramon Pantin" <pantin@google.com>
-Description:
-		 Shows first block address of MAIN area.
+Description:	Shows first block address of MAIN area.
 
 What:		/sys/fs/f2fs/<disk>/ipu_policy
 Date:		November 2013
