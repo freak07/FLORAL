@@ -93,6 +93,8 @@ struct chan_attr {
 	bool wr_cmpl;
 	/* Uevent broadcast of channel state */
 	bool state_bcast;
+	/* Skip node creation if not needed */
+	bool skip_node;
 	/* Number of write request structs to allocate */
 	u32 num_reqs;
 };
@@ -231,6 +233,29 @@ static const struct chan_attr uci_chan_attr_table[] = {
 		true
 	},
 	{
+		MHI_CLIENT_IPCR_OUT,
+		TRB_MAX_DATA_SIZE,
+		MAX_NR_TRBS_PER_CHAN,
+		MHI_DIR_OUT,
+		NULL,
+		NULL,
+		NULL,
+		false,
+		true
+	},
+	{
+		MHI_CLIENT_IPCR_IN,
+		TRB_MAX_DATA_SIZE,
+		MAX_NR_TRBS_PER_CHAN,
+		MHI_DIR_IN,
+		NULL,
+		NULL,
+		NULL,
+		false,
+		false,
+		true
+	},
+	{
 		MHI_CLIENT_DUN_OUT,
 		TRB_MAX_DATA_SIZE,
 		MAX_NR_TRBS_PER_CHAN,
@@ -250,6 +275,7 @@ static const struct chan_attr uci_chan_attr_table[] = {
 		NULL,
 		NULL,
 		false,
+		true,
 		true,
 		50
 	},
@@ -1233,6 +1259,24 @@ static int mhi_state_uevent(struct device *dev, struct kobj_uevent_env *env)
 		}
 	}
 
+	rc = mhi_ctrl_state_info(MHI_CLIENT_DUN_OUT, &info);
+	if (rc) {
+		pr_err("Failed to obtain channel 32 state\n");
+		return -EINVAL;
+	}
+	nbytes = 0;
+	mhi_parse_state(buf, &nbytes, info);
+	add_uevent_var(env, "MHI_CHANNEL_STATE_32=%s", buf);
+
+	rc = mhi_ctrl_state_info(MHI_CLIENT_ADB_OUT, &info);
+	if (rc) {
+		pr_err("Failed to obtain channel 36 state\n");
+		return -EINVAL;
+	}
+	nbytes = 0;
+	mhi_parse_state(buf, &nbytes, info);
+	add_uevent_var(env, "MHI_CHANNEL_STATE_36=%s", buf);
+
 	return 0;
 }
 
@@ -2121,7 +2165,8 @@ int mhi_uci_init(void)
 		 * this client's channels is called by the MHI driver,
 		 * if one is registered.
 		 */
-		if (mhi_client->in_chan_attr->chan_state_cb)
+		if (mhi_client->in_chan_attr->chan_state_cb ||
+				mhi_client->in_chan_attr->skip_node)
 			continue;
 		ret_val = uci_device_create(mhi_client);
 		if (ret_val)
