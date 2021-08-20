@@ -62,6 +62,7 @@ struct hdmi_cec_ctrl {
 	struct dss_io_data  *io;
 	bool                enabled;
 	bool                addressed;
+	bool                cec_wakeup_en;
 	struct workqueue_struct *workqueue;
 	struct work_struct  cec_read_work;
 	struct work_struct  cec_write_work;
@@ -234,7 +235,7 @@ bool hdmi_cec_is_wakeup_en(void *input)
 		return false;
 	}
 
-	return true;
+	return cec_ctrl->cec_wakeup_en;
 }
 
 
