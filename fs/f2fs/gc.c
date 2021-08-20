@@ -20,6 +20,7 @@
 #include "node.h"
 #include "segment.h"
 #include "gc.h"
+#include "iostat.h"
 #include <trace/events/f2fs.h>
 
 static struct kmem_cache *victim_entry_slab;
