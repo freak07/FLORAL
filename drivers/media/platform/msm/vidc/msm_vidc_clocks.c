@@ -1442,6 +1442,7 @@ static inline int msm_vidc_power_save_mode_enable(struct msm_vidc_inst *inst,
 	u32 hq_mbs_per_sec = 0;
 	struct msm_vidc_core *core;
 	struct msm_vidc_inst *instance = NULL;
+	int complexity;
 
 	core = inst->core;
 	hdev = inst->core->device;
@@ -1476,7 +1477,10 @@ static inline int msm_vidc_power_save_mode_enable(struct msm_vidc_inst *inst,
 		V4L2_CID_MPEG_VIDEO_BITRATE_MODE);
 	if (rc_mode == V4L2_MPEG_VIDEO_BITRATE_MODE_CQ)
 		enable = false;
-
+	complexity = msm_comm_g_ctrl_for_id(inst,
+		V4L2_CID_MPEG_VIDC_VENC_COMPLEXITY);
+	if (!is_realtime_session(inst) && !complexity)
+		enable = true;
 	prop_id = HAL_CONFIG_VENC_PERF_MODE;
 	venc_mode = enable ? HAL_PERF_MODE_POWER_SAVE :
 		HAL_PERF_MODE_POWER_MAX_QUALITY;
@@ -1492,9 +1496,9 @@ static inline int msm_vidc_power_save_mode_enable(struct msm_vidc_inst *inst,
 	inst->flags = enable ?
 		inst->flags | VIDC_LOW_POWER :
 		inst->flags & ~VIDC_LOW_POWER;
-
 	dprintk(VIDC_PROF,
-		"Power Save Mode for inst: %pK Enable = %d\n", inst, enable);
+			"Power Save Mode for inst: %pK Enable = %d\n",
+			inst, enable);
 fail_power_mode_set:
 	return rc;
 }
@@ -1564,6 +1568,7 @@ int msm_vidc_decide_core_and_power_mode(struct msm_vidc_inst *inst)
 	u32 current_inst_load = 0, current_inst_lp_load = 0,
 		min_load = 0, min_lp_load = 0;
 	u32 min_core_id, min_lp_core_id;
+	u32 complexity;
 
 	if (!inst || !inst->core || !inst->core->device) {
 		dprintk(VIDC_ERR,
@@ -1673,9 +1678,21 @@ int msm_vidc_decide_core_and_power_mode(struct msm_vidc_inst *inst)
 				inst->clk_data.core_id);
 		msm_vidc_move_core_to_power_save_mode(core, min_lp_core_id);
 	} else {
-		rc = -EINVAL;
-		dprintk(VIDC_ERR,
-			"Sorry ... Core Can't support this load\n");
+		complexity = msm_comm_g_ctrl_for_id(inst,
+			V4L2_CID_MPEG_VIDC_VENC_COMPLEXITY);
+		if (!is_realtime_session(inst)) {
+			if (inst->session_type == MSM_VIDC_ENCODER)
+				msm_vidc_power_save_mode_enable(inst,
+					(complexity == 0));
+			inst->clk_data.core_id = min_core_id;
+			dprintk(VIDC_DBG, "Supporting NRT session");
+			goto decision_done;
+
+		} else {
+			rc = -EINVAL;
+			dprintk(VIDC_ERR,
+				"Sorry ... Core Can't support this load\n");
+		}
 		return rc;
 	}
 
