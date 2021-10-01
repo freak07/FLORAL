@@ -1,4 +1,4 @@
-/* Copyright (c) 2015,2017-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015,2017-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -93,6 +93,8 @@ struct chan_attr {
 	bool wr_cmpl;
 	/* Uevent broadcast of channel state */
 	bool state_bcast;
+	/* Skip node creation if not needed */
+	bool skip_node;
 	/* Number of write request structs to allocate */
 	u32 num_reqs;
 };
@@ -231,6 +233,29 @@ static const struct chan_attr uci_chan_attr_table[] = {
 		true
 	},
 	{
+		MHI_CLIENT_IPCR_OUT,
+		TRB_MAX_DATA_SIZE,
+		MAX_NR_TRBS_PER_CHAN,
+		MHI_DIR_OUT,
+		NULL,
+		NULL,
+		NULL,
+		false,
+		true
+	},
+	{
+		MHI_CLIENT_IPCR_IN,
+		TRB_MAX_DATA_SIZE,
+		MAX_NR_TRBS_PER_CHAN,
+		MHI_DIR_IN,
+		NULL,
+		NULL,
+		NULL,
+		false,
+		false,
+		true
+	},
+	{
 		MHI_CLIENT_DUN_OUT,
 		TRB_MAX_DATA_SIZE,
 		MAX_NR_TRBS_PER_CHAN,
@@ -250,6 +275,7 @@ static const struct chan_attr uci_chan_attr_table[] = {
 		NULL,
 		NULL,
 		false,
+		true,
 		true,
 		50
 	},
@@ -518,15 +544,25 @@ static struct mhi_req *mhi_uci_get_req(struct uci_client *uci_handle)
 	return req;
 }
 
-static void mhi_uci_put_req(struct uci_client *uci_handle, struct mhi_req *req)
+static int mhi_uci_put_req(struct uci_client *uci_handle, struct mhi_req *req)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&uci_handle->req_lock, flags);
+	if (req->is_stale) {
+		uci_log(UCI_DBG_VERBOSE,
+			"Got stale completion for ch %d, ignoring\n",
+			req->chan);
+		spin_unlock_irqrestore(&uci_handle->req_lock, flags);
+		return -EINVAL;
+	}
+
 	/* Remove from in-use list and add back to free list */
 	list_del_init(&req->list);
 	list_add_tail(&req->list, &uci_handle->req_list);
 	spin_unlock_irqrestore(&uci_handle->req_lock, flags);
+
+	return 0;
 }
 
 static void mhi_uci_write_completion_cb(void *req)
@@ -542,17 +578,12 @@ static void mhi_uci_write_completion_cb(void *req)
 	 * the stale flag and return. The ureq was added to
 	 * the free list when client called release function.
 	 */
-	if (ureq->is_stale) {
-		uci_log(UCI_DBG_VERBOSE,
-			"Got stale completion for ch %d\n", ureq->chan);
-		ureq->is_stale = false;
+	if (mhi_uci_put_req(uci_handle, ureq))
 		return;
-	}
 
 	if (uci_handle->write_done)
 		complete(uci_handle->write_done);
 
-	mhi_uci_put_req(uci_handle, ureq);
 	/* Write queue may be waiting for write request structs */
 	wake_up(&uci_handle->write_wq);
 }
@@ -562,19 +593,19 @@ static void mhi_uci_read_completion_cb(void *req)
 	struct mhi_req *ureq = req;
 	struct uci_client *uci_handle;
 
-	if (ureq->is_stale) {
-		uci_log(UCI_DBG_VERBOSE,
-			"Got stale completion for ch %d, ignoring\n",
-			ureq->chan);
-		return;
-	}
-
 	uci_handle = (struct uci_client *)ureq->context;
 
 	uci_handle->pkt_loc = (void *)ureq->buf;
 	uci_handle->pkt_size = ureq->transfer_len;
 
-	mhi_uci_put_req(uci_handle, ureq);
+	 /*
+	  * If this is a delayed read completion, just clear
+	  * the stale flag and return. The ureq was added to
+	  * the free list when client called release function.
+	  */
+	if (mhi_uci_put_req(uci_handle, ureq))
+		return;
+
 	complete(&uci_handle->read_done);
 }
 
@@ -847,6 +878,15 @@ static int mhi_uci_read_async(struct uci_client *uci_handle, int *bytes_avail)
 	if (*bytes_avail < 0) {
 		uci_log(UCI_DBG_ERROR, "Failed to read channel ret %dlu\n",
 			*bytes_avail);
+		if (uci_handle->in_chan == MHI_CLIENT_ADB_OUT) {
+			uci_log(UCI_DBG_ERROR,
+				"Read failed for CH 36, free req from list\n");
+			uci_handle->pkt_loc = NULL;
+			uci_handle->pkt_size = 0;
+			mhi_uci_put_req(uci_handle, ureq);
+			*bytes_avail = 0;
+			return ret_val;
+		}
 		mhi_uci_put_req(uci_handle, ureq);
 		return -EIO;
 	}
@@ -1072,6 +1112,7 @@ static int mhi_uci_client_release(struct inode *mhi_inode,
 	const struct chan_attr *in_chan_attr;
 	int count = 0, i;
 	struct mhi_req *ureq;
+	unsigned long flags;
 
 	if (!uci_handle)
 		return -EINVAL;
@@ -1127,17 +1168,24 @@ static int mhi_uci_client_release(struct inode *mhi_inode,
 		 * to client if the transfer completes later.
 		 */
 		count = 0;
-		while (!(list_empty(&uci_handle->in_use_list))) {
-			ureq = container_of(uci_handle->in_use_list.next,
+
+		spin_lock_irqsave(&uci_handle->req_lock, flags);
+		if (!(uci_handle->f_flags & O_SYNC)) {
+			while (!(list_empty(&uci_handle->in_use_list))) {
+				ureq = container_of(
+					uci_handle->in_use_list.next,
 					struct mhi_req, list);
-			list_del_init(&ureq->list);
-			ureq->is_stale = true;
-			uci_log(UCI_DBG_VERBOSE,
-				"Adding back req for chan %d to free list\n",
-				ureq->chan);
-			list_add_tail(&ureq->list, &uci_handle->req_list);
-			count++;
+				list_del_init(&ureq->list);
+				ureq->is_stale = true;
+				uci_log(UCI_DBG_VERBOSE,
+					"Add back req for chan %d to list\n",
+					ureq->chan);
+				list_add_tail(&ureq->list,
+					&uci_handle->req_list);
+				count++;
+			}
 		}
+		spin_unlock_irqrestore(&uci_handle->req_lock, flags);
 		if (count)
 			uci_log(UCI_DBG_DBG,
 				"Client %d closed with %d transfers pending\n",
@@ -1210,6 +1258,24 @@ static int mhi_state_uevent(struct device *dev, struct kobj_uevent_env *env)
 					chan_attrib->chan_id, buf);
 		}
 	}
+
+	rc = mhi_ctrl_state_info(MHI_CLIENT_DUN_OUT, &info);
+	if (rc) {
+		pr_err("Failed to obtain channel 32 state\n");
+		return -EINVAL;
+	}
+	nbytes = 0;
+	mhi_parse_state(buf, &nbytes, info);
+	add_uevent_var(env, "MHI_CHANNEL_STATE_32=%s", buf);
+
+	rc = mhi_ctrl_state_info(MHI_CLIENT_ADB_OUT, &info);
+	if (rc) {
+		pr_err("Failed to obtain channel 36 state\n");
+		return -EINVAL;
+	}
+	nbytes = 0;
+	mhi_parse_state(buf, &nbytes, info);
+	add_uevent_var(env, "MHI_CHANNEL_STATE_36=%s", buf);
 
 	return 0;
 }
@@ -1954,12 +2020,14 @@ static void mhi_uci_at_ctrl_client_cb(struct mhi_dev_client_cb_data *cb_data)
 		mhi_dev_close_channel(client->in_handle);
 
 		/* Add back reqs in in-use list, if any, to free list */
-		while (!(list_empty(&client->in_use_list))) {
-			ureq = container_of(client->in_use_list.next,
-					struct mhi_req, list);
-			list_del_init(&ureq->list);
-			/* Add to in-use list */
-			list_add_tail(&ureq->list, &client->req_list);
+		if (!(client->f_flags & O_SYNC)) {
+			while (!(list_empty(&client->in_use_list))) {
+				ureq = container_of(client->in_use_list.next,
+							struct mhi_req, list);
+				list_del_init(&ureq->list);
+				/* Add to in-use list */
+				list_add_tail(&ureq->list, &client->req_list);
+			}
 		}
 
 		for (i = 0; i < (client->in_chan_attr->nr_trbs); i++) {
@@ -2097,7 +2165,8 @@ int mhi_uci_init(void)
 		 * this client's channels is called by the MHI driver,
 		 * if one is registered.
 		 */
-		if (mhi_client->in_chan_attr->chan_state_cb)
+		if (mhi_client->in_chan_attr->chan_state_cb ||
+				mhi_client->in_chan_attr->skip_node)
 			continue;
 		ret_val = uci_device_create(mhi_client);
 		if (ret_val)
