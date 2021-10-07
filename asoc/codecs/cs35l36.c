@@ -180,7 +180,7 @@ static int cs35l36_main_amp_event(struct snd_soc_dapm_widget *w,
 
 		regmap_read(cs35l36->regmap, CS35L36_INT4_RAW_STATUS, &reg);
 		if (reg & CS35L36_PLL_UNLOCK_MASK)
-			dev_crit(cs35l36->dev, "PLL Unlocked\n");
+			dev_info(cs35l36->dev, "PLL Unlocked\n");
 
 		regmap_update_bits(cs35l36->regmap, CS35L36_ASP_RX1_SEL,
 					CS35L36_PCM_RX_SEL_MASK,
