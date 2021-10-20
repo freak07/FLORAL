@@ -1,4 +1,3 @@
-* Qualcomm Technologies, Inc. MSM
 
 MSM uses a combination of DTS and DTSI files to describe the hardware on various
 SoCs and boards. Typically, a SoC-specific DTSI file describes the devices
