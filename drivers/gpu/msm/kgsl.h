@@ -221,7 +221,6 @@ struct kgsl_memdesc {
 	void *hostptr;
 	unsigned int hostptr_count;
 	uint64_t gpuaddr;
-	uint64_t dup_gpuaddr;
 	phys_addr_t physaddr;
 	uint64_t size;
 	uint64_t pad_to;

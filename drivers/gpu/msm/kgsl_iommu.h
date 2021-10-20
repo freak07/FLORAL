@@ -111,8 +111,6 @@ struct kgsl_iommu_context {
 	const char *name;
 	enum kgsl_iommu_context_id id;
 	unsigned int cb_num;
-	unsigned int num_sids;
-	unsigned int sids[2];
 	struct kgsl_device *kgsldev;
 	bool stalled_on_fault;
 	void __iomem *regbase;

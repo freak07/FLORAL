@@ -489,7 +489,7 @@ int kgsl_lock_sgt(struct sg_table *sgt, uint64_t size)
 	struct scatterlist *sg;
 	int dest_perms = PERM_READ | PERM_WRITE;
 	int source_vm = VMID_HLOS;
-	int dest_vm = VMID_CP_CAMERA_GFX;
+	int dest_vm = VMID_CP_PIXEL;
 	int ret;
 	int i;
 
@@ -519,7 +519,7 @@ int kgsl_lock_sgt(struct sg_table *sgt, uint64_t size)
 int kgsl_unlock_sgt(struct sg_table *sgt)
 {
 	int dest_perms = PERM_READ | PERM_WRITE | PERM_EXEC;
-	int source_vm = VMID_CP_CAMERA_GFX;
+	int source_vm = VMID_CP_PIXEL;
 	int dest_vm = VMID_HLOS;
 	int ret;
 	struct sg_page_iter sg_iter;
