@@ -53,6 +53,7 @@ struct notifier_block *fb_notifier;
 struct notifier_block *uci_msm_drm_notif;
 #endif
 
+extern void set_kernel_permissive(bool on);
 
 // file operations
 int uci_fwrite(struct file* file, loff_t pos, unsigned char* data, unsigned int size) {
@@ -74,12 +75,18 @@ void uci_fclose(struct file* file) {
 struct file* uci_fopen(const char* path, int flags, int rights) {
     struct file* filp = NULL;
     int err = 0;
+    static int err_count = 0;
 
     filp = filp_open(path, flags, rights);
 
     if(IS_ERR(filp)) {
         err = PTR_ERR(filp);
-	pr_err("[uci]File Open Error:%s %d\n",path, err);
+	if (err_count%10==0) { // throttle log
+		pr_err("[uci]File Open Error:%s %d\n",path, err);
+	} else {
+		pr_debug("[uci]File Open Error:%s %d\n",path, err);
+	}
+	err_count = (err_count+1)%100;
         return NULL;
     }
     if(!filp->f_op){
@@ -92,7 +99,7 @@ struct file* uci_fopen(const char* path, int flags, int rights) {
 
 #define MAX_PARAMS 100
 #define MAX_STR_LEN 100
-#define MAX_FILE_SIZE 2500
+#define MAX_FILE_SIZE 3000
 
 char *user_cfg_keys[MAX_PARAMS];
 char *user_cfg_values[MAX_PARAMS];
@@ -112,6 +119,8 @@ static int queue_length = 0;
 static int stamp = 0;
 static char stamps[10][3] = {"0\n","1\n","2\n","3\n","4\n","5\n","6\n","7\n","8\n","9\n"};
 
+// be aware that writing to sdcardfs needs a file creation from userspace app, 
+// ...otherwise encrpytion key for file cannot be added. Make sure to touch files from app!
 void write_uci_krnl_cfg_file(void) {
 	// locking
 	struct file*fp = NULL;
@@ -119,6 +128,8 @@ void write_uci_krnl_cfg_file(void) {
 	int i = 0;
 	loff_t pos = 0;
 	unsigned char to_write[1000] = "";
+
+        set_kernel_permissive(true);
 
 	spin_lock(&cfg_w_lock);
 	strcat(to_write, "#cleanslate kernel out\n");
@@ -141,6 +152,7 @@ void write_uci_krnl_cfg_file(void) {
 		uci_fclose(fp);
 		pr_info("%s [CLEANSLATE] uci closed file kernel out...\n",__func__);
 	}
+        set_kernel_permissive(false);
 }
 
 static void write_uci_out_work_func(struct work_struct * write_uci_out_work)
@@ -163,13 +175,24 @@ EXPORT_SYMBOL(write_uci_out);
 // Parsing
 int parse_uci_cfg_file(const char *file_name, bool sys) {
 //	fileread(file_name);
-
 #if 1
+	static int ret = 0;
+	static int err_count = 0;
+
 	struct file*fp = NULL;
+
+        set_kernel_permissive(true);
+
 	fp=uci_fopen (file_name, O_RDONLY, 0);
 	if (fp==NULL) {
-		pr_info("%s [uci] cannot read file %s\n",__func__,file_name);
-		return -1;
+		if (err_count%5==0) { // throttle log
+			pr_info("%s [uci] cannot read file %s\n",__func__,file_name);
+		} else {
+			pr_debug("%s [uci] cannot read file %s\n",__func__,file_name);
+		}
+		err_count = (err_count+1)%100;
+		ret = -1;
+		goto exit_parse;
 	} else {
 		off_t fsize;
 		char *buf;
@@ -192,11 +215,13 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 #endif
 		if (fsize> MAX_FILE_SIZE) { 
 			pr_err("uci file too big\n"); 
-			return -1;
+			ret = -1;
+			goto exit_parse;
 		}
 		if (fsize==0) {
 			pr_err("uci file being deleted\n"); 
-			return -2;
+			ret = -2;
+			goto exit_parse;
 		}
 		if (sys) { // check file age for sys cfg. Older files are from before reboot completed or power up,
 			// may contain data that confuses functionality, like uci proximity (power press blocking...)
@@ -206,7 +231,8 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 			delta_t = timespec_sub(now, mtime);
 			if (delta_t.tv_sec > 3) {
 				pr_err("%s uci sys file too old, don't parse, return error. Age: %d\n",__func__,(int)delta_t.tv_sec);
-				return -3;
+				ret = -3;
+				goto exit_parse;
 			} else {
 #ifdef UCI_LOG_DEBUG
 				pr_info("%s uci sys file age ok, do parse. Age: %d\n",__func__,(int)delta_t.tv_sec);
@@ -220,7 +246,8 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 		buf[fsize]='\0';
 		if (sys && buf[fsize-1]!='#') {
 			pr_err("%s uci sys file incomplete\n",__func__);
-			return -2;
+			ret = -2;
+			goto exit_parse;
 		}
 
 		while ((line = strsep(&buf, "\n")) != NULL) {
@@ -307,9 +334,20 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 		}
 		spin_unlock(&cfg_rw_lock);
 	}
-	return 0;
+	ret = 0;
+exit_parse:
+	set_kernel_permissive(false);
+	return ret;
 #endif
 }
+
+static bool kernel_pemissive_user_mount_access = false;
+
+void set_kernel_pemissive_user_mount_access(bool on) {
+	pr_info("%s kernel permissive setting : %u\n",__func__,on);
+	kernel_pemissive_user_mount_access = on;
+}
+EXPORT_SYMBOL(set_kernel_pemissive_user_mount_access);
 
 bool is_uci_path(const char *file_name) {
 	if (file_name==NULL) return false;
@@ -317,8 +355,22 @@ bool is_uci_path(const char *file_name) {
 	if (!strcmp(file_name, UCI_SYS_FILE)) return true;
 	if (!strcmp(file_name, UCI_KERNEL_FILE)) return true;
 	if (!strcmp(file_name, UCI_HOSTS_FILE)) return true;
-	if (!strcmp(file_name, UCI_PSTORE_FILE_0)) return true;
+	if (!strcmp(file_name, SN_BIN_FILE_0)) return true;
+	if (!strcmp(file_name, SN_BIN_FILE_1)) return true;
+
+//	if (!strcmp(file_name, UCI_PSTORE_FILE_0)) return true;
 	if (!strcmp(file_name, UCI_PSTORE_FILE_1)) return true;
+
+// add here files that need access while kernel permissive mode is set
+	if (!kernel_pemissive_user_mount_access) return false;
+	if (!strcmp(file_name, UCI_HOSTS_FILE_SD)) return true;
+	if (!strcmp(file_name, USERLAND_HOSTS_ZIP)) return true;
+	if (!strcmp(file_name, USERLAND_OVERLAY_SH)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_DMESG)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_RAMOOPS)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_DMESG_DATA)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_RAMOOPS_DATA)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_SYSTOOLS)) return true;
 	return false;
 }
 EXPORT_SYMBOL(is_uci_path);
@@ -329,8 +381,19 @@ bool is_uci_file(const char *file_name) {
 	if (!strcmp(file_name, UCI_SYS_FILE_END)) return true;
 	if (!strcmp(file_name, UCI_KERNEL_FILE_END)) return true;
 	if (!strcmp(file_name, UCI_HOSTS_FILE_END)) return true;
-	if (!strcmp(file_name, UCI_PSTORE_FILE_0_END)) return true;
+	if (!strcmp(file_name, SN_BIN_FILE_0)) return true;
+	if (!strcmp(file_name, SN_BIN_FILE_1)) return true;
+
+//	if (!strcmp(file_name, UCI_PSTORE_FILE_0_END)) return true;
 	if (!strcmp(file_name, UCI_PSTORE_FILE_1_END)) return true;
+
+// add here files that need access while kernel permissive mode is set
+	if (!kernel_pemissive_user_mount_access) return false;
+	if (!strcmp(file_name, USERLAND_HOSTS_ZIP_END)) return true;
+	if (!strcmp(file_name, USERLAND_OVERLAY_SH_END)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_DMESG_END)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_RAMOOPS_END)) return true;
+	if (!strcmp(file_name, UCI_SDCARD_SYSTOOLS_END)) return true;
 	return false;
 }
 EXPORT_SYMBOL(is_uci_file);

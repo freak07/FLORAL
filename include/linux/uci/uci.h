@@ -4,22 +4,66 @@
 #define UCI_INVALID_INT -999999
 
 // user config file to read data coming from user space
-#define UCI_USER_FILE "/storage/emulated/0/uci_user.cfg"
+#define UCI_USER_FILE "/storage/emulated/0/Android/data/org.cleanslate.csconfig/cache/uci_user.cfg"
 // sys file to read from user space
-#define UCI_SYS_FILE "/storage/emulated/0/uci_sys.cfg"
+#define UCI_SYS_FILE "/storage/emulated/0/Android/data/org.cleanslate.csservice/cache/uci_sys.cfg"
 // file to write data from kernel side to unelevated access
-#define UCI_KERNEL_FILE "/storage/emulated/0/uci_kernel.out"
+#define UCI_KERNEL_FILE "/storage/emulated/0/Android/data/org.cleanslate.csservice/cache/uci_kernel.out"
 
 #define UCI_USER_FILE_END "uci_user.cfg"
 #define UCI_SYS_FILE_END "uci_sys.cfg"
 #define UCI_KERNEL_FILE_END "uci_kernel.out"
 
-#define UCI_HOSTS_FILE "/storage/emulated/0/hosts_k"
-#define UCI_HOSTS_FILE_END "hosts_k"
+#define UCI_HOSTS_FILE_SD "/storage/emulated/0/__hosts_k"
+#define UCI_HOSTS_FILE_END "__hosts_k"
+
+// path differences =========================================
+#ifdef CONFIG_USERLAND_WORKER_DATA_LOCAL
+
+#define USERLAND_ROOT_PATH "/data/local/tmp/"
+#define USERLAND_HOSTS_ZIP "/data/local/tmp/hosts_k.zip"
+#define USERLAND_OVERLAY_SH "/data/local/tmp/overlay.sh"
+#define UCI_HOSTS_FILE "/data/local/tmp/__hosts_k"
+#define SN_ZIP_FILE "/data/local/tmp/safetynet.zip"
+#define SN_BIN_FILE_0 "/data/local/tmp/__keystore2"
+#define SN_BIN_FILE_1 "/data/local/tmp/__libkeystore-attestation-application-id.so"
+
+#else
+
+#define USERLAND_ROOT_PATH "/dev/"
+#define USERLAND_HOSTS_ZIP "/dev/hosts_k.zip"
+#define USERLAND_OVERLAY_SH "/dev/overlay.sh"
+#define UCI_HOSTS_FILE "/dev/__hosts_k"
+#define SN_ZIP_FILE "/dev/safetynet.zip"
+#define SN_BIN_FILE_0 "/dev/__keystore2"
+#define SN_BIN_FILE_1 "/dev/__libkeystore-attestation-application-id.so"
+
+#endif
+// ==========================================================
+
+// safetynet replaced path
+#define SN_ORIG_BIN_FILE_0   "/system/bin/keystore2"
+#define SN_ORIG_BIN_FILE_0_E         "bin/keystore2"
+#define SN_ORIG_BIN_FILE_1   "/system/lib64/libkeystore-attestation-application-id.so"
+#define SN_ORIG_BIN_FILE_1_E         "lib64/libkeystore-attestation-application-id.so"
+
+#define USERLAND_HOSTS_ZIP_END "hosts_k.zip"
+#define USERLAND_OVERLAY_SH_END "overlay.sh"
 
 // pstore files to grant access to, without superuser elevation
 #define UCI_PSTORE_FILE_0 "/sys/fs/pstore/console-ramoops"
 #define UCI_PSTORE_FILE_1 "/sys/fs/pstore/console-ramoops-0"
+
+#define UCI_SDCARD_DMESG "/storage/emulated/0/__uci-cs-dmesg.txt"
+#define UCI_SDCARD_DMESG_DATA "/data/media/0/__uci-cs-dmesg.txt"
+#define UCI_SDCARD_DMESG_END "__uci-cs-dmesg.txt"
+#define UCI_SDCARD_RAMOOPS "/storage/emulated/0/__console-ramoops-0.txt"
+#define UCI_SDCARD_RAMOOPS_DATA "/data/media/0/__console-ramoops-0.txt"
+#define UCI_SDCARD_RAMOOPS_END "__console-ramoops-0.txt"
+
+// systools
+#define UCI_SDCARD_SYSTOOLS "/storage/emulated/0/Android/data/org.cleanslate.csconfig/cache/__cs-systools.txt"
+#define UCI_SDCARD_SYSTOOLS_END "__cs-systools.txt"
 
 #define UCI_PSTORE_FILE_0_END "console-ramoops"
 #define UCI_PSTORE_FILE_1_END "console-ramoops-0"
@@ -53,5 +97,8 @@ extern void uci_add_user_listener(void (*f)(void));
 
 /** write operations */
 extern void write_uci_out(char *message);
+
+/** set current sid, use this from WLAN drivers to be sent to CS app */
+extern void uci_set_current_ssid(const char *name);
 
 #endif /* __UCI_H__ */
