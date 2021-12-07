@@ -564,7 +564,7 @@ static QDF_STATUS send_vdev_start_cmd_tlv(wmi_unified_t wmi_handle,
 	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
 		       cmd->num_noa_descriptors *
 		       sizeof(wmi_p2p_noa_descriptor));
-	WMI_LOGI("%s: vdev_id %d freq %d chanmode %d ch_info: 0x%x is_dfs %d "
+	WMI_LOGD("%s: vdev_id %d freq %d chanmode %d ch_info: 0x%x is_dfs %d "
 		"beacon interval %d dtim %d center_chan %d center_freq2 %d "
 		"reg_info_1: 0x%x reg_info_2: 0x%x, req->max_txpow: 0x%x "
 		"Tx SS %d, Rx SS %d, ldpc_rx: %d, cac %d, regd %d, HE ops: %d"
@@ -8798,7 +8798,7 @@ static QDF_STATUS send_oem_dma_cfg_cmd_tlv(wmi_unified_t wmi_handle,
 
 	cmd = (uint8_t *) wmi_buf_data(buf);
 	qdf_mem_copy(cmd, cfg, sizeof(*cfg));
-	WMI_LOGI(FL("Sending OEM Data Request to target, data len %lu"),
+	WMI_LOGD(FL("Sending OEM Data Request to target, data len %lu"),
 		sizeof(*cfg));
 	wmi_mtrace(WMI_OEM_DMA_RING_CFG_REQ_CMDID, NO_SESSION, 0);
 	ret = wmi_unified_cmd_send(wmi_handle, buf, sizeof(*cfg),
@@ -11378,7 +11378,7 @@ send_set_vap_dscp_tid_map_cmd_tlv(wmi_unified_t wmi_handle,
 	cmd->vdev_id = param->vdev_id;
 	cmd->enable_override = 0;
 
-	WMI_LOGI("Setting dscp for vap id: %d\n", cmd->vdev_id);
+	WMI_LOGD("Setting dscp for vap id: %d\n", cmd->vdev_id);
 	wmi_mtrace(WMI_VDEV_SET_DSCP_TID_MAP_CMDID, cmd->vdev_id, 0);
 	if (wmi_unified_cmd_send(wmi_handle, buf, len,
 				 WMI_VDEV_SET_DSCP_TID_MAP_CMDID)) {
@@ -12540,10 +12540,10 @@ static QDF_STATUS send_vdev_spectral_configure_cmd_tlv(wmi_unified_t wmi_handle,
 		wmi_buf_free(buf);
 	}
 
-	WMI_LOGI("%s: Sent WMI_VDEV_SPECTRAL_SCAN_CONFIGURE_CMDID\n",
+	WMI_LOGD("%s: Sent WMI_VDEV_SPECTRAL_SCAN_CONFIGURE_CMDID\n",
 		 __func__);
 
-	WMI_LOGI("vdev_id = %u\n"
+	WMI_LOGD("vdev_id = %u\n"
 		 "spectral_scan_count = %u\n"
 		 "spectral_scan_period = %u\n"
 		 "spectral_scan_priority = %u\n"
@@ -12581,7 +12581,7 @@ static QDF_STATUS send_vdev_spectral_configure_cmd_tlv(wmi_unified_t wmi_handle,
 		 param->bin_scale,
 		 param->dbm_adj,
 		 param->chn_mask);
-	WMI_LOGI("%s: Status: %d\n\n", __func__, ret);
+	WMI_LOGD("%s: Status: %d\n\n", __func__, ret);
 
 	return ret;
 }
@@ -12640,16 +12640,16 @@ static QDF_STATUS send_vdev_spectral_enable_cmd_tlv(wmi_unified_t wmi_handle,
 		wmi_buf_free(buf);
 	}
 
-	WMI_LOGI("%s: Sent WMI_VDEV_SPECTRAL_SCAN_ENABLE_CMDID\n", __func__);
+	WMI_LOGD("%s: Sent WMI_VDEV_SPECTRAL_SCAN_ENABLE_CMDID\n", __func__);
 
-	WMI_LOGI("vdev_id = %u\n"
+	WMI_LOGD("vdev_id = %u\n"
 				 "trigger_cmd = %u\n"
 				 "enable_cmd = %u\n",
 				 cmd->vdev_id,
 				 cmd->trigger_cmd,
 				 cmd->enable_cmd);
 
-	WMI_LOGI("%s: Status: %d\n\n", __func__, ret);
+	WMI_LOGD("%s: Status: %d\n\n", __func__, ret);
 
 	return ret;
 }
@@ -13270,7 +13270,7 @@ static QDF_STATUS send_log_supported_evt_cmd_tlv(wmi_unified_t wmi_handle,
 	WMI_DIAG_EVENT_LOG_SUPPORTED_EVENTID_param_tlvs *param_buf;
 	wmi_diag_event_log_supported_event_fixed_params *wmi_event;
 
-	WMI_LOGI("Received WMI_DIAG_EVENT_LOG_SUPPORTED_EVENTID");
+	WMI_LOGD("Received WMI_DIAG_EVENT_LOG_SUPPORTED_EVENTID");
 
 	param_buf = (WMI_DIAG_EVENT_LOG_SUPPORTED_EVENTID_param_tlvs *) event;
 	if (!param_buf) {
@@ -15546,13 +15546,13 @@ static QDF_STATUS send_unit_test_cmd_tlv(wmi_unified_t wmi_handle,
 	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_UINT32,
 		       (wmi_utest->num_args * sizeof(uint32_t)));
 	unit_test_cmd_args = (uint32_t *) (buf_ptr + WMI_TLV_HDR_SIZE);
-	WMI_LOGI("%s: VDEV ID: %d\n", __func__, cmd->vdev_id);
-	WMI_LOGI("%s: MODULE ID: %d\n", __func__, cmd->module_id);
-	WMI_LOGI("%s: TOKEN: %d\n", __func__, cmd->diag_token);
-	WMI_LOGI("%s: %d num of args = ", __func__, wmi_utest->num_args);
+	WMI_LOGD("%s: VDEV ID: %d\n", __func__, cmd->vdev_id);
+	WMI_LOGD("%s: MODULE ID: %d\n", __func__, cmd->module_id);
+	WMI_LOGD("%s: TOKEN: %d\n", __func__, cmd->diag_token);
+	WMI_LOGD("%s: %d num of args = ", __func__, wmi_utest->num_args);
 	for (i = 0; (i < wmi_utest->num_args && i < WMI_UNIT_TEST_MAX_NUM_ARGS); i++) {
 		unit_test_cmd_args[i] = wmi_utest->args[i];
-		WMI_LOGI("%d,", wmi_utest->args[i]);
+		WMI_LOGD("%d,", wmi_utest->args[i]);
 	}
 	wmi_mtrace(WMI_UNIT_TEST_CMDID, cmd->vdev_id, 0);
 	if (wmi_unified_cmd_send(wmi_handle, wmi_buf, len,
@@ -16238,10 +16238,10 @@ static QDF_STATUS send_power_dbg_cmd_tlv(wmi_unified_t wmi_handle,
 	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_UINT32,
 		       (param->num_args * sizeof(uint32_t)));
 	cmd_args = (uint32_t *) (buf_ptr + WMI_TLV_HDR_SIZE);
-	WMI_LOGI("%s: %d num of args = ", __func__, param->num_args);
+	WMI_LOGD("%s: %d num of args = ", __func__, param->num_args);
 	for (i = 0; (i < param->num_args && i < WMI_MAX_POWER_DBG_ARGS); i++) {
 		cmd_args[i] = param->args[i];
-		WMI_LOGI("%d,", param->args[i]);
+		WMI_LOGD("%d,", param->args[i]);
 	}
 
 	wmi_mtrace(WMI_PDEV_WAL_POWER_DEBUG_CMDID, NO_SESSION, 0);
@@ -16404,7 +16404,7 @@ static QDF_STATUS send_dfs_phyerr_offload_en_cmd_tlv(wmi_unified_t wmi_handle,
 	len = sizeof(*cmd);
 	buf = wmi_buf_alloc(wmi_handle, len);
 
-	WMI_LOGI("%s: pdev_id=%d", __func__, pdev_id);
+	WMI_LOGD("%s: pdev_id=%d", __func__, pdev_id);
 
 	if (!buf) {
 		WMI_LOGE("%s : wmi_buf_alloc failed", __func__);
@@ -16453,7 +16453,7 @@ static QDF_STATUS send_dfs_phyerr_offload_dis_cmd_tlv(wmi_unified_t wmi_handle,
 	len = sizeof(*cmd);
 	buf = wmi_buf_alloc(wmi_handle, len);
 
-	WMI_LOGI("%s: pdev_id=%d", __func__, pdev_id);
+	WMI_LOGD("%s: pdev_id=%d", __func__, pdev_id);
 
 	if (!buf) {
 		WMI_LOGE("%s : wmi_buf_alloc failed", __func__);
@@ -19320,7 +19320,7 @@ static QDF_STATUS extract_unit_test_tlv(wmi_unified_t wmi_handle,
 	unit_test->diag_token = ev_param->diag_token;
 	unit_test->flag = ev_param->flag;
 	unit_test->payload_len = ev_param->payload_len;
-	WMI_LOGI("%s:vdev_id:%d mod_id:%d diag_token:%d flag:%d\n", __func__,
+	WMI_LOGD("%s:vdev_id:%d mod_id:%d diag_token:%d flag:%d\n", __func__,
 			ev_param->vdev_id,
 			ev_param->module_id,
 			ev_param->diag_token,
@@ -21207,7 +21207,7 @@ static QDF_STATUS extract_dfs_radar_detection_event_tlv(
 	radar_found->freq_offset = radar_event->freq_offset;
 	radar_found->sidx = radar_event->sidx;
 
-	WMI_LOGI("processed radar found event pdev %d,"
+	WMI_LOGD("processed radar found event pdev %d,"
 		"Radar Event Info:pdev_id %d,timestamp %d,chan_freq  (dur) %d,"
 		"chan_width (RSSI) %d,detector_id (false_radar) %d,"
 		"freq_offset (radar_check) %d,segment_id %d,sidx %d,"
