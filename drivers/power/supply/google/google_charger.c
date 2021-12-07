@@ -1128,9 +1128,11 @@ static void chg_work_adapter_details(union gbms_ce_adapter_details *ad,
 static int chg_work_roundtrip(struct chg_drv *chg_drv,
 			      union gbms_charger_state *chg_state)
 {
+	struct power_supply *chg_psy = chg_drv->chg_psy;
+	struct power_supply *wlc_psy = chg_drv->wlc_psy;
 	int fv_uv = -1, cc_max = -1, update_interval, rc;
 
-	rc = gbms_read_charger_state(chg_state, chg_drv->chg_psy);
+	rc = gbms_read_charger_state(chg_state, chg_psy, wlc_psy);
 	if (rc < 0)
 		return rc;
 
@@ -1662,14 +1664,8 @@ static int chg_start_bd_work(struct chg_drv *chg_drv)
 
 	/* always track disconnect time */
 	if (!bd_state->disconnect_time) {
-		int ret;
-
-		ret = bd_batt_set_state(chg_drv, false, -1);
-		if (ret < 0) {
-			pr_err("MSC_BD set_batt_state (%d)\n", ret);
-			mutex_unlock(&chg_drv->bd_lock);
-			return ret;
-		}
+		gbms_temp_defend_dry_run(true,
+					 chg_drv->bd_state.bd_temp_dry_run);
 
 		bd_state->disconnect_time = get_boot_sec();
 	}
