@@ -1232,12 +1232,15 @@ static bool pe_filter_bcn_probe_frame(tpAniSirGlobal mac_ctx,
 
 		ssid_ie = wlan_get_ie_ptr_from_eid(SIR_MAC_SSID_EID,
 				body + SIR_MAC_B_PR_SSID_OFFSET,
-				frame_len);
+				frame_len - SIR_MAC_B_PR_SSID_OFFSET);
 
 		if (!ssid_ie)
 			return false;
 
 		bcn_ssid.length = ssid_ie[1];
+		if (bcn_ssid.length > WLAN_SSID_MAX_LEN)
+			return false;
+
 		qdf_mem_copy(&bcn_ssid.ssId,
 			     &ssid_ie[2],
 			     bcn_ssid.length);
