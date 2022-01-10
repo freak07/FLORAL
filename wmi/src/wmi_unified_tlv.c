@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20214,7 +20214,17 @@ static QDF_STATUS extract_dbr_buf_release_fixed_tlv(wmi_unified_t wmi_handle,
 	param->pdev_id = wmi_handle->ops->convert_pdev_id_target_to_host(
 								ev->pdev_id);
 	param->mod_id = ev->mod_id;
+	if ((!param_buf->num_entries) ||
+	    param_buf->num_entries < ev->num_buf_release_entry){
+		wmi_err("actual num of buf release entries less than provided entries");
+		return QDF_STATUS_E_INVAL;
+	}
 	param->num_buf_release_entry = ev->num_buf_release_entry;
+	if ((!param_buf->num_meta_data) ||
+	    param_buf->num_meta_data < ev->num_meta_data_entry) {
+		wmi_err("actual num of meta data entries less than provided entries");
+		return QDF_STATUS_E_INVAL;
+	}
 	param->num_meta_data_entry = ev->num_meta_data_entry;
 	WMI_LOGD("%s:pdev id %d mod id %d num buf release entry %d\n", __func__,
 		 param->pdev_id, param->mod_id, param->num_buf_release_entry);
@@ -20505,6 +20515,9 @@ static QDF_STATUS extract_fips_event_data_tlv(wmi_unified_t wmi_handle,
 
 	param_buf = (WMI_PDEV_FIPS_EVENTID_param_tlvs *) evt_buf;
 	event = (wmi_pdev_fips_event_fixed_param *) param_buf->fixed_param;
+
+	if (event->data_len > param_buf->num_data)
+		return QDF_STATUS_E_FAILURE;
 
 	if (fips_conv_data_be(event->data_len, param_buf->data) !=
 							QDF_STATUS_SUCCESS)
