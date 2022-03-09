@@ -477,7 +477,7 @@
 	ccw_timeout_log [S390]
 			See Documentation/s390/CommonIO for details.
 
-	cgroup_disable=	[KNL] Disable a particular controller or optional feature
+	cgroup_disable= [KNL] Disable a particular controller or optional feature
 			Format: {name of the controller(s) or feature(s) to disable}
 			The effects of cgroup_disable=foo are:
 			- foo isn't auto-mounted if you mount all cgroups in
