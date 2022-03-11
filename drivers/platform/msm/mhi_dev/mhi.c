@@ -31,6 +31,7 @@
 #include <linux/dmaengine.h>
 #include <linux/dma-mapping.h>
 #include <soc/qcom/boot_stats.h>
+#include <linux/limits.h>
 
 #include "mhi.h"
 #include "mhi_hwio.h"
@@ -71,7 +72,7 @@
 
 #define MHI_DEV_CH_CLOSE_TIMEOUT_MIN	5000
 #define MHI_DEV_CH_CLOSE_TIMEOUT_MAX	5100
-#define MHI_DEV_CH_CLOSE_TIMEOUT_COUNT	30
+#define MHI_DEV_CH_CLOSE_TIMEOUT_COUNT	200
 
 uint32_t bhi_imgtxdb;
 enum mhi_msg_level mhi_msg_lvl = MHI_MSG_CRITICAL;
@@ -379,6 +380,12 @@ static void mhi_dev_event_msi_cb(void *req)
 	}
 
 	ch = ereq->context;
+	if (!ch) {
+		mhi_log(MHI_MSG_ERROR, "Invalid ereq context, return\n");
+		return;
+	}
+	if (ch->pend_flush_cnt++ >= U32_MAX)
+		ch->pend_flush_cnt = 0;
 	mhi = ch->ring->mhi_dev;
 
 	mhi_log(MHI_MSG_VERBOSE, "MSI completed for flush req %d\n",
@@ -598,7 +605,8 @@ static int mhi_dev_flush_transfer_completion_events(struct mhi_dev *mhi,
 		list_del_init(&flush_ereq->list);
 		spin_unlock_irqrestore(&mhi->lock, flags);
 
-		ch->flush_req_cnt++;
+		if (ch->flush_req_cnt++ >= U32_MAX)
+			ch->flush_req_cnt = 0;
 		flush_ereq->flush_num = ch->flush_req_cnt;
 		mhi_log(MHI_MSG_DBG, "Flush num %d called for ch %d\n",
 			ch->flush_req_cnt, ch->ch_id);
@@ -3297,7 +3305,7 @@ void mhi_dev_close_channel(struct mhi_dev_client *handle)
 {
 	struct mhi_dev_channel *ch;
 	int count = 0;
-
+	int rc = 0;
 	if (!handle) {
 		mhi_log(MHI_MSG_VERBOSE,
 			"Invalid channel access:%d\n", -ENODEV);
@@ -3305,16 +3313,20 @@ void mhi_dev_close_channel(struct mhi_dev_client *handle)
 	}
 	ch = handle->channel;
 
+	mutex_lock(&ch->ch_lock);
+
+	rc = mhi_dev_flush_transfer_completion_events(mhi_ctx, ch);
+	if (rc) {
+		mhi_log(MHI_MSG_ERROR,
+			"Failed to flush read completions to host\n");
+	}
 	do {
-		if (ch->pend_wr_count &&
-			!list_empty(&ch->event_req_buffers)) {
+		if (ch->flush_req_cnt != ch->pend_flush_cnt) {
 			usleep_range(MHI_DEV_CH_CLOSE_TIMEOUT_MIN,
 					MHI_DEV_CH_CLOSE_TIMEOUT_MAX);
 		} else
 			break;
 	} while (++count < MHI_DEV_CH_CLOSE_TIMEOUT_COUNT);
-
-	mutex_lock(&ch->ch_lock);
 
 	if (ch->pend_wr_count)
 		mhi_log(MHI_MSG_VERBOSE, "%d writes pending for channel %d\n",
@@ -3578,14 +3590,17 @@ int mhi_dev_write_channel(struct mhi_req *wreq)
 		 * Expected usage is when there is a write
 		 * to the MHI core -> notify SM.
 		 */
+		mutex_lock(&mhi_ctx->mhi_lock);
 		mhi_log(MHI_MSG_INFO, "Wakeup by chan:%d\n", ch->ch_id);
 		rc = mhi_dev_notify_sm_event(MHI_DEV_EVENT_CORE_WAKEUP);
 		if (rc) {
 			mhi_log(MHI_MSG_VERBOSE,
 				"error sending core wakeup event\n");
+			mutex_unlock(&mhi_ctx->mhi_lock);
 			mutex_unlock(&mhi_ctx->mhi_write_test);
 			return rc;
 		}
+		mutex_unlock(&mhi_ctx->mhi_lock);
 	}
 
 	while (atomic_read(&mhi_ctx->is_suspended) &&
