@@ -608,10 +608,12 @@ static enum alarmtimer_restart parse_user_cfg_rtc_callback(struct alarm *al, kti
 	return ALARMTIMER_NORESTART;
 }
 
+#if 0
 static void start_alarm_parse(int sec) {
 	alarm_cancel(&parse_user_cfg_rtc);
 	alarm_start_relative(&parse_user_cfg_rtc, ms_to_ktime(sec * 1000)); // start new...
 }
+#endif
 
 void notify_uci_file_closed(const char *file_name) {
 	if (should_not_parse_next_close) {
