@@ -1011,7 +1011,7 @@ watchdog:
 #endif
 	}
 
-	return 0;
+	return 1;
 }
 
 void rt5514_watchdog_handler(void)
