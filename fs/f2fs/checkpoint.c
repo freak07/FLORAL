@@ -1233,7 +1233,7 @@ retry_flush_dents:
 	f2fs_down_write(&sbi->node_change);
 
 	if (__need_flush_quota(sbi)) {
-		up_write(&sbi->node_change);
+		f2fs_up_write(&sbi->node_change);
 		f2fs_unlock_all(sbi);
 		goto retry_flush_quotas;
 	}
