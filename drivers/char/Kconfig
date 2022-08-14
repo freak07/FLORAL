@@ -698,6 +698,7 @@ config VSERVICES_SERIAL_SERVER
 	  serial hardware. Virtual serial devices are typically called
 	  /dev/ttyVS0, /dev/ttyVS1, etc.
 
+
 config VSERVICES_SERIAL_CLIENT
 	tristate "Virtual Services serial client"
 	depends on VSERVICES_SUPPORT && VSERVICES_CLIENT
