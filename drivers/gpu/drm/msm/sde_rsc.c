@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -472,7 +472,15 @@ static u32 sde_rsc_timer_calculate(struct sde_rsc_priv *rsc,
 	/* mode 2 is infinite */
 	rsc->timer_config.rsc_time_slot_2_ns = 0xFFFFFFFF;
 
-	rsc->timer_config.min_threshold_time_ns = MIN_THRESHOLD_OVERHEAD_TIME;
+	/**
+	 * Program rsc_min_threshold with a higher value (3.3 ms), so it has
+	 * sufficient time to complete the sequence for some targets.
+	 */
+	if (rsc->version >= SDE_RSC_REV_3)
+		rsc->timer_config.min_threshold_time_ns = 64;
+	else
+		rsc->timer_config.min_threshold_time_ns =
+			MIN_THRESHOLD_OVERHEAD_TIME;
 	rsc->timer_config.bwi_threshold_time_ns =
 		rsc->timer_config.rsc_time_slot_0_ns;
 
@@ -523,7 +531,7 @@ static int sde_rsc_switch_to_cmd_v3(struct sde_rsc_priv *rsc,
 	 */
 	if (rsc->current_state == SDE_RSC_CMD_STATE) {
 		rc = 0;
-		if (config)
+		if (config && rsc->version < SDE_RSC_REV_3)
 			goto vsync_wait;
 		else
 			goto end;
@@ -545,6 +553,7 @@ vsync_wait:
 	/* indicate wait for vsync for vid to cmd state switch & cfg update */
 	if (!rc && (rsc->current_state == SDE_RSC_VID_STATE ||
 			rsc->current_state == SDE_RSC_CMD_STATE)) {
+		rsc->post_poms = true;
 		/* clear VSYNC timestamp for indication when update completes */
 		if (rsc->hw_ops.hw_vsync)
 			rsc->hw_ops.hw_vsync(rsc, VSYNC_ENABLE, NULL, 0, 0);
@@ -787,7 +796,7 @@ static int sde_rsc_switch_to_vid_v3(struct sde_rsc_priv *rsc,
 	 */
 	if (rsc->current_state == SDE_RSC_VID_STATE) {
 		rc = 0;
-		if (config)
+		if (config && rsc->version < SDE_RSC_REV_3)
 			goto vsync_wait;
 		else
 			goto end;
@@ -810,6 +819,7 @@ vsync_wait:
 	/* indicate wait for vsync for vid to cmd state switch & cfg update */
 	if (!rc && (rsc->current_state == SDE_RSC_VID_STATE ||
 			rsc->current_state == SDE_RSC_CMD_STATE)) {
+		rsc->post_poms = true;
 		/* clear VSYNC timestamp for indication when update completes */
 		if (rsc->hw_ops.hw_vsync)
 			rsc->hw_ops.hw_vsync(rsc, VSYNC_ENABLE, NULL, 0, 0);
@@ -940,6 +950,7 @@ static int sde_rsc_switch_to_idle_v3(struct sde_rsc_priv *rsc,
 			rc = CLK_MODE_SWITCH_SUCCESS;
 	} else if (rsc->hw_ops.state_update) {
 		rc = rsc->hw_ops.state_update(rsc, SDE_RSC_IDLE_STATE);
+		rsc->post_poms = false;
 		if (!rc)
 			rpmh_mode_solver_set(rsc->disp_rsc, true);
 	}

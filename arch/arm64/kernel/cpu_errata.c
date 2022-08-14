@@ -718,21 +718,6 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 	},
 #ifdef CONFIG_ARM64_ERRATUM_1188873
 	{
-		/* Cortex-A76 r0p0 to r2p0 */
-		.desc = "ARM erratum 1188873",
-		.capability = ARM64_WORKAROUND_1188873,
-		ERRATA_MIDR_RANGE(MIDR_CORTEX_A76, 0, 0, 2, 0),
-	},
-#endif
-	{
-		.desc = "Spectre-BHB",
-		.capability = ARM64_SPECTRE_BHB,
-		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
-		.matches = is_spectre_bhb_affected,
-		.cpu_enable = spectre_bhb_enable_mitigation,
-	},
-#ifdef CONFIG_ARM64_ERRATUM_1188873
-	{
 		.desc = "ARM erratum 1188873",
 		.capability = ARM64_WORKAROUND_1188873,
 		/* Cortex-A76 r0p0 to r2p0 */
@@ -749,6 +734,13 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 			MIDR_CPU_VAR_REV(15, 15)),
 	},
 #endif
+	{
+		.desc = "Spectre-BHB",
+		.capability = ARM64_SPECTRE_BHB,
+		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
+		.matches = is_spectre_bhb_affected,
+		.cpu_enable = spectre_bhb_enable_mitigation,
+	},
 	{
 	}
 };

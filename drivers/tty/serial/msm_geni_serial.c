@@ -1033,9 +1033,6 @@ static void start_rx_sequencer(struct uart_port *uport)
 		msm_geni_serial_stop_rx(uport);
 	}
 
-	/* Start RX with the RFR_OPEN to keep RFR in always ready state */
-	geni_setup_s_cmd(uport->membase, UART_START_READ, geni_se_param);
-
 	if (port->xfer_mode == FIFO_MODE) {
 		geni_s_irq_en = geni_read_reg_nolog(uport->membase,
 							SE_GENI_S_IRQ_EN);
@@ -1053,6 +1050,10 @@ static void start_rx_sequencer(struct uart_port *uport)
 		geni_se_rx_dma_start(uport->membase, DMA_RX_BUF_SIZE,
 							&port->rx_dma);
 	}
+
+	/* Start RX with the RFR_OPEN to keep RFR in always ready state */
+	geni_setup_s_cmd(uport->membase, UART_START_READ, geni_se_param);
+
 	/*
 	 * Ensure the writes to the secondary sequencer and interrupt enables
 	 * go through.

@@ -760,16 +760,6 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 
 EXPORT_SYMBOL(mmc_alloc_host);
 
-static int mmc_validate_host_caps(struct mmc_host *host)
-{
-	if (host->caps & MMC_CAP_SDIO_IRQ && !host->ops->enable_sdio_irq) {
-		dev_warn(host->parent, "missing ->enable_sdio_irq() ops\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 static ssize_t show_enable(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -983,6 +973,16 @@ static struct attribute *dev_attrs[] = {
 static struct attribute_group dev_attr_grp = {
 	.attrs = dev_attrs,
 };
+
+static int mmc_validate_host_caps(struct mmc_host *host)
+{
+	if (host->caps & MMC_CAP_SDIO_IRQ && !host->ops->enable_sdio_irq) {
+		dev_warn(host->parent, "missing ->enable_sdio_irq() ops\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
 
 /**
  *	mmc_add_host - initialise host hardware

@@ -39,6 +39,8 @@
 #define GBMS_DINF_LEN	32
 /* Battery cycle count bin length */
 #define GBMS_CNTB_LEN	16
+/* Battery consistent soc length */
+#define GBMS_RSOC_LEN	2
 
 /**
  * Tags are u32 constants: hardcoding as hex since characters constants of more
@@ -58,6 +60,7 @@ enum gbms_tags {
 	GBMS_TAG_DINF = 0x44494e46,
 	GBMS_TAG_BGPN = 0x4247504e,
 	GBMS_TAG_CNTB = 0x434e5442,
+	GBMS_TAG_RSOC = 0x52534F43,
 };
 
 /**

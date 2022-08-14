@@ -50,6 +50,7 @@
 #include "msm_kms.h"
 #include "sde_wb.h"
 #include "sde_dbg.h"
+#include <drm/drm_client.h>
 
 /*
  * MSM driver version:
@@ -314,6 +315,7 @@ static int msm_drm_uninit(struct device *dev)
 	drm_mode_config_cleanup(ddev);
 
 	if (priv->registered) {
+		drm_client_dev_unregister(ddev);
 		drm_dev_unregister(ddev);
 		priv->registered = false;
 	}
@@ -1708,6 +1710,13 @@ static int msm_release(struct inode *inode, struct file *filp)
 		kfree(node);
 	}
 
+	msm_preclose(dev, file_priv);
+
+       /**
+	* Handle preclose operation here for removing fb's whose
+	* refcount > 1. This operation is not triggered from upstream
+	* drm as msm_driver does not support DRIVER_LEGACY feature.
+	*/
 	ret = drm_release(inode, filp);
 	filp->private_data = NULL;
 end:
@@ -1866,7 +1875,6 @@ static struct drm_driver msm_driver = {
 				DRIVER_ATOMIC |
 				DRIVER_MODESET,
 	.open               = msm_open,
-	.preclose           = msm_preclose,
 	.postclose          = msm_postclose,
 	.lastclose          = msm_lastclose,
 	.irq_handler        = msm_irq,
