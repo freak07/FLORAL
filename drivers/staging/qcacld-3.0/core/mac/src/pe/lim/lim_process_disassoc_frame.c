@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -111,8 +112,8 @@ lim_process_disassoc_frame(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 	}
 #ifdef WLAN_FEATURE_11W
 	/* PMF: If this session is a PMF session, then ensure that this frame was protected */
-	if (psessionEntry->limRmfEnabled
-	    && (WMA_GET_RX_DPU_FEEDBACK(pRxPacketInfo) &
+	if (is_mgmt_protected(psessionEntry->smeSessionId, (const uint8_t *)pHdr->sa) &&
+	    (WMA_GET_RX_DPU_FEEDBACK(pRxPacketInfo) &
 		DPU_FEEDBACK_UNPROTECTED_ERROR)) {
 		pe_err("received an unprotected disassoc from AP");
 		/*
