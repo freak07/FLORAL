@@ -24,6 +24,8 @@
 #include "wcd_cpe_services.h"
 #include "wcd_cmi_api.h"
 
+#pragma clang diagnostic ignored "-Wenum-conversion"
+
 #define CPE_MSG_BUFFER_SIZE 132
 #define CPE_NO_SERVICE 0
 

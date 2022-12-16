@@ -143,7 +143,7 @@ static int get_s2s_y_above(void) {
 #endif
 
 // device specifics
-static void s2s_setup_values() {
+static void s2s_setup_values(void) {
 	if ( strstr(init_get_saved_command_line(),"hardware=coral") ) {
 		// CORAL 3040x1440
 		pr_info("%s hw coral\n",__func__);

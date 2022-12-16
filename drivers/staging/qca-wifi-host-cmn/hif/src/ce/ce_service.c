@@ -2739,7 +2739,7 @@ struct ce_ops ce_service_legacy = {
 };
 
 
-struct ce_ops *ce_services_legacy()
+struct ce_ops *ce_services_legacy(void)
 {
 	return &ce_service_legacy;
 }
